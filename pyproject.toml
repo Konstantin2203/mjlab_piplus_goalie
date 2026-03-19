@@ -1,0 +1,25 @@
+[build-system]
+requires = ["uv_build>=0.8.19,<0.9.0"]
+build-backend = "uv_build"
+
+[project]
+name = "mjlab-piplus"
+version = "0.1.0"
+license = "Apache-2.0"
+description = "PiPlus mjlab project"
+readme = "README.md"
+requires-python = ">=3.12,<3.14"
+dependencies = [
+    "mjlab",
+    "onnxruntime",
+]
+
+[project.entry-points."mjlab.tasks"]
+mjlab_piplus = "mjlab_piplus.tasks"
+
+[tool.ruff]
+src = ["src"]  # Helpful for recognizing first-party imports.
+indent-width = 4
+
+[tool.uv.sources]
+mjlab = { git = "https://github.com/mujocolab/mjlab.git", rev = "a23ba4b65c384806085197ac1a952480992c3359" }
