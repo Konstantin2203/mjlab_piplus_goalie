@@ -156,6 +156,21 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
         "asset_cfg": SceneEntityCfg("robot", joint_names=(".*",)),
       },
     ),
+    "push_robot": EventTermCfg(
+      func=mdp.push_by_setting_velocity,
+      mode="interval",
+      interval_range_s=(1.0, 3.0),
+      params={
+        "velocity_range": {
+        "x": (-0.5, 0.5),
+        "y": (-0.5, 0.5),
+        "z": (-0.4, 0.4),
+        "roll": (-0.52, 0.52),
+        "pitch": (-0.52, 0.52),
+        "yaw": (-0.78, 0.78),
+        },
+      },
+    ),
   }
 
   ##
@@ -229,20 +244,20 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
     "action_rate_l2": RewardTermCfg(func=mdp.action_rate_l2, weight=-0.1),
     "air_time": RewardTermCfg(
       func=mdp.feet_air_time,
-      weight=0.0,  # Override per-robot.
+      weight=0.25,
       params={
         "sensor_name": "feet_ground_contact",
         "threshold_min": 0.05,
         "threshold_max": 0.5,
         "command_name": "twist",
-        "command_threshold": 0.5,
+        "command_threshold": 0.05,
       },
     ),
     "foot_clearance": RewardTermCfg(
       func=mdp.feet_clearance,
       weight=-2.0,
       params={
-        "target_height": 0.1,
+        "target_height": 0.05,
         "command_name": "twist",
         "command_threshold": 0.05,
         "asset_cfg": SceneEntityCfg("robot", site_names=foot_sites),
@@ -253,7 +268,7 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
       weight=-0.5,
       params={
         "sensor_name": "feet_ground_contact",
-        "target_height": 0.3,
+        "target_height": 0.1,
         "command_name": "twist",
         "command_threshold": 0.05,
         "asset_cfg": SceneEntityCfg("robot", site_names=foot_sites),
@@ -294,17 +309,18 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
   # Curriculum
   ##
   curriculum = {
-  #    "command_vel": CurriculumTermCfg(
-  #    func=mdp.commands_vel,
-  #    params={
-  #         "command_name": "twist",
-  #         "velocity_stages": [
-  #         {"step": 0, "lin_vel_x": (-1.0, 1.0), "ang_vel_z": (-0.5, 0.5)},
-  #         {"step": 1500 * 24, "lin_vel_x": (-1.5, 2.0), "ang_vel_z": (-0.7, 0.7)},
-  #         {"step": 3000 * 24, "lin_vel_x": (-2.0, 3.0)},
-  #         ],
-  #     },
-  # ),
+      "command_vel": CurriculumTermCfg(
+      func=mdp.commands_vel,
+      params={
+           "command_name": "twist",
+           "velocity_stages": [
+           {"step": 0, "lin_vel_x": (0.0, 0.0), "lin_vel_y": (0.0, 0.0), "ang_vel_z": (0.0, 0.0)},
+           {"step": 200 * 24, "lin_vel_x": (-0.25, 0.25), "lin_vel_y": (-0.1, 0.1), "ang_vel_z": (-0.5, 0.5)},
+           {"step": 800 * 24, "lin_vel_x": (-0.75, 0.75), "lin_vel_y": (-0.4, 0.4), "ang_vel_z": (-1.0, 1.0)},
+           {"step": 1200 * 24, "lin_vel_x": (-1.5, 1.5), "lin_vel_y": (-0.75, 0.75), "ang_vel_z": (-1.5, 1.5)},
+           ],
+       },
+   ),
   }
 
   ##
@@ -368,6 +384,9 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
       ccd_iterations=500,
     ),
   )
+  if play:
+    curriculum = {}
+    del events["push_robot"]
 
   ##
   # Assemble the config
