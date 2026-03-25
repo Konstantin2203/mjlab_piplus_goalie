@@ -18,6 +18,7 @@ from mjlab.scene import SceneCfg
 from mjlab.terrains import TerrainEntityCfg
 from mjlab.terrains.config import ROUGH_TERRAINS_CFG
 from mjlab.utils.noise import UniformNoiseCfg as Unoise
+from mjlab.utils.noise import NoiseModelWithAdditiveBiasCfg
 from mjlab.tasks.velocity import mdp
 from mjlab.scene import SceneCfg
 from mjlab.sim import MujocoCfg, SimulationCfg
@@ -25,12 +26,25 @@ from mjlab.viewer import ViewerConfig
 from mjlab_piplus.robot.piplus_constants import get_piplus_robot_cfg
 
 from mjlab.tasks.velocity.velocity_env_cfg import make_velocity_env_cfg
-from mjlab.sensor import ContactMatch, ContactSensorCfg
+from mjlab.sensor import ContactMatch, ContactSensorCfg, TerrainHeightSensorCfg, ObjRef
 
 def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> ManagerBasedRlEnvCfg:
   foot_sites = ("l_foot", "r_foot")
   #foot_geoms = ("l_foot00", "r_foot00")
-
+  foot_height_scan = TerrainHeightSensorCfg(
+    name="foot_height_scan",
+    frame=(ObjRef(type="site", name="l_foot", entity="robot"), ObjRef(type="site", name="r_foot", entity="robot")),
+    ray_alignment="yaw",
+    max_distance=1.0,
+    exclude_parent_body=True,
+    include_geom_groups=(0,),  # Terrain only.
+    debug_vis=True,
+    viz=TerrainHeightSensorCfg.VizCfg(
+      show_rays=True,
+      hit_color=(1.0, 0.0, 1.0, 0.8),  # Magenta rays.
+      hit_sphere_color=(1.0, 0.0, 1.0, 1.0),
+    ),
+  )
   ##
   # Observations
   ##
@@ -47,7 +61,11 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
     ),
     "projected_gravity": ObservationTermCfg(
     func=mdp.projected_gravity,
-    noise=Unoise(n_min=-0.05, n_max=0.05),
+    noise=NoiseModelWithAdditiveBiasCfg(
+      noise_cfg=Unoise(n_min=-0.05, n_max=0.05,),
+      bias_noise_cfg=Unoise(n_min=-0.03, n_max=0.03, operation="add"),
+      sample_bias_per_component=True,
+    ),
     ),
     "joint_pos": ObservationTermCfg(
     func=mdp.joint_pos_rel,
@@ -67,7 +85,7 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
     **actor_terms,
     "foot_height": ObservationTermCfg(
     func=mdp.foot_height,
-    params={"asset_cfg": SceneEntityCfg("robot", site_names=foot_sites)},
+    params={"sensor_name": "foot_height_scan"},
     ),
     "foot_air_time": ObservationTermCfg(
     func=mdp.foot_air_time,
@@ -188,7 +206,7 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
       params={"command_name": "twist", "std": math.sqrt(0.5)},
     ),
     "upright": RewardTermCfg(
-      func=mdp.flat_orientation,
+      func=mdp.upright,
       weight=1.0,
       params={
         "std": math.sqrt(0.2),
@@ -258,6 +276,7 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
       weight=-2.0,
       params={
         "target_height": 0.05,
+        "height_sensor_name": "foot_height_scan",
         "command_name": "twist",
         "command_threshold": 0.05,
         "asset_cfg": SceneEntityCfg("robot", site_names=foot_sites),
@@ -268,10 +287,10 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
       weight=-0.5,
       params={
         "sensor_name": "feet_ground_contact",
+        "height_sensor_name": "foot_height_scan",
         "target_height": 0.1,
         "command_name": "twist",
         "command_threshold": 0.05,
-        "asset_cfg": SceneEntityCfg("robot", site_names=foot_sites),
       },
     ),
     "foot_slip": RewardTermCfg(
@@ -350,7 +369,7 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
   )
   scene = SceneCfg(
     entities={"robot": get_piplus_robot_cfg()},
-    sensors=(feet_contact_sensor_cfg, self_collision_cfg),
+    sensors=(feet_contact_sensor_cfg, self_collision_cfg, foot_height_scan),
     terrain=TerrainEntityCfg(
       terrain_type="plane",
       terrain_generator=None,
