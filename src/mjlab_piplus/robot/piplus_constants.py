@@ -26,21 +26,50 @@ def get_spec() -> mujoco.MjSpec:
   spec.assets = get_assets(spec.meshdir)
   return spec
 
-
-EFFORT_LIMIT_4438 = 20.0
-EFFORT_LIMIT_5047 = 30.0
+EFFORT_LIMIT_3536 = 2.5
+EFFORT_LIMIT_4438 = 10.0
+EFFORT_LIMIT_5036 = 20.0
 
 ARMATURE_4438 = 0.008419
-ARMATURE_5047 = 0.044277
+ARMATURE_5036 = 0.044277
 
-NATURAL_FREQ = 10 * 2.0 * 3.1415926535  # 10Hz
-DAMPING_RATIO = 2.0
+STIFFNESS_3536 = 6
+STIFFNESS_4438 = 6
+STIFFNESS_5036_HIP_PITCH = 110
+STIFFNESS_5036_HIP_ROLL = 110
+STIFFNESS_5036_THIGH = 110
+STIFFNESS_5036_CALF = 110
+STIFFNESS_5036_ANKLE_PITCH = 210
+STIFFNESS_5036_ANKLE_ROLL = 110
 
-STIFFNESS_4438 = 30
-STIFFNESS_5047 = 80
-
+DAMPING_3536 = 0.6
 DAMPING_4438 = 0.6
-DAMPING_5047 = 1.1
+DAMPING_5036_HIP_PITCH = 1.1
+DAMPING_5036_HIP_ROLL = 1.4
+DAMPING_5036_THIGH = 1.1
+DAMPING_5036_CALF = 1.1
+DAMPING_5036_ANKLE_PITCH = 1.1
+DAMPING_5036_ANKLE_ROLL = 1.1
+
+FRICTIONLOSS = 0.4
+
+# Motors used in Head
+ACTUATOR_3536 = BuiltinPositionActuatorCfg(
+  target_names_expr=(
+      "head_yaw_joint",
+      "head_pitch_joint",
+  ),
+  stiffness=STIFFNESS_3536,
+  damping=DAMPING_3536,
+  effort_limit=EFFORT_LIMIT_3536,
+  frictionloss=FRICTIONLOSS,
+)
+DELAYED_ACTUATOR_3536 = DelayedActuatorCfg(
+  base_cfg=ACTUATOR_3536,
+  delay_target="position",
+  delay_min_lag=2,
+  delay_max_lag=3,
+)
 
 # Motors used in Arms
 ACTUATOR_4438 = BuiltinPositionActuatorCfg(
@@ -54,7 +83,7 @@ ACTUATOR_4438 = BuiltinPositionActuatorCfg(
   damping=DAMPING_4438,
   armature=ARMATURE_4438,
   effort_limit=EFFORT_LIMIT_4438,
-  frictionloss=0.2, # TODO
+  frictionloss=FRICTIONLOSS,
 )
 DELAYED_ACTUATOR_4438 = DelayedActuatorCfg(
   base_cfg=ACTUATOR_4438,
@@ -63,25 +92,88 @@ DELAYED_ACTUATOR_4438 = DelayedActuatorCfg(
   delay_max_lag=3,
 )
 
-ACTUATOR_5047 = BuiltinPositionActuatorCfg(
-  target_names_expr=(
-      ".*_thigh_joint",
-      ".*_hip_roll_joint",
-      ".*_hip_pitch_joint",
-      ".*_calf_joint",
-      ".*_ankle_pitch_joint",
-      ".*_ankle_roll_joint",
-  ),
-  stiffness=STIFFNESS_5047,
-  damping=DAMPING_5047,
-  armature=ARMATURE_5047,
-  effort_limit=EFFORT_LIMIT_5047,
-  frictionloss=0.2, # TODO
+# Motors used in Legs
+ACTUATOR_5036_HIP_PITCH = BuiltinPositionActuatorCfg(
+  target_names_expr=(".*_hip_pitch_joint",),
+  stiffness=STIFFNESS_5036_HIP_PITCH,
+  damping=DAMPING_5036_HIP_PITCH,
+  armature=ARMATURE_5036,
+  effort_limit=EFFORT_LIMIT_5036,
+  frictionloss=FRICTIONLOSS,
+)
+ACTUATOR_5036_HIP_ROLL = BuiltinPositionActuatorCfg(
+  target_names_expr=(".*_hip_roll_joint",),
+  stiffness=STIFFNESS_5036_HIP_ROLL,
+  damping=DAMPING_5036_HIP_ROLL,
+  armature=ARMATURE_5036,
+  effort_limit=EFFORT_LIMIT_5036,
+  frictionloss=FRICTIONLOSS,
+)
+ACTUATOR_5036_THIGH = BuiltinPositionActuatorCfg(
+  target_names_expr=(".*_thigh_joint",),
+  stiffness=STIFFNESS_5036_THIGH,
+  damping=DAMPING_5036_THIGH,
+  armature=ARMATURE_5036,
+  effort_limit=EFFORT_LIMIT_5036,
+  frictionloss=FRICTIONLOSS,
+)
+ACTUATOR_5036_CALF = BuiltinPositionActuatorCfg(
+  target_names_expr=(".*_calf_joint",),
+  stiffness=STIFFNESS_5036_CALF,
+  damping=DAMPING_5036_CALF,
+  armature=ARMATURE_5036,
+  effort_limit=EFFORT_LIMIT_5036,
+  frictionloss=FRICTIONLOSS,
+)
+ACTUATOR_5036_ANKLE_PITCH = BuiltinPositionActuatorCfg(
+  target_names_expr=(".*_ankle_pitch_joint",),
+  stiffness=STIFFNESS_5036_ANKLE_PITCH,
+  damping=DAMPING_5036_ANKLE_PITCH,
+  armature=ARMATURE_5036,
+  effort_limit=EFFORT_LIMIT_5036,
+  frictionloss=FRICTIONLOSS,
+)
+ACTUATOR_5036_ANKLE_ROLL = BuiltinPositionActuatorCfg(
+  target_names_expr=(".*_ankle_roll_joint",),
+  stiffness=STIFFNESS_5036_ANKLE_ROLL,
+  damping=DAMPING_5036_ANKLE_ROLL,
+  armature=ARMATURE_5036,
+  effort_limit=EFFORT_LIMIT_5036,
+  frictionloss=FRICTIONLOSS,
 )
 
-# Motors used in Legs
-DELAYED_ACTUATOR_5047 = DelayedActuatorCfg(
-  base_cfg=ACTUATOR_5047,
+DELAYED_ACTUATOR_5036_HIP_PITCH = DelayedActuatorCfg(
+  base_cfg=ACTUATOR_5036_HIP_PITCH,
+  delay_target="position",
+  delay_min_lag=2,
+  delay_max_lag=3,
+)
+DELAYED_ACTUATOR_5036_HIP_ROLL = DelayedActuatorCfg(
+  base_cfg=ACTUATOR_5036_HIP_ROLL,
+  delay_target="position",
+  delay_min_lag=2,
+  delay_max_lag=3,
+)
+DELAYED_ACTUATOR_5036_THIGH = DelayedActuatorCfg(
+  base_cfg=ACTUATOR_5036_THIGH,
+  delay_target="position",
+  delay_min_lag=2,
+  delay_max_lag=3,
+)
+DELAYED_ACTUATOR_5036_CALF = DelayedActuatorCfg(
+  base_cfg=ACTUATOR_5036_CALF,
+  delay_target="position",
+  delay_min_lag=2,
+  delay_max_lag=3,
+)
+DELAYED_ACTUATOR_5036_ANKLE_PITCH = DelayedActuatorCfg(
+  base_cfg=ACTUATOR_5036_ANKLE_PITCH,
+  delay_target="position",
+  delay_min_lag=2,
+  delay_max_lag=3,
+)
+DELAYED_ACTUATOR_5036_ANKLE_ROLL = DelayedActuatorCfg(
+  base_cfg=ACTUATOR_5036_ANKLE_ROLL,
   delay_target="position",
   delay_min_lag=2,
   delay_max_lag=3,
@@ -89,7 +181,7 @@ DELAYED_ACTUATOR_5047 = DelayedActuatorCfg(
 
 
 HOME_KEYFRAME = EntityCfg.InitialStateCfg(
-  pos=(0, 0, 0.85),
+  pos=(0, 0, 0.39),
   joint_pos={
     ".*_hip_pitch_joint": -0.25,
     ".*_hip_roll_joint": 0.0,
@@ -115,8 +207,17 @@ FEET_ONLY_COLLISION = CollisionCfg(
 )
 
 PIPLUS_ARTICULATION = EntityArticulationInfoCfg(
-  actuators=(ACTUATOR_4438, ACTUATOR_5047),
-  soft_joint_pos_limit_factor=0.9
+  actuators=(
+    ACTUATOR_3536,
+    ACTUATOR_4438,
+    ACTUATOR_5036_HIP_PITCH,
+    ACTUATOR_5036_HIP_ROLL,
+    ACTUATOR_5036_THIGH,
+    ACTUATOR_5036_CALF,
+    ACTUATOR_5036_ANKLE_PITCH,
+    ACTUATOR_5036_ANKLE_ROLL,
+  ),
+  soft_joint_pos_limit_factor=0.9,
 )
 
 def get_piplus_robot_cfg() -> EntityCfg:
