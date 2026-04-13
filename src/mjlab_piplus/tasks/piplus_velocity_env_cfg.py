@@ -38,7 +38,7 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
     max_distance=1.0,
     exclude_parent_body=True,
     include_geom_groups=(0,),  # Terrain only.
-    debug_vis=True,
+    debug_vis=False,
     viz=TerrainHeightSensorCfg.VizCfg(
       show_rays=True,
       hit_color=(1.0, 0.0, 1.0, 0.8),  # Magenta rays.
@@ -157,8 +157,8 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
       mode="reset",
       params={
         "pose_range": {
-        "x": (-0.5, 0.5),
-        "y": (-0.5, 0.5),
+        "x": (-0.0, 0.0),
+        "y": (-0.0, 0.0),
         "z": (0.01, 0.05),
         "yaw": (-3.14, 3.14),
         },
@@ -180,8 +180,8 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
       interval_range_s=(1.0, 3.0),
       params={
         "velocity_range": {
-        "x": (-0.5, 0.5),
-        "y": (-0.5, 0.5),
+        "x": (-0.25, 0.25),
+        "y": (-0.25, 0.25),
         "z": (-0.4, 0.4),
         "roll": (-0.52, 0.52),
         "pitch": (-0.52, 0.52),
@@ -189,6 +189,7 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
         },
       },
     ),
+    # push with impulse
   }
 
   ##
@@ -198,12 +199,12 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
     "track_linear_velocity": RewardTermCfg(
       func=mdp.track_linear_velocity,
       weight=2.0,
-      params={"command_name": "twist", "std": math.sqrt(0.25)},
+      params={"command_name": "twist", "std": math.sqrt(0.05)},
     ),
     "track_angular_velocity": RewardTermCfg(
       func=mdp.track_angular_velocity,
       weight=2.0,
-      params={"command_name": "twist", "std": math.sqrt(0.5)},
+      params={"command_name": "twist", "std": math.sqrt(0.125)},
     ),
     "upright": RewardTermCfg(
       func=mdp.upright,
@@ -229,7 +230,7 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
       params={
         "asset_cfg": SceneEntityCfg("robot", joint_names=(".*",)),
         "command_name": "twist",
-        "std_standing": {".*": 0.05},  # Set per-robot.
+        "std_standing": {r".*": 0.05},
         "std_walking": {
           r".*_hip_pitch_joint": 0.3,
           r".*_hip_roll_joint": 0.15,
@@ -265,7 +266,7 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
       weight=0.25,
       params={
         "sensor_name": "feet_ground_contact",
-        "threshold_min": 0.05,
+        "threshold_min": 0.15,
         "threshold_max": 0.5,
         "command_name": "twist",
         "command_threshold": 0.05,
@@ -275,7 +276,7 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
       func=mdp.feet_clearance,
       weight=-2.0,
       params={
-        "target_height": 0.05,
+        "target_height": 0.025,
         "height_sensor_name": "foot_height_scan",
         "command_name": "twist",
         "command_threshold": 0.05,
@@ -284,11 +285,11 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
     ),
     "foot_swing_height": RewardTermCfg(
       func=mdp.feet_swing_height,
-      weight=-0.5,
+      weight=-0.25,
       params={
         "sensor_name": "feet_ground_contact",
         "height_sensor_name": "foot_height_scan",
-        "target_height": 0.1,
+        "target_height": 0.025,
         "command_name": "twist",
         "command_threshold": 0.05,
       },
@@ -312,6 +313,16 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
         "command_threshold": 0.05,
       },
     ),
+    "torque_penalty": RewardTermCfg(
+      func=mdp.joint_torques_l2,
+      weight=-1e-4,
+      params={"asset_cfg": SceneEntityCfg("robot", actuator_names=(".*",))},
+    ),
+    "joint_vel_l2": RewardTermCfg(
+      func=mdp.joint_vel_l2,
+      weight=-1e-3,
+      params={"asset_cfg": SceneEntityCfg("robot", joint_names=(".*",))},
+    ),
   }
   ##
   # Terminations
@@ -322,23 +333,39 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
       func=mdp.bad_orientation,
       params={"limit_angle": math.radians(70.0)},
     ),
+    "root_height_below_minimum": TerminationTermCfg(
+      func=mdp.root_height_below_minimum,
+      params={"minimum_height": 0.25},
+    ),
   }
 
   ##
   # Curriculum
   ##
   curriculum = {
-      "command_vel": CurriculumTermCfg(
-      func=mdp.commands_vel,
-      params={
-           "command_name": "twist",
-           "velocity_stages": [
-           {"step": 0, "lin_vel_x": (0.0, 0.0), "lin_vel_y": (0.0, 0.0), "ang_vel_z": (0.0, 0.0)},
-           {"step": 200 * 24, "lin_vel_x": (-0.25, 0.25), "lin_vel_y": (-0.1, 0.1), "ang_vel_z": (-0.5, 0.5)},
-           {"step": 800 * 24, "lin_vel_x": (-0.75, 0.75), "lin_vel_y": (-0.4, 0.4), "ang_vel_z": (-1.0, 1.0)},
-           {"step": 1200 * 24, "lin_vel_x": (-1.5, 1.5), "lin_vel_y": (-0.75, 0.75), "ang_vel_z": (-1.5, 1.5)},
-           ],
-       },
+    "command_vel": CurriculumTermCfg(
+    func=mdp.commands_vel,
+    params={
+          "command_name": "twist",
+          "velocity_stages": [
+          {"step": 0, "lin_vel_x": (0.0, 0.0), "lin_vel_y": (0.0, 0.0), "ang_vel_z": (0.0, 0.0)},
+          {"step": 200 * 24, "lin_vel_x": (-0.15, 0.15), "lin_vel_y": (-0.05, 0.05), "ang_vel_z": (-0.3, 0.3)},
+          {"step": 400 * 24, "lin_vel_x": (-0.3, 0.3), "lin_vel_y": (-0.15, 0.15), "ang_vel_z": (-1.0, 1.0)},
+          {"step": 800 * 24, "lin_vel_x": (-0.7, 0.7), "lin_vel_y": (-0.35, 0.35), "ang_vel_z": (-math.pi/2, math.pi/2)},
+          {"step": 1200 * 24, "lin_vel_x": (-1.0, 1.4), "lin_vel_y": (-0.5, 0.5), "ang_vel_z": (-math.pi/2, math.pi/2)},
+          ],
+      },
+   ),
+   "feet_air_time_coef": CurriculumTermCfg(
+    func=mdp.reward_curriculum,
+    params={
+      "reward_name": "air_time",
+      "stages": [
+        {"step": 0, "weight": 0.0},
+        {"step": 200 * 24, "weight": 0.25},
+        {"step": 600 * 24, "weight": 0.5},
+      ],
+    },
    ),
   }
 

@@ -197,9 +197,27 @@ HOME_KEYFRAME = EntityCfg.InitialStateCfg(
   joint_vel={".*": 0.0},
 )
 
+FULL_COLLISION = CollisionCfg(
+  geom_names_expr=(r".*_collision[0-9]$",),
+  contype=1,
+  conaffinity=1,
+  condim=3,
+  priority=1,
+  friction=(0.6,),
+)
+
+LEG_ONLY_COLLISION = CollisionCfg(
+  geom_names_expr=(r"(r|l)_(thigh|calf|ankle_pitch|ankle_roll)_link_collision[0-9]$",),
+  contype=0,
+  conaffinity=1,
+  condim=3,
+  priority=1,
+  friction=(0.6,),
+)
+
 FEET_ONLY_COLLISION = CollisionCfg(
-  geom_names_expr=(r"^(r|l)_ankle_roll_link_collision$",),
-  contype=0, # disable self collisions by default
+  geom_names_expr=(r"(r|l)_ankle_roll_link_collision[0-9]$",),
+  contype=0,
   conaffinity=1,
   condim=3,
   priority=1,
@@ -223,7 +241,7 @@ PIPLUS_ARTICULATION = EntityArticulationInfoCfg(
 def get_piplus_robot_cfg() -> EntityCfg:
   return EntityCfg(
     init_state=HOME_KEYFRAME,
-    collisions=(FEET_ONLY_COLLISION,),
+    collisions=(FULL_COLLISION,),
     spec_fn=get_spec,
     articulation=PIPLUS_ARTICULATION,
   )
