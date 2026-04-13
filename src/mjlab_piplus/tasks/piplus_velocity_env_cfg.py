@@ -276,7 +276,7 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
       func=mdp.feet_clearance,
       weight=-2.0,
       params={
-        "target_height": 0.025,
+        "target_height": 0.04,
         "height_sensor_name": "foot_height_scan",
         "command_name": "twist",
         "command_threshold": 0.05,
@@ -289,7 +289,7 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
       params={
         "sensor_name": "feet_ground_contact",
         "height_sensor_name": "foot_height_scan",
-        "target_height": 0.025,
+        "target_height": 0.04,
         "command_name": "twist",
         "command_threshold": 0.05,
       },
