@@ -11,7 +11,7 @@ This is a [mjlab](https://github.com/mujocolab/mjlab) project for training RL po
 Always use `uv run`, not `python` directly.
 
 ```sh
-# Train — always run in a tmux session, auto-select a free GPU via nvidia-smi
+# Train — launch as a background Task (TaskCreate), auto-select a free GPU via nvidia-smi
 # After launch, poll wandb/ dir for new run-YYYYMMDD_HHMMSS-* directories
 # (verify timestamp matches current time, as runs take time to initialize).
 # Inside the dir, find the run-<id>.wandb file — the ID is in the filename.
@@ -19,12 +19,12 @@ Always use `uv run`, not `python` directly.
 # logs/rsl_rl/piplus_velocity/2026-04-12_23-56-38 — the last segment is the
 # run name. Then prepend a line to runs.log (newest first):
 # <name>: <id>: <short summary>
-tmux new-session -d -s train 'uv run train Mjlab-Velocity-PiPlus --env.scene.num-envs 4096 --enable-nan-guard True --gpu-ids '"'"'[GPU]'"'"''
+uv run train Mjlab-Velocity-PiPlus --env.scene.num-envs 4096 --enable-nan-guard True --gpu-ids '[GPU]'
 
-# Play/evaluate a trained policy — run in tmux, pick a free GPU via nvidia-smi
+# Play/evaluate a trained policy — launch as a background Task, pick a free GPU via nvidia-smi
 # Export CUDA_VISIBLE_DEVICES to a single GPU before launching.
 # Prefer unused GPUs; if all busy, pick one with low utilization and free memory.
-tmux new-session -d -s play 'export CUDA_VISIBLE_DEVICES=GPU && uv run play Mjlab-Velocity-PiPlus --wandb-run-path jgueldenstein/mjlab_piplus/<id>'
+CUDA_VISIBLE_DEVICES=GPU uv run play Mjlab-Velocity-PiPlus --wandb-run-path jgueldenstein/mjlab_piplus/<id>
 
 # Sanity-check with dummy agents (no training needed)
 uv run play Mjlab-Velocity-PiPlus --agent zero
