@@ -19,6 +19,7 @@ from mjlab.terrains import TerrainEntityCfg
 from mjlab.terrains.config import ROUGH_TERRAINS_CFG
 from mjlab.utils.noise import UniformNoiseCfg as Unoise
 from mjlab.utils.noise import NoiseModelWithAdditiveBiasCfg
+from mjlab.envs.mdp import dr
 from mjlab.tasks.velocity import mdp
 from mjlab.scene import SceneCfg
 from mjlab.sim import MujocoCfg, SimulationCfg
@@ -190,6 +191,105 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
       },
     ),
     # push with impulse
+    # "foot_friction": EventTermCfg(
+    #   mode="reset",
+    #   func=dr.geom_friction,
+    #   params={
+    #     "asset_cfg": SceneEntityCfg("robot", geom_names=("l_ankle_roll_link_collision.*", "r_ankle_roll_link_collision.*")),
+    #     "operation": "scale",
+    #     "ranges": (0.4, 1.0),
+    #     "shared_random": True,
+    #   },
+    # ),
+    # "joint_frictionloss": EventTermCfg(
+    #   mode="reset",
+    #   func=dr.joint_friction,
+    #   params={
+    #     "asset_cfg": SceneEntityCfg("robot", joint_names=(".*",)),
+    #     "ranges": (0.9, 1.1),
+    #     "operation": "scale",
+    #   },
+    # ),
+    # "joint_armature": EventTermCfg(
+    #   mode="reset",
+    #   func=dr.joint_armature,
+    #   params={
+    #     "asset_cfg": SceneEntityCfg("robot", joint_names=(".*",)),
+    #     "ranges": (1.0, 1.05),
+    #     "operation": "scale",
+    #   },
+    # ),
+    # "joint_damping": EventTermCfg(
+    #   mode="reset",
+    #   func=dr.joint_damping,
+    #   params={
+    #     "asset_cfg": SceneEntityCfg("robot", joint_names=(".*",)),
+    #     "ranges": (0.95, 1.05),
+    #     "operation": "scale",
+    #   },
+    # ),
+    # "actuator_gains": EventTermCfg(
+    #   mode="reset",
+    #   func=dr.pd_gains,
+    #   params={
+    #     "asset_cfg": SceneEntityCfg("robot", actuator_names=(r".*",)),
+    #     "kp_range": (0.75, 1.25),
+    #     "kd_range": (0.75, 1.25),
+    #     "operation": "scale",
+    #   },
+    # ),
+    # "link_masses": EventTermCfg(
+    #   mode="reset",
+    #   func=dr.body_mass,
+    #   params={
+    #     "asset_cfg": SceneEntityCfg("robot", body_names=(".*",)),
+    #     "ranges": (0.9, 1.1),
+    #     "operation": "scale",
+    #   },
+    # ),
+    # "torso_mass": EventTermCfg(
+    #   mode="reset",
+    #   func=dr.body_mass,
+    #   params={
+    #     "asset_cfg": SceneEntityCfg("robot", body_names=("base_link",)),
+    #     "ranges": (-0.5, 0.5),
+    #     "operation": "add",
+    #   },
+    # ),
+    # "link_com": EventTermCfg(
+    #   mode="reset",
+    #   func=dr.body_com_offset,
+    #   params={
+    #     "asset_cfg": SceneEntityCfg("robot", body_names=(".*",)),
+    #     "operation": "add",
+    #     "ranges": {
+    #       0: (-0.01, 0.01),
+    #       1: (-0.01, 0.01),
+    #       2: (-0.01, 0.01),
+    #     },
+    #   },
+    # ),
+    # "base_com": EventTermCfg(
+    #   mode="reset",
+    #   func=dr.body_com_offset,
+    #   params={
+    #     "asset_cfg": SceneEntityCfg("robot", body_names=("base_link",)),
+    #     "operation": "add",
+    #     "ranges": {
+    #       0: (-0.03, 0.03),
+    #       1: (-0.03, 0.03),
+    #       2: (-0.03, 0.03),
+    #     },
+    #   },
+    # ),
+    # "encoder_bias": EventTermCfg(
+    #   mode="reset",
+    #   func=dr.encoder_bias,
+    #   params={
+    #     "asset_cfg": SceneEntityCfg("robot", joint_names=(".*",)),
+    #     "bias_range": (-0.05, 0.05),
+    #   },
+    # ),
   }
 
   ##
@@ -367,6 +467,106 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
       ],
     },
    ),
+   # "dr_foot_friction": CurriculumTermCfg(
+   #  func=mdp.event_curriculum,
+   #  params={
+   #    "event_name": "foot_friction",
+   #    "stages": [
+   #      {"step": 0, "params": {"ranges": (1.0, 1.0)}},
+   #      {"step": 1600 * 24, "params": {"ranges": (0.4, 1.0)}},
+   #    ],
+   #  },
+   # ),
+   # "dr_joint_frictionloss": CurriculumTermCfg(
+   #  func=mdp.event_curriculum,
+   #  params={
+   #    "event_name": "joint_frictionloss",
+   #    "stages": [
+   #      {"step": 0, "params": {"ranges": (1.0, 1.0)}},
+   #      {"step": 1600 * 24, "params": {"ranges": (0.9, 1.1)}},
+   #    ],
+   #  },
+   # ),
+   # "dr_joint_armature": CurriculumTermCfg(
+   #  func=mdp.event_curriculum,
+   #  params={
+   #    "event_name": "joint_armature",
+   #    "stages": [
+   #      {"step": 0, "params": {"ranges": (1.0, 1.0)}},
+   #      {"step": 1600 * 24, "params": {"ranges": (1.0, 1.05)}},
+   #    ],
+   #  },
+   # ),
+   # "dr_joint_damping": CurriculumTermCfg(
+   #  func=mdp.event_curriculum,
+   #  params={
+   #    "event_name": "joint_damping",
+   #    "stages": [
+   #      {"step": 0, "params": {"ranges": (1.0, 1.0)}},
+   #      {"step": 1600 * 24, "params": {"ranges": (0.95, 1.05)}},
+   #    ],
+   #  },
+   # ),
+   # "dr_actuator_gains": CurriculumTermCfg(
+   #  func=mdp.event_curriculum,
+   #  params={
+   #    "event_name": "actuator_gains",
+   #    "stages": [
+   #      {"step": 0, "params": {"kp_range": (1.0, 1.0), "kd_range": (1.0, 1.0)}},
+   #      {"step": 1600 * 24, "params": {"kp_range": (0.75, 1.25), "kd_range": (0.75, 1.25)}},
+   #    ],
+   #  },
+   # ),
+   # "dr_link_masses": CurriculumTermCfg(
+   #  func=mdp.event_curriculum,
+   #  params={
+   #    "event_name": "link_masses",
+   #    "stages": [
+   #      {"step": 0, "params": {"ranges": (1.0, 1.0)}},
+   #      {"step": 1600 * 24, "params": {"ranges": (0.9, 1.1)}},
+   #    ],
+   #  },
+   # ),
+   # "dr_torso_mass": CurriculumTermCfg(
+   #  func=mdp.event_curriculum,
+   #  params={
+   #    "event_name": "torso_mass",
+   #    "stages": [
+   #      {"step": 0, "params": {"ranges": (0.0, 0.0)}},
+   #      {"step": 1600 * 24, "params": {"ranges": (-0.5, 0.5)}},
+   #    ],
+   #  },
+   # ),
+   # "dr_link_com": CurriculumTermCfg(
+   #  func=mdp.event_curriculum,
+   #  params={
+   #    "event_name": "link_com",
+   #    "stages": [
+   #      {"step": 0, "params": {"ranges": {0: (0.0, 0.0), 1: (0.0, 0.0), 2: (0.0, 0.0)}}},
+   #      {"step": 1600 * 24, "params": {"ranges": {0: (-0.01, 0.01), 1: (-0.01, 0.01), 2: (-0.01, 0.01)}}},
+   #    ],
+   #  },
+   # ),
+   # "dr_base_com": CurriculumTermCfg(
+   #  func=mdp.event_curriculum,
+   #  params={
+   #    "event_name": "base_com",
+   #    "stages": [
+   #      {"step": 0, "params": {"ranges": {0: (0.0, 0.0), 1: (0.0, 0.0), 2: (0.0, 0.0)}}},
+   #      {"step": 1600 * 24, "params": {"ranges": {0: (-0.03, 0.03), 1: (-0.03, 0.03), 2: (-0.03, 0.03)}}},
+   #    ],
+   #  },
+   # ),
+   # "dr_encoder_bias": CurriculumTermCfg(
+   #  func=mdp.event_curriculum,
+   #  params={
+   #    "event_name": "encoder_bias",
+   #    "stages": [
+   #      {"step": 0, "params": {"bias_range": (0.0, 0.0)}},
+   #      {"step": 1600 * 24, "params": {"bias_range": (-0.05, 0.05)}},
+   #    ],
+   #  },
+   # ),
   }
 
   ##
