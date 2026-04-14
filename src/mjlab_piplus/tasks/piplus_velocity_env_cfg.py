@@ -8,6 +8,7 @@ from mjlab.managers.command_manager import CommandTermCfg
 from mjlab.managers.curriculum_manager import CurriculumTermCfg
 from mjlab.managers.event_manager import EventTermCfg
 from mjlab.managers.observation_manager import ObservationGroupCfg, ObservationTermCfg
+from mjlab.managers.metrics_manager import MetricsTermCfg
 from mjlab.managers.reward_manager import RewardTermCfg
 from mjlab.managers.scene_entity_config import SceneEntityCfg
 from mjlab.managers.termination_manager import TerminationTermCfg
@@ -25,6 +26,7 @@ from mjlab.scene import SceneCfg
 from mjlab.sim import MujocoCfg, SimulationCfg
 from mjlab.viewer import ViewerConfig
 from mjlab_piplus.robot.piplus_constants import get_piplus_robot_cfg
+from mjlab_piplus.tasks import mdp as pi_mdp
 
 from mjlab.tasks.velocity.velocity_env_cfg import make_velocity_env_cfg
 from mjlab.sensor import ContactMatch, ContactSensorCfg, TerrainHeightSensorCfg, ObjRef
@@ -299,12 +301,17 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
     "track_linear_velocity": RewardTermCfg(
       func=mdp.track_linear_velocity,
       weight=2.0,
-      params={"command_name": "twist", "std": math.sqrt(0.05)},
+      params={"command_name": "twist", "std": math.sqrt(0.25)},
+    ),
+    "track_linear_velocity_fine": RewardTermCfg(
+      func=mdp.track_linear_velocity,
+      weight=8.0,
+      params={"command_name": "twist", "std": math.sqrt(0.03)},
     ),
     "track_angular_velocity": RewardTermCfg(
-      func=mdp.track_angular_velocity,
-      weight=2.0,
-      params={"command_name": "twist", "std": math.sqrt(0.125)},
+      func=pi_mdp.track_angular_velocity_filtered,
+      weight=1.0,
+      params={"command_name": "twist", "std": 0.5, "tau": 0.3},
     ),
     "upright": RewardTermCfg(
       func=mdp.upright,
@@ -424,6 +431,24 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
       params={"asset_cfg": SceneEntityCfg("robot", joint_names=(".*",))},
     ),
   }
+  ##
+  # Metrics
+  ##
+  metrics = {
+    "yaw_tracking_error_filtered": MetricsTermCfg(
+      func=pi_mdp.yaw_tracking_error_filtered,
+    ),
+    "yaw_tracking_error_raw": MetricsTermCfg(
+      func=pi_mdp.yaw_tracking_error_raw,
+    ),
+    "torso_yaw_swing": MetricsTermCfg(
+      func=pi_mdp.torso_yaw_swing,
+    ),
+    "base_ang_vel_xy_l2": MetricsTermCfg(
+      func=pi_mdp.base_ang_vel_xy_l2,
+    ),
+  }
+
   ##
   # Terminations
   ##
@@ -634,6 +659,7 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
     curriculum = {}
     del events["push_robot"]
 
+
   ##
   # Assemble the config
   ##
@@ -644,6 +670,7 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
     commands=commands,
     events=events,
     rewards=rewards,
+    metrics=metrics,
     terminations=terminations,
     curriculum=curriculum,
     viewer=viewer,
