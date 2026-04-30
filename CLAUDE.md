@@ -24,6 +24,8 @@ uv run train Mjlab-Velocity-PiPlus --env.scene.num-envs 4096 --enable-nan-guard 
 # Play/evaluate a trained policy — launch as a background Task, pick a free GPU via nvidia-smi
 # Export CUDA_VISIBLE_DEVICES to a single GPU before launching.
 # Prefer unused GPUs; if all busy, pick one with low utilization and free memory.
+# When playing multiple runs, always run them SEQUENTIALLY — wait for each to
+# finish before starting the next, not in parallel.
 CUDA_VISIBLE_DEVICES=GPU uv run play Mjlab-Velocity-PiPlus --wandb-run-path jgueldenstein/mjlab_piplus/<id>
 
 # Sanity-check with dummy agents (no training needed)
@@ -45,8 +47,7 @@ uv run pyright     # thorough
 
 - `src/mjlab_piplus/robot/` — Robot definition: MuJoCo XML spec, actuator configs (PD gains, effort limits, delay), collision configs, and home keyframe pose.
 - `src/mjlab_piplus/tasks/` — Task registration and configs: environment config (observations, rewards, terminations, curriculum) and RL runner config (PPO hyperparameters).
-- `mjlab/` — Upstream mjlab framework (editable install). Contains the manager-based env API, sensors, MDP building blocks, and task infrastructure.
-- `rsl_rl/` — Upstream RSL-RL library (editable install). PPO implementation and runner.
+
 
 ### Task registration
 
@@ -78,6 +79,13 @@ The function `piplus_velocity_env_cfg(play=False)` builds a `ManagerBasedRlEnvCf
 ### RL config (`piplus_velocity_rl_cfg.py`)
 
 PPO with asymmetric actor-critic (actor/critic each 512-256-128 MLP, ELU activation). Logs to W&B project `mjlab_piplus`. 24 steps per env per rollout, up to 30 000 iterations, checkpoint every 50 iterations.
+
+## Editing conventions
+
+- All custom MDP terms (rewards, metrics, curriculums, etc.) go in
+  `src/mjlab_piplus/tasks/mdp/` and are wired into the env cfg via
+  `pi_mdp.<name>`. Do **not** edit `mjlab/` sources unless the user
+  explicitly says to.
 
 ## Code style
 
