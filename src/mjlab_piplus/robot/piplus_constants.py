@@ -3,10 +3,8 @@ from pathlib import Path
 import os
 import mujoco
 
-from mjlab.actuator import DelayedActuatorCfg, BuiltinPositionActuatorCfg
+from mjlab.actuator import BuiltinPositionActuatorCfg
 from mjlab.entity import EntityArticulationInfoCfg, EntityCfg
-from mjlab.utils.actuator import ElectricActuator
-from mjlab.utils.os import update_assets
 from mjlab.utils.spec_config import CollisionCfg
 ##
 # MJCF and assets.
@@ -16,23 +14,18 @@ PIPLUS_XML: Path = (
   Path(os.path.dirname(__file__)) / "piplus/piplus.xml"
 )
 
-def get_assets(meshdir: str) -> dict[str, bytes]:
-  assets: dict[str, bytes] = {}
-  update_assets(assets, PIPLUS_XML.parent / "assets", meshdir)
-  return assets
-
 def get_spec() -> mujoco.MjSpec:
   spec = mujoco.MjSpec.from_file(str(PIPLUS_XML))
-  spec.assets = get_assets(spec.meshdir)
   return spec
 
 EFFORT_LIMIT_3536 = 2.5
 EFFORT_LIMIT_4438 = 10.0
 EFFORT_LIMIT_5036 = 20.0
 
-ARMATURE_4438 = 0.008419
+ARMATURE_4438 = 0.008419 # TODO calculate more precisely
 ARMATURE_5036 = 0.044277
 
+# P gain for position actuators
 STIFFNESS_3536 = 6
 STIFFNESS_4438 = 6
 STIFFNESS_5036_HIP_PITCH = 110
@@ -42,6 +35,7 @@ STIFFNESS_5036_CALF = 110
 STIFFNESS_5036_ANKLE_PITCH = 210
 STIFFNESS_5036_ANKLE_ROLL = 110
 
+# D gain for position actuators, not joint damping = friction/velocity = viscous friction
 DAMPING_3536 = 0.6
 DAMPING_4438 = 0.6
 DAMPING_5036_HIP_PITCH = 1.1
@@ -51,7 +45,11 @@ DAMPING_5036_CALF = 1.1
 DAMPING_5036_ANKLE_PITCH = 1.1
 DAMPING_5036_ANKLE_ROLL = 1.1
 
-FRICTIONLOSS = 0.4
+# dry friction
+FRICTIONLOSS = 1.0
+
+ACTUATOR_LAG_MIN = 1
+ACTUATOR_LAG_MAX = 1
 
 # Motors used in Head
 ACTUATOR_3536 = BuiltinPositionActuatorCfg(
@@ -63,12 +61,8 @@ ACTUATOR_3536 = BuiltinPositionActuatorCfg(
   damping=DAMPING_3536,
   effort_limit=EFFORT_LIMIT_3536,
   frictionloss=FRICTIONLOSS,
-)
-DELAYED_ACTUATOR_3536 = DelayedActuatorCfg(
-  base_cfg=ACTUATOR_3536,
-  delay_target="position",
-  delay_min_lag=2,
-  delay_max_lag=3,
+  delay_min_lag=ACTUATOR_LAG_MIN,
+  delay_max_lag=ACTUATOR_LAG_MAX,
 )
 
 # Motors used in Arms
@@ -84,12 +78,8 @@ ACTUATOR_4438 = BuiltinPositionActuatorCfg(
   armature=ARMATURE_4438,
   effort_limit=EFFORT_LIMIT_4438,
   frictionloss=FRICTIONLOSS,
-)
-DELAYED_ACTUATOR_4438 = DelayedActuatorCfg(
-  base_cfg=ACTUATOR_4438,
-  delay_target="position",
-  delay_min_lag=2,
-  delay_max_lag=3,
+  delay_min_lag=ACTUATOR_LAG_MIN,
+  delay_max_lag=ACTUATOR_LAG_MAX,
 )
 
 # Motors used in Legs
@@ -100,6 +90,8 @@ ACTUATOR_5036_HIP_PITCH = BuiltinPositionActuatorCfg(
   armature=ARMATURE_5036,
   effort_limit=EFFORT_LIMIT_5036,
   frictionloss=FRICTIONLOSS,
+  delay_min_lag=ACTUATOR_LAG_MIN,
+  delay_max_lag=ACTUATOR_LAG_MAX,
 )
 ACTUATOR_5036_HIP_ROLL = BuiltinPositionActuatorCfg(
   target_names_expr=(".*_hip_roll_joint",),
@@ -108,6 +100,8 @@ ACTUATOR_5036_HIP_ROLL = BuiltinPositionActuatorCfg(
   armature=ARMATURE_5036,
   effort_limit=EFFORT_LIMIT_5036,
   frictionloss=FRICTIONLOSS,
+  delay_min_lag=ACTUATOR_LAG_MIN,
+  delay_max_lag=ACTUATOR_LAG_MAX,
 )
 ACTUATOR_5036_THIGH = BuiltinPositionActuatorCfg(
   target_names_expr=(".*_thigh_joint",),
@@ -116,6 +110,8 @@ ACTUATOR_5036_THIGH = BuiltinPositionActuatorCfg(
   armature=ARMATURE_5036,
   effort_limit=EFFORT_LIMIT_5036,
   frictionloss=FRICTIONLOSS,
+  delay_min_lag=ACTUATOR_LAG_MIN,
+  delay_max_lag=ACTUATOR_LAG_MAX,
 )
 ACTUATOR_5036_CALF = BuiltinPositionActuatorCfg(
   target_names_expr=(".*_calf_joint",),
@@ -124,6 +120,8 @@ ACTUATOR_5036_CALF = BuiltinPositionActuatorCfg(
   armature=ARMATURE_5036,
   effort_limit=EFFORT_LIMIT_5036,
   frictionloss=FRICTIONLOSS,
+  delay_min_lag=ACTUATOR_LAG_MIN,
+  delay_max_lag=ACTUATOR_LAG_MAX,
 )
 ACTUATOR_5036_ANKLE_PITCH = BuiltinPositionActuatorCfg(
   target_names_expr=(".*_ankle_pitch_joint",),
@@ -132,6 +130,8 @@ ACTUATOR_5036_ANKLE_PITCH = BuiltinPositionActuatorCfg(
   armature=ARMATURE_5036,
   effort_limit=EFFORT_LIMIT_5036,
   frictionloss=FRICTIONLOSS,
+  delay_min_lag=ACTUATOR_LAG_MIN,
+  delay_max_lag=ACTUATOR_LAG_MAX,
 )
 ACTUATOR_5036_ANKLE_ROLL = BuiltinPositionActuatorCfg(
   target_names_expr=(".*_ankle_roll_joint",),
@@ -140,43 +140,8 @@ ACTUATOR_5036_ANKLE_ROLL = BuiltinPositionActuatorCfg(
   armature=ARMATURE_5036,
   effort_limit=EFFORT_LIMIT_5036,
   frictionloss=FRICTIONLOSS,
-)
-
-DELAYED_ACTUATOR_5036_HIP_PITCH = DelayedActuatorCfg(
-  base_cfg=ACTUATOR_5036_HIP_PITCH,
-  delay_target="position",
-  delay_min_lag=2,
-  delay_max_lag=3,
-)
-DELAYED_ACTUATOR_5036_HIP_ROLL = DelayedActuatorCfg(
-  base_cfg=ACTUATOR_5036_HIP_ROLL,
-  delay_target="position",
-  delay_min_lag=2,
-  delay_max_lag=3,
-)
-DELAYED_ACTUATOR_5036_THIGH = DelayedActuatorCfg(
-  base_cfg=ACTUATOR_5036_THIGH,
-  delay_target="position",
-  delay_min_lag=2,
-  delay_max_lag=3,
-)
-DELAYED_ACTUATOR_5036_CALF = DelayedActuatorCfg(
-  base_cfg=ACTUATOR_5036_CALF,
-  delay_target="position",
-  delay_min_lag=2,
-  delay_max_lag=3,
-)
-DELAYED_ACTUATOR_5036_ANKLE_PITCH = DelayedActuatorCfg(
-  base_cfg=ACTUATOR_5036_ANKLE_PITCH,
-  delay_target="position",
-  delay_min_lag=2,
-  delay_max_lag=3,
-)
-DELAYED_ACTUATOR_5036_ANKLE_ROLL = DelayedActuatorCfg(
-  base_cfg=ACTUATOR_5036_ANKLE_ROLL,
-  delay_target="position",
-  delay_min_lag=2,
-  delay_max_lag=3,
+  delay_min_lag=ACTUATOR_LAG_MIN,
+  delay_max_lag=ACTUATOR_LAG_MAX,
 )
 
 
