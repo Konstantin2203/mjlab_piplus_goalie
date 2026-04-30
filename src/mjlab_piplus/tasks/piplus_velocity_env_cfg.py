@@ -314,10 +314,10 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
       params={"command_name": "twist", "std": 0.5, "tau": 0.3},
     ),
     "upright": RewardTermCfg(
-      func=mdp.upright,
+      func=pi_mdp.upright_relaxed,
       weight=1.0,
       params={
-        "std": math.sqrt(0.2),
+        "std": 0.025,
         "asset_cfg": SceneEntityCfg("robot", body_names=("base_link",)),
       },
     ),
@@ -446,6 +446,10 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
     ),
     "base_ang_vel_xy_l2": MetricsTermCfg(
       func=pi_mdp.base_ang_vel_xy_l2,
+    ),
+    "step_frequency": MetricsTermCfg(
+      func=pi_mdp.step_frequency,
+      params={"sensor_name": "feet_ground_contact"},
     ),
   }
 

@@ -6,6 +6,7 @@ import torch
 
 from mjlab.entity import Entity
 from mjlab.managers.scene_entity_config import SceneEntityCfg
+from mjlab.sensor.contact_sensor import ContactSensor
 
 if TYPE_CHECKING:
   from mjlab.envs import ManagerBasedRlEnv
@@ -42,6 +43,27 @@ def torso_yaw_swing(
   component the filter is absorbing. High values suggest torso swinging."""
   r = _get_filtered_reward(env, reward_name)
   return torch.abs(r._last_yaw_raw - r._yaw_ema)
+
+
+def step_frequency(
+  env: ManagerBasedRlEnv,
+  sensor_name: str = "feet_ground_contact",
+) -> torch.Tensor:
+  """Steps per second, summed across feet.
+
+  For each foot, the most recent completed stride takes
+  ``last_air_time + last_contact_time`` seconds; one strike per stride.
+  Summing 1/stride over feet gives total foot-strikes per second.
+  Zero before any stride has completed.
+  """
+  sensor: ContactSensor = env.scene[sensor_name]
+  assert sensor.data.last_air_time is not None
+  assert sensor.data.last_contact_time is not None
+  stride = sensor.data.last_air_time + sensor.data.last_contact_time
+  freq_per_foot = torch.where(
+    stride > 0.0, 1.0 / stride.clamp(min=1e-6), torch.zeros_like(stride)
+  )
+  return freq_per_foot.sum(dim=-1)
 
 
 def base_ang_vel_xy_l2(
