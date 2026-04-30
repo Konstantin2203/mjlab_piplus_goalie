@@ -10,7 +10,7 @@
       <!-- damping = 20Nm / (75rpm - 10 rpm (in rad/s)) -->
     </default>
     <default class="pi_joint_head">
-      <joint damping="048" actuatorfrcrange="-2.5 2.5" />
+      <joint damping="0.48" actuatorfrcrange="-2.5 2.5" />
       <!-- damping = 2.5Nm / (60rpm - 10 rpm (in rad/s))-->
     </default>
     <default class="collision">
