@@ -137,11 +137,12 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
     "twist": UniformVelocityCommandCfg(
     entity_name="robot",
     resampling_time_range=(3.0, 8.0),
-    rel_standing_envs=0.1,
-    rel_heading_envs=0.3,
+    debug_vis=True,
     heading_command=False,
     heading_control_stiffness=0.0,
-    debug_vis=True,
+    rel_standing_envs=0.1,
+    rel_heading_envs=0.3,
+    rel_forward_envs=0.15,
     ranges=UniformVelocityCommandCfg.Ranges(
       lin_vel_x=(-1.0, 1.0),
       lin_vel_y=(-1.0, 1.0),
@@ -183,9 +184,9 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
       interval_range_s=(1.0, 3.0),
       params={
         "velocity_range": {
-        "x": (-0.25, 0.25),
-        "y": (-0.25, 0.25),
-        "z": (-0.4, 0.4),
+        "x": (-0.1, 0.1),
+        "y": (-0.1, 0.1),
+        "z": (-0.2, 0.2),
         "roll": (-0.52, 0.52),
         "pitch": (-0.52, 0.52),
         "yaw": (-0.78, 0.78),
@@ -305,7 +306,7 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
     ),
     "track_linear_velocity_fine": RewardTermCfg(
       func=mdp.track_linear_velocity,
-      weight=8.0,
+      weight=2.0,
       params={"command_name": "twist", "std": math.sqrt(0.03)},
     ),
     "track_angular_velocity": RewardTermCfg(
@@ -370,7 +371,7 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
     "action_rate_l2": RewardTermCfg(func=mdp.action_rate_l2, weight=-0.1),
     "air_time": RewardTermCfg(
       func=mdp.feet_air_time,
-      weight=0.25,
+      weight=1.25,
       params={
         "sensor_name": "feet_ground_contact",
         "threshold_min": 0.15,
@@ -381,7 +382,7 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
     ),
     "foot_clearance": RewardTermCfg(
       func=mdp.feet_clearance,
-      weight=-2.0,
+      weight=-20.0,
       params={
         "target_height": 0.04,
         "height_sensor_name": "foot_height_scan",
@@ -392,7 +393,7 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
     ),
     "foot_swing_height": RewardTermCfg(
       func=mdp.feet_swing_height,
-      weight=-0.25,
+      weight=-2.5,
       params={
         "sensor_name": "feet_ground_contact",
         "height_sensor_name": "foot_height_scan",
@@ -403,7 +404,7 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
     ),
     "foot_slip": RewardTermCfg(
       func=mdp.feet_slip,
-      weight=-0.1,
+      weight=0.0,
       params={
         "sensor_name": "feet_ground_contact",
         "command_name": "twist",
@@ -413,7 +414,7 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
     ),
     "soft_landing": RewardTermCfg(
       func=mdp.soft_landing,
-      weight=-1e-5,
+      weight=0.0,
       params={
         "sensor_name": "feet_ground_contact",
         "command_name": "twist",
@@ -422,12 +423,12 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
     ),
     "torque_penalty": RewardTermCfg(
       func=mdp.joint_torques_l2,
-      weight=-1e-4,
+      weight=-1e-3,
       params={"asset_cfg": SceneEntityCfg("robot", actuator_names=(".*",))},
     ),
     "joint_vel_l2": RewardTermCfg(
       func=mdp.joint_vel_l2,
-      weight=-1e-3,
+      weight=-5e-2,
       params={"asset_cfg": SceneEntityCfg("robot", joint_names=(".*",))},
     ),
   }
@@ -491,8 +492,8 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
       "reward_name": "air_time",
       "stages": [
         {"step": 0, "weight": 0.0},
-        {"step": 200 * 24, "weight": 0.25},
-        {"step": 600 * 24, "weight": 0.5},
+        {"step": 200 * 24, "weight": 1.25},
+        {"step": 600 * 24, "weight": 2.5},
       ],
     },
    ),
