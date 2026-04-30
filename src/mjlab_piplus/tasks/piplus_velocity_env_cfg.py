@@ -431,6 +431,11 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
       weight=-5e-2,
       params={"asset_cfg": SceneEntityCfg("robot", joint_names=(".*",))},
     ),
+    "self_collisions": RewardTermCfg(
+      func=mdp.self_collision_cost,
+      weight=-1.0,
+      params={"sensor_name": "self_collision", "force_threshold": 2.0}, # we dont want even soft collisions
+    ),
   }
   ##
   # Metrics
@@ -615,14 +620,16 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
     reduce="netforce",
     num_slots=1,
     track_air_time=True,
+    history_length=4,
   )
   self_collision_cfg = ContactSensorCfg(
     name="self_collision",
     primary=ContactMatch(mode="subtree", pattern="base_link", entity="robot"),
     secondary=ContactMatch(mode="subtree", pattern="base_link", entity="robot"),
-    fields=("found",),
+    fields=("found", "force"),
     reduce="none",
     num_slots=1,
+    history_length=4,
   )
   scene = SceneCfg(
     entities={"robot": get_piplus_robot_cfg()},
