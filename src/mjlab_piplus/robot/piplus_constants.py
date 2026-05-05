@@ -149,11 +149,14 @@ ACTUATOR_5036_ANKLE_ROLL = BuiltinPositionActuatorCfg(
 HOME_KEYFRAME = EntityCfg.InitialStateCfg(
   pos=(0, 0, 0.39),
   joint_pos={
-    ".*_hip_pitch_joint": -0.25,
+    "r_hip_pitch_joint": 0.25,    # axis flipped
+    "l_hip_pitch_joint": -0.25,
     ".*_hip_roll_joint": 0.0,
     ".*_thigh_joint": 0.0,
-    ".*_calf_joint": 0.65,
-    ".*_ankle_pitch_joint": -0.4,
+    "r_calf_joint": 0.65,
+    "l_calf_joint": -0.65,        # axis flipped
+    "r_ankle_pitch_joint": 0.4,   # axis flipped
+    "l_ankle_pitch_joint": -0.4,
     ".*_ankle_roll_joint": 0.0,
     ".*_shoulder_roll_joint": 0.0,
     ".*_shoulder_pitch_joint": 0.0,
