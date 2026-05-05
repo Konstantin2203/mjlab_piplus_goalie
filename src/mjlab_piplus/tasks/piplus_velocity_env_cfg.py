@@ -670,6 +670,14 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
   if play:
     curriculum = {}
     del events["push_robot"]
+    metrics["foot_air_time"] = MetricsTermCfg(
+      func=pi_mdp.current_air_time,
+      params={"sensor_name": "feet_ground_contact"},
+    )
+    metrics["last_air_time"] = MetricsTermCfg(
+      func=pi_mdp.last_air_time,
+      params={"sensor_name": "feet_ground_contact"},
+    )
 
 
   ##

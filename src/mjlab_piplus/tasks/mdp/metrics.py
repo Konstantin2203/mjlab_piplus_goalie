@@ -66,6 +66,26 @@ def step_frequency(
   return freq_per_foot.sum(dim=-1)
 
 
+def current_air_time(
+  env: ManagerBasedRlEnv,
+  sensor_name: str = "feet_ground_contact",
+) -> torch.Tensor:
+  """Mean ongoing air time across feet and envs (seconds)."""
+  sensor: ContactSensor = env.scene[sensor_name]
+  assert sensor.data.current_air_time is not None
+  return sensor.data.current_air_time.mean(dim=-1)
+
+
+def last_air_time(
+  env: ManagerBasedRlEnv,
+  sensor_name: str = "feet_ground_contact",
+) -> torch.Tensor:
+  """Mean most recently completed air time across feet and envs (seconds)."""
+  sensor: ContactSensor = env.scene[sensor_name]
+  assert sensor.data.last_air_time is not None
+  return sensor.data.last_air_time.mean(dim=-1)
+
+
 def base_ang_vel_xy_l2(
   env: ManagerBasedRlEnv,
   asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
