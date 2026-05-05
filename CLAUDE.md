@@ -11,7 +11,7 @@ This is a [mjlab](https://github.com/mujocolab/mjlab) project for training RL po
 Always use `uv run`, not `python` directly.
 
 ```sh
-# Train — launch as a background Task (TaskCreate), auto-select a free GPU via nvidia-smi
+# Train — launch as a background process via Bash run_in_background=true (NOT tmux), auto-select a free GPU via nvidia-smi
 # After launch, poll wandb/ dir for new run-YYYYMMDD_HHMMSS-* directories
 # (verify timestamp matches current time, as runs take time to initialize).
 # Inside the dir, find the run-<id>.wandb file — the ID is in the filename.
@@ -21,7 +21,7 @@ Always use `uv run`, not `python` directly.
 # <name>: <id>: <short summary>
 uv run train Mjlab-Velocity-PiPlus --env.scene.num-envs 4096 --enable-nan-guard True --gpu-ids '[GPU]'
 
-# Play/evaluate a trained policy — launch as a background Task, pick a free GPU via nvidia-smi
+# Play/evaluate a trained policy — launch as a background process via Bash run_in_background=true (NOT tmux), pick a free GPU via nvidia-smi
 # Export CUDA_VISIBLE_DEVICES to a single GPU before launching.
 # Prefer unused GPUs; if all busy, pick one with low utilization and free memory.
 # When playing multiple runs, always run them SEQUENTIALLY — wait for each to
