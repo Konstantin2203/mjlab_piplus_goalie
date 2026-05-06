@@ -310,9 +310,9 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
       params={"command_name": "twist", "std": math.sqrt(0.03)},
     ),
     "track_angular_velocity": RewardTermCfg(
-      func=pi_mdp.track_angular_velocity_filtered,
-      weight=1.0,
-      params={"command_name": "twist", "std": 0.5, "tau": 0.3},
+      func=mdp.track_angular_velocity,
+      weight=2.0,
+      params={"command_name": "twist", "std": math.sqrt(0.5)},
     ),
     "upright": RewardTermCfg(
       func=pi_mdp.upright_relaxed,
