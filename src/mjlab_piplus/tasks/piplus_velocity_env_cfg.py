@@ -314,6 +314,11 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
       weight=2.0,
       params={"command_name": "twist", "std": math.sqrt(0.5)},
     ),
+    "track_angular_velocity_fine": RewardTermCfg(
+      func=mdp.track_angular_velocity,
+      weight=2.0,
+      params={"command_name": "twist", "std": math.sqrt(0.05)},
+    ),
     "upright": RewardTermCfg(
       func=pi_mdp.upright_relaxed,
       weight=1.0,
@@ -441,15 +446,15 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
   # Metrics
   ##
   metrics = {
-    "yaw_tracking_error_filtered": MetricsTermCfg(
-      func=pi_mdp.yaw_tracking_error_filtered,
-    ),
-    "yaw_tracking_error_raw": MetricsTermCfg(
-      func=pi_mdp.yaw_tracking_error_raw,
-    ),
-    "torso_yaw_swing": MetricsTermCfg(
-      func=pi_mdp.torso_yaw_swing,
-    ),
+    #"yaw_tracking_error_filtered": MetricsTermCfg(
+    #  func=pi_mdp.yaw_tracking_error_filtered,
+    #),
+    #"yaw_tracking_error_raw": MetricsTermCfg(
+    #  func=pi_mdp.yaw_tracking_error_raw,
+    #),
+    #"torso_yaw_swing": MetricsTermCfg(
+    #  func=pi_mdp.torso_yaw_swing,
+    #),
     "base_ang_vel_xy_l2": MetricsTermCfg(
       func=pi_mdp.base_ang_vel_xy_l2,
     ),
