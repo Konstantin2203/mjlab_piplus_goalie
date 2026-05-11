@@ -5,6 +5,7 @@ from mjlab_piplus.tasks.mdp.curriculums import (
 from mjlab_piplus.tasks.mdp.metrics import (
   base_ang_vel_xy_l2,
   current_air_time,
+  foot_contact_force,
   last_air_time,
   step_frequency,
   torso_yaw_swing,
@@ -26,6 +27,7 @@ __all__ = [
   "torso_yaw_swing",
   "base_ang_vel_xy_l2",
   "current_air_time",
+  "foot_contact_force",
   "last_air_time",
   "step_frequency",
 ]

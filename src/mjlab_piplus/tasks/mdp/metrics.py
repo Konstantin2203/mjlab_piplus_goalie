@@ -93,3 +93,14 @@ def base_ang_vel_xy_l2(
   """L2 magnitude of base roll/pitch rates — catches torso wobble."""
   asset: Entity = env.scene[asset_cfg.name]
   return torch.sum(torch.square(asset.data.root_link_ang_vel_b[:, :2]), dim=1)
+
+
+def foot_contact_force(
+  env: ManagerBasedRlEnv,
+  sensor_name: str = "feet_ground_contact",
+) -> torch.Tensor:
+  """Mean contact force magnitude across feet (N), averaged over feet."""
+  sensor: ContactSensor = env.scene[sensor_name]
+  assert sensor.data.force is not None
+  # force: [B, N, 3] global frame (netforce reduce)
+  return torch.linalg.norm(sensor.data.force, dim=-1).mean(dim=-1)

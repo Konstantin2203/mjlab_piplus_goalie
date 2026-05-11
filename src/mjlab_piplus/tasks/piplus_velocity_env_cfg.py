@@ -462,6 +462,10 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
       func=pi_mdp.step_frequency,
       params={"sensor_name": "feet_ground_contact"},
     ),
+    "foot_contact_force": MetricsTermCfg(
+      func=pi_mdp.foot_contact_force,
+      params={"sensor_name": "feet_ground_contact"},
+    ),
   }
 
   ##
