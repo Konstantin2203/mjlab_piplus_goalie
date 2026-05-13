@@ -1,9 +1,23 @@
 
+from dataclasses import dataclass, field
+from typing import Any
+
 from mjlab.rl import (
   RslRlModelCfg,
   RslRlOnPolicyRunnerCfg,
   RslRlPpoAlgorithmCfg,
 )
+from mjlab_piplus.tasks.mdp import PiPlusSymmetry
+
+
+@dataclass
+class PiPlusPpoAlgorithmCfg(RslRlPpoAlgorithmCfg):
+  symmetry_cfg: dict[str, Any] | None = field(default_factory=lambda: {
+    "data_augmentation_func": PiPlusSymmetry(),
+    "use_mirror_loss": True,
+    "mirror_loss_coeff": 0.1,
+  })
+
 
 def get_piplus_velocity_rl_cfg() -> RslRlOnPolicyRunnerCfg:
   return RslRlOnPolicyRunnerCfg(
@@ -22,7 +36,7 @@ def get_piplus_velocity_rl_cfg() -> RslRlOnPolicyRunnerCfg:
       activation="elu",
       obs_normalization=True,
     ),
-    algorithm=RslRlPpoAlgorithmCfg(
+    algorithm=PiPlusPpoAlgorithmCfg(
       value_loss_coef=1.0,
       use_clipped_value_loss=True,
       clip_param=0.2,
