@@ -349,6 +349,58 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
       weight=-1.0,
       params={"sensor_name": "self_collision", "force_threshold": 2.0}, # we dont want even soft collisions
     ),
+    "air_time": RewardTermCfg(
+      func=mdp.feet_air_time,
+      weight=1.25,
+      params={
+        "sensor_name": "feet_ground_contact",
+        "threshold_min": 0.15,
+        "threshold_max": 0.5,
+        "command_name": "twist",
+        "command_threshold": 0.05,
+      },
+    ),
+    "foot_clearance": RewardTermCfg(
+      func=mdp.feet_clearance,
+      weight=-20.0,
+      params={
+        "target_height": 0.04,
+        "height_sensor_name": "foot_height_scan",
+        "command_name": "twist",
+        "command_threshold": 0.05,
+        "asset_cfg": SceneEntityCfg("robot", site_names=foot_sites),
+      },
+    ),
+    "foot_swing_height": RewardTermCfg(
+      func=mdp.feet_swing_height,
+      weight=-2.5,
+      params={
+        "sensor_name": "feet_ground_contact",
+        "height_sensor_name": "foot_height_scan",
+        "target_height": 0.04,
+        "command_name": "twist",
+        "command_threshold": 0.05,
+      },
+    ),
+    "foot_slip": RewardTermCfg(
+      func=mdp.feet_slip,
+      weight=0.0,
+      params={
+        "sensor_name": "feet_ground_contact",
+        "command_name": "twist",
+        "command_threshold": 0.05,
+        "asset_cfg": SceneEntityCfg("robot", site_names=foot_sites),
+      },
+    ),
+    "soft_landing": RewardTermCfg(
+      func=mdp.soft_landing,
+      weight=0.0,
+      params={
+        "sensor_name": "feet_ground_contact",
+        "command_name": "twist",
+        "command_threshold": 0.05,
+      },
+    ),
   }
   ##
   # Metrics
