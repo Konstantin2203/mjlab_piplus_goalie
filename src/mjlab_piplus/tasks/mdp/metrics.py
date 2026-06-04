@@ -95,6 +95,17 @@ def base_ang_vel_xy_l2(
   return torch.sum(torch.square(asset.data.root_link_ang_vel_b[:, :2]), dim=1)
 
 
+def joint_pos_deviation(
+  env: ManagerBasedRlEnv,
+  asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+  """Mean absolute deviation from default joint position, for the selected joint(s)."""
+  asset: Entity = env.scene[asset_cfg.name]
+  jnt_ids = asset_cfg.joint_ids
+  deviation = (asset.data.joint_pos[:, jnt_ids] - asset.data.default_joint_pos[:, jnt_ids]).abs()
+  return deviation.mean(dim=-1)
+
+
 def foot_contact_force(
   env: ManagerBasedRlEnv,
   sensor_name: str = "feet_ground_contact",

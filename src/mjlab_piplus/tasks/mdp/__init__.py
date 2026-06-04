@@ -6,6 +6,7 @@ from mjlab_piplus.tasks.mdp.metrics import (
   base_ang_vel_xy_l2,
   current_air_time,
   foot_contact_force,
+  joint_pos_deviation,
   last_air_time,
   step_frequency,
   torso_yaw_swing,
@@ -15,6 +16,7 @@ from mjlab_piplus.tasks.mdp.metrics import (
 from mjlab_piplus.tasks.mdp.rewards import (
   track_angular_velocity_filtered,
   upright_relaxed,
+  alive,
 )
 
 __all__ = [
@@ -22,12 +24,14 @@ __all__ = [
   "event_curriculum",
   "track_angular_velocity_filtered",
   "upright_relaxed",
+  "alive",
   "yaw_tracking_error_filtered",
   "yaw_tracking_error_raw",
   "torso_yaw_swing",
   "base_ang_vel_xy_l2",
   "current_air_time",
   "foot_contact_force",
+  "joint_pos_deviation",
   "last_air_time",
   "step_frequency",
 ]

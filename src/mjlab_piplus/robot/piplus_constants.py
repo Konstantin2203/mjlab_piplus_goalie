@@ -22,25 +22,27 @@ EFFORT_LIMIT_3536 = 2.5
 EFFORT_LIMIT_4438 = 10.0
 EFFORT_LIMIT_5036 = 20.0
 
-ARMATURE_4438 = 0.008419 # TODO calculate more precisely
-ARMATURE_5036 = 0.044277
+# rotor inertia * gear ratio^2 + reducer inertia
+# 9.12 * 1e-6 * 38**2 + 0.03
+ARMATURE_4438 = 0.04316928
+# 10.1568 * 1e-6 * 36**2 + 0.044
+ARMATURE_5036 = 0.0571632128
 
-P_SCALE = 0.5
 # P gain for position actuators
 STIFFNESS_3536 = 6
 STIFFNESS_4438 = 6
-STIFFNESS_5036_HIP_PITCH = 110*P_SCALE
-STIFFNESS_5036_HIP_ROLL = 110*P_SCALE
-STIFFNESS_5036_THIGH = 110*P_SCALE
-STIFFNESS_5036_CALF = 110*P_SCALE
-STIFFNESS_5036_ANKLE_PITCH = 110*P_SCALE
-STIFFNESS_5036_ANKLE_ROLL = 110*P_SCALE
+STIFFNESS_5036_HIP_PITCH = 30
+STIFFNESS_5036_HIP_ROLL = 30
+STIFFNESS_5036_THIGH = 30
+STIFFNESS_5036_CALF = 30
+STIFFNESS_5036_ANKLE_PITCH = 30
+STIFFNESS_5036_ANKLE_ROLL = 30
 
 # D gain for position actuators, not joint damping = friction/velocity = viscous friction
 DAMPING_3536 = 0.6
 DAMPING_4438 = 0.6
 DAMPING_5036_HIP_PITCH = 1.1
-DAMPING_5036_HIP_ROLL = 1.4
+DAMPING_5036_HIP_ROLL = 1.1
 DAMPING_5036_THIGH = 1.1
 DAMPING_5036_CALF = 1.1
 DAMPING_5036_ANKLE_PITCH = 1.1
@@ -149,17 +151,19 @@ ACTUATOR_5036_ANKLE_ROLL = BuiltinPositionActuatorCfg(
 HOME_KEYFRAME = EntityCfg.InitialStateCfg(
   pos=(0, 0, 0.39),
   joint_pos={
-    "r_hip_pitch_joint": 0.25,    # axis flipped
-    "l_hip_pitch_joint": -0.25,
+    "r_hip_pitch_joint": 0.6,    # axis flipped
+    "l_hip_pitch_joint": -0.6,
     ".*_hip_roll_joint": 0.0,
     ".*_thigh_joint": 0.0,
-    "r_calf_joint": 0.65,
-    "l_calf_joint": -0.65,        # axis flipped
-    "r_ankle_pitch_joint": 0.4,   # axis flipped
-    "l_ankle_pitch_joint": -0.4,
+    "r_calf_joint": 1.2,
+    "l_calf_joint": -1.2,        # axis flipped
+    "r_ankle_pitch_joint": 0.6,   # axis flipped
+    "l_ankle_pitch_joint": -0.6,
     ".*_ankle_roll_joint": 0.0,
-    ".*_shoulder_roll_joint": 0.0,
-    ".*_shoulder_pitch_joint": 0.0,
+    "r_shoulder_roll_joint": -1.5708,
+    "l_shoulder_roll_joint": 1.5708,
+    "r_shoulder_pitch_joint": -1.5708,
+    "l_shoulder_pitch_joint": 1.5708,
     ".*_upper_arm_joint": 0.0,
     ".*_elbow_joint": 0.0,
   },

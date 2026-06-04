@@ -90,3 +90,9 @@ class upright_relaxed:
 
   def reset(self, env_ids: torch.Tensor) -> None:
     del env_ids
+
+def alive(
+  env: ManagerBasedRlEnv,
+  asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+  return ~env.termination_manager.terminated
