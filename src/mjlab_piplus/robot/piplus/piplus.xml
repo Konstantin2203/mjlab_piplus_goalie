@@ -2,16 +2,26 @@
   <compiler angle="radian" meshdir="./meshes/"/>
   <default>
     <default class="pi_joint_arm">
-      <joint damping="0.66" actuatorfrcrange="-10 10"/>
+      <joint damping="0.66" actuatorfrcrange="-10 10" armature="0.01317" frictionloss="0.2"/>
       <!-- damping = 10Nm / (155rpm - 10 rpm (in rad/s)) -->
     </default>
     <default class="pi_joint_leg">
-      <joint damping="2.94" actuatorfrcrange="-20 20"/>
+      <joint damping="2.94" actuatorfrcrange="-20 20" armature="0.01316" frictionloss="0.2"/>
       <!-- damping = 20Nm / (75rpm - 10 rpm (in rad/s)) -->
     </default>
     <default class="pi_joint_head">
-      <joint damping="0.48" actuatorfrcrange="-2.5 2.5" />
+      <joint damping="0.48" actuatorfrcrange="-2.5 2.5" armature="0.00249" frictionloss="0.1"/>
       <!-- damping = 2.5Nm / (60rpm - 10 rpm (in rad/s))-->
+    </default>
+    <default class="pi_actuator_arm">
+      <!-- ctrllimited is false because policies should be able to set values outside the ranges to reach torques required -->
+      <position kp="6" kv="0.6" forcerange="-10 10" ctrllimited="false"/>
+    </default>
+    <default class="pi_actuator_leg">
+      <position kp="30" kv="1.1" forcerange="-20 20" ctrllimited="false"/>
+    </default>
+    <default class="pi_actuator_head">
+      <position kp="6" kv="0.6" forcerange="-2.5 2.5" ctrllimited="false"/>
     </default>
     <default class="collision">
       <geom group="3" contype="1" conaffinity="1" />
@@ -132,12 +142,12 @@
         </body>
         <body name="head_yaw_link" pos="0.014 -0.00026667 0.1981">
           <inertial pos="6.097e-05 0.00133898 0.0240816" quat="0.998747 -0.0440354 -0.0231093 -0.00560078" mass="0.209663" diaginertia="5.60112e-05 5.44082e-05 5.07706e-05"/>
-          <!-- <joint name="head_yaw_joint" class="pi_joint_head" pos="0 0 0" axis="0 0 1" range="-1.43 1.43"/> -->
+          <joint name="head_yaw_joint" class="pi_joint_head" pos="0 0 0" axis="0 0 1" range="-1.43 1.43"/>
           <geom type="mesh" class="visual" rgba="0.752941 0.752941 0.752941 1" mesh="head_yaw_link"/>
           <geom name="head_yaw_link_collision0" class="collision" pos="0 0 0.0195" type="box" size="0.0175 0.02 0.0175" />
           <body name="head_pitch_link" pos="0 0 0.0275">
             <inertial pos="0.0266546 -0.00167129 0.0555251" quat="0.453472 0.464811 -0.534731 0.540719" mass="0.33297" diaginertia="0.00102166 0.000807505 0.000557328"/>
-            <!-- <joint name="head_pitch_joint" class="pi_joint_head" pos="0 0 0" axis="0 1 0" range="-1.23 1.01"/> -->
+            <joint name="head_pitch_joint" class="pi_joint_head" pos="0 0 0" axis="0 1 0" range="-1.23 1.01"/>
             <geom type="mesh" class="visual" rgba="0.752941 0.752941 0.752941 1" mesh="head_pitch_link"/>
             <geom name="head_pitch_link_collision0" class="collision" pos="0.026 0 0.055" type="box" size="0.05 0.055 0.0225" />
             <body name="camera_link" pos="0.048925 0.0053519 0.058472">
@@ -234,15 +244,38 @@
       </body>
     </body>
   </worldbody>
+
+  <actuator>
+    <!-- Arms: 4438 motors -->
+    <position class="pi_actuator_arm" name="r_shoulder_pitch" joint="r_shoulder_pitch_joint"/>
+    <position class="pi_actuator_arm" name="r_shoulder_roll" joint="r_shoulder_roll_joint"/>
+    <position class="pi_actuator_arm" name="r_upper_arm" joint="r_upper_arm_joint"/>
+    <position class="pi_actuator_arm" name="r_elbow" joint="r_elbow_joint"/>
+    <position class="pi_actuator_arm" name="l_shoulder_pitch" joint="l_shoulder_pitch_joint"/>
+    <position class="pi_actuator_arm" name="l_shoulder_roll" joint="l_shoulder_roll_joint"/>
+    <position class="pi_actuator_arm" name="l_upper_arm" joint="l_upper_arm_joint"/>
+    <position class="pi_actuator_arm" name="l_elbow" joint="l_elbow_joint"/>
+    <!-- Legs: 5036 motors -->
+    <position class="pi_actuator_leg" name="r_hip_pitch" joint="r_hip_pitch_joint"/>
+    <position class="pi_actuator_leg" name="r_hip_roll" joint="r_hip_roll_joint"/>
+    <position class="pi_actuator_leg" name="r_thigh" joint="r_thigh_joint"/>
+    <position class="pi_actuator_leg" name="r_calf" joint="r_calf_joint"/>
+    <position class="pi_actuator_leg" name="r_ankle_pitch" joint="r_ankle_pitch_joint"/>
+    <position class="pi_actuator_leg" name="r_ankle_roll" joint="r_ankle_roll_joint"/>
+    <position class="pi_actuator_leg" name="l_hip_pitch" joint="l_hip_pitch_joint"/>
+    <position class="pi_actuator_leg" name="l_hip_roll" joint="l_hip_roll_joint"/>
+    <position class="pi_actuator_leg" name="l_thigh" joint="l_thigh_joint"/>
+    <position class="pi_actuator_leg" name="l_calf" joint="l_calf_joint"/>
+    <position class="pi_actuator_leg" name="l_ankle_pitch" joint="l_ankle_pitch_joint"/>
+    <position class="pi_actuator_leg" name="l_ankle_roll" joint="l_ankle_roll_joint"/>
+    <!-- Head: 3536 motors -->
+    <position class="pi_actuator_head" name="head_yaw" joint="head_yaw_joint"/>
+    <position class="pi_actuator_head" name="head_pitch" joint="head_pitch_joint"/>
+  </actuator>
+
   <sensor>
     <framequat name='orientation' objtype='site' noise='0.001' objname='imu'/>
     <framepos name='position' objtype='site' noise='0.001' objname='imu'/>
-    <!--
-    <gyro name='angular-velocity' site='imu' noise='0.005' cutoff='34.9'/>
-    <velocimeter name='linear-velocity' site='imu' noise='0.001' cutoff='30'/>
-    <accelerometer name='linear-acceleration' site='imu' noise='0.005' cutoff='157'/>
-    <magnetometer name='magnetometer' site='imu'/>
-    -->
     <gyro site="imu" name="gyro"/>
     <velocimeter site="imu" name="local_linvel"/>
     <accelerometer site="imu" name="accelerometer"/>
