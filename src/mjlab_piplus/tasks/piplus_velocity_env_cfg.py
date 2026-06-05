@@ -333,15 +333,15 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
     ),
     # safety rewards
     "dof_pos_limits": RewardTermCfg(func=mdp.joint_pos_limits, weight=-1.0),
-    "action_rate_l2": RewardTermCfg(func=mdp.action_rate_l2, weight=-0.05),
+    "action_rate_l2": RewardTermCfg(func=mdp.action_rate_l2, weight=-0.05), # weight overwritten by curriculum
     "torque_penalty": RewardTermCfg(
       func=mdp.joint_torques_l2,
-      weight=-1e-4,
+      weight=-1e-4, # weight overwritten by curriculum
       params={"asset_cfg": SceneEntityCfg("robot", actuator_names=(".*",))},
     ),
     "joint_vel_l2": RewardTermCfg(
       func=mdp.joint_vel_l2,
-      weight=-1e-3,
+      weight=-1e-3, # weight overwritten by curriculum
       params={"asset_cfg": SceneEntityCfg("robot", joint_names=(".*",))},
     ),
     "self_collisions": RewardTermCfg(
@@ -349,15 +349,51 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
       weight=-1.0,
       params={"sensor_name": "self_collision", "force_threshold": 2.0}, # we dont want even soft collisions
     ),
+    "pose": RewardTermCfg(
+      func=mdp.variable_posture,
+      weight=1.0,
+      params={
+        "asset_cfg": SceneEntityCfg("robot", joint_names=(".*",)),
+        "command_name": "twist",
+        "std_standing": {r".*": 0.05},
+        "std_walking": {
+          r".*_hip_pitch_joint": 0.3,
+          r".*_hip_roll_joint": 0.15,
+          r".*_thigh_joint": 0.15,
+          r".*_calf_joint": 0.35,
+          r".*_ankle_pitch_joint": 0.25,
+          r".*_ankle_roll_joint": 0.1,
+          r".*_shoulder_pitch_joint": 0.3,
+          r".*_shoulder_roll_joint": 0.05,
+          r".*_upper_arm_joint": 0.05,
+          r".*_elbow_joint": 0.2,
+        },
+        "std_running": {
+          r".*_hip_pitch_joint": 0.3,
+          r".*_hip_roll_joint": 0.15,
+          r".*_thigh_joint": 0.15,
+          r".*_calf_joint": 0.35,
+          r".*_ankle_pitch_joint": 0.25,
+          r".*_ankle_roll_joint": 0.1,
+          r".*_shoulder_pitch_joint": 0.3,
+          r".*_shoulder_roll_joint": 0.05,
+          r".*_upper_arm_joint": 0.05,
+          r".*_elbow_joint": 0.2,
+        },
+        "walking_threshold": 0.05,
+        "running_threshold": 1.5,
+      },
+    ),
+    # shaping rewards
     "air_time": RewardTermCfg(
       func=mdp.feet_air_time,
       weight=1.25,
       params={
         "sensor_name": "feet_ground_contact",
-        "threshold_min": 0.15,
-        "threshold_max": 0.5,
+        "threshold_min": 0.05,
+        "threshold_max": 0.3,
         "command_name": "twist",
-        "command_threshold": 0.05,
+        "command_threshold": 0.01,
       },
     ),
     "foot_clearance": RewardTermCfg(
@@ -427,20 +463,21 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
       params={"sensor_name": "feet_ground_contact"},
     ),
   }
-  _all_joints = [
-    "r_shoulder_pitch_joint", "r_shoulder_roll_joint", "r_upper_arm_joint", "r_elbow_joint",
-    "l_shoulder_pitch_joint", "l_shoulder_roll_joint", "l_upper_arm_joint", "l_elbow_joint",
-    "r_hip_pitch_joint", "r_hip_roll_joint", "r_thigh_joint", "r_calf_joint",
-    "r_ankle_pitch_joint", "r_ankle_roll_joint",
-    "l_hip_pitch_joint", "l_hip_roll_joint", "l_thigh_joint", "l_calf_joint",
-    "l_ankle_pitch_joint", "l_ankle_roll_joint",
-  ]
-  for _jname in _all_joints:
-    _short = _jname.replace("_joint", "")
-    metrics[f"jdev/{_short}"] = MetricsTermCfg(
-      func=pi_mdp.joint_pos_deviation,
-      params={"asset_cfg": SceneEntityCfg("robot", joint_names=(_jname,))},
-    )
+  if play:
+    _all_joints = [
+      "r_shoulder_pitch_joint", "r_shoulder_roll_joint", "r_upper_arm_joint", "r_elbow_joint",
+      "l_shoulder_pitch_joint", "l_shoulder_roll_joint", "l_upper_arm_joint", "l_elbow_joint",
+      "r_hip_pitch_joint", "r_hip_roll_joint", "r_thigh_joint", "r_calf_joint",
+      "r_ankle_pitch_joint", "r_ankle_roll_joint",
+      "l_hip_pitch_joint", "l_hip_roll_joint", "l_thigh_joint", "l_calf_joint",
+      "l_ankle_pitch_joint", "l_ankle_roll_joint",
+    ]
+    for _jname in _all_joints:
+      _short = _jname.replace("_joint", "")
+      metrics[f"jdev/{_short}"] = MetricsTermCfg(
+        func=pi_mdp.joint_pos_deviation,
+        params={"asset_cfg": SceneEntityCfg("robot", joint_names=(_jname,))},
+      )
 
   ##
   # Terminations
@@ -468,10 +505,10 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
           "velocity_stages": [
           #{"step": 0, "lin_vel_x": (0.0, 0.0), "lin_vel_y": (0.0, 0.0), "ang_vel_z": (0.0, 0.0)},
           {"step": 0 * 24, "lin_vel_x": (-0.08, 0.1), "lin_vel_y": (-0.04, 0.04), "ang_vel_z": (-math.pi/6, math.pi/6)},
-          {"step": 200 * 24, "lin_vel_x": (-0.08, 0.1), "lin_vel_y": (-0.04, 0.04), "ang_vel_z": (-math.pi/6, math.pi/6)},
-          {"step": 400 * 24, "lin_vel_x": (-0.15, 0.2), "lin_vel_y": (-0.1, 0.1), "ang_vel_z": (-math.pi/4, math.pi/4)},
-          {"step": 800 * 24, "lin_vel_x": (-0.35, 0.5), "lin_vel_y": (-0.25, 0.25), "ang_vel_z": (-math.pi/3, math.pi/3)},
-          {"step": 1200 * 24, "lin_vel_x": (-0.5, 0.75), "lin_vel_y": (-0.35, 0.35), "ang_vel_z": (-math.pi/2, math.pi/2)},
+          #{"step": 200 * 24, "lin_vel_x": (-0.08, 0.1), "lin_vel_y": (-0.04, 0.04), "ang_vel_z": (-math.pi/6, math.pi/6)},
+          {"step": 200 * 24, "lin_vel_x": (-0.15, 0.2), "lin_vel_y": (-0.1, 0.1), "ang_vel_z": (-math.pi/4, math.pi/4)},
+          {"step": 400 * 24, "lin_vel_x": (-0.35, 0.5), "lin_vel_y": (-0.25, 0.25), "ang_vel_z": (-math.pi/3, math.pi/3)},
+          {"step": 600 * 24, "lin_vel_x": (-0.5, 0.75), "lin_vel_y": (-0.35, 0.35), "ang_vel_z": (-math.pi/2, math.pi/2)},
           ],
       },
    ),
@@ -483,6 +520,36 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
         {"step": 0, "weight": 0.0},
         {"step": 200 * 24, "weight": 1.25},
         {"step": 600 * 24, "weight": 2.5},
+      ],
+    },
+   ),
+   "action_rate_l2_coef": CurriculumTermCfg(
+      func=mdp.reward_curriculum,
+      params={
+      "reward_name": "action_rate_l2",
+      "stages": [
+        {"step": 0, "weight": -0.01},
+        {"step": 1600 * 24, "weight": -0.05},
+      ],
+    },
+   ),
+   "joint_vel_l2_coef": CurriculumTermCfg(
+      func=mdp.reward_curriculum,
+      params={
+      "reward_name": "joint_vel_l2",
+      "stages": [
+        {"step": 0, "weight": -1e-4},
+        {"step": 1600 * 24, "weight": -1e-3},
+      ],
+    },
+   ),
+   "torque_penalty_coef": CurriculumTermCfg(
+      func=mdp.reward_curriculum,
+      params={
+      "reward_name": "torque_penalty",
+      "stages": [
+        {"step": 0, "weight": -1e-5},
+        {"step": 1600 * 24, "weight": -1e-4},
       ],
     },
    ),
