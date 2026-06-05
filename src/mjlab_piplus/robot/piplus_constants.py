@@ -21,14 +21,14 @@ def get_spec() -> mujoco.MjSpec:
 ACTUATOR_LAG_MIN = 1
 ACTUATOR_LAG_MAX = 1
 
-ACTUATOR_3536 = XmlActuatorCfg(
-  target_names_expr=(
-    "head_yaw_joint",
-    "head_pitch_joint"
-  ),
-  delay_min_lag=ACTUATOR_LAG_MIN,
-  delay_max_lag=ACTUATOR_LAG_MAX,
-)
+# ACTUATOR_3536 = XmlActuatorCfg(
+#   target_names_expr=(
+#     "head_yaw_joint",
+#     "head_pitch_joint"
+#   ),
+#   delay_min_lag=ACTUATOR_LAG_MIN,
+#   delay_max_lag=ACTUATOR_LAG_MAX,
+# )
 
 # Motors used in Arms
 ACTUATOR_4438 = XmlActuatorCfg(
