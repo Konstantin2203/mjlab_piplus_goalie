@@ -409,47 +409,48 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
         "command_threshold": 0.01,
       },
     ),
-    "foot_clearance": RewardTermCfg(
-      func=mdp.feet_clearance,
-      weight=-20.0,
-      params={
-        "target_height": 0.04,
-        "height_sensor_name": "foot_height_scan",
-        "command_name": "twist",
-        "command_threshold": 0.05,
-        "asset_cfg": SceneEntityCfg("robot", site_names=foot_sites),
-      },
-    ),
-    "foot_swing_height": RewardTermCfg(
-      func=mdp.feet_swing_height,
-      weight=-2.5,
-      params={
-        "sensor_name": "feet_ground_contact",
-        "height_sensor_name": "foot_height_scan",
-        "target_height": 0.04,
-        "command_name": "twist",
-        "command_threshold": 0.05,
-      },
-    ),
-    "foot_slip": RewardTermCfg(
-      func=mdp.feet_slip,
-      weight=0.0,
-      params={
-        "sensor_name": "feet_ground_contact",
-        "command_name": "twist",
-        "command_threshold": 0.05,
-        "asset_cfg": SceneEntityCfg("robot", site_names=foot_sites),
-      },
-    ),
-    "soft_landing": RewardTermCfg(
-      func=mdp.soft_landing,
-      weight=0.0,
-      params={
-        "sensor_name": "feet_ground_contact",
-        "command_name": "twist",
-        "command_threshold": 0.05,
-      },
-    ),
+    # encourage feet to be at target height when the foot velocity is high (i.e. during swing)
+    #"foot_clearance": RewardTermCfg(
+    #  func=mdp.feet_clearance,
+    #  weight=-20.0,
+    #  params={
+    #    "target_height": 0.02,
+    #    "height_sensor_name": "foot_height_scan",
+    #    "command_name": "twist",
+    #    "command_threshold": 0.05,
+    #    "asset_cfg": SceneEntityCfg("robot", site_names=foot_sites),
+    #  },
+    #),
+    #"foot_swing_height": RewardTermCfg(
+    #  func=mdp.feet_swing_height,
+    #  weight=-2.5,
+    #  params={
+    #    "sensor_name": "feet_ground_contact",
+    #    "height_sensor_name": "foot_height_scan",
+    #    "target_height": 0.02,
+    #    "command_name": "twist",
+    #    "command_threshold": 0.05,
+    #  },
+    #),
+    #"foot_slip": RewardTermCfg(
+    #  func=mdp.feet_slip,
+    #  weight=0.0,
+    #  params={
+    #    "sensor_name": "feet_ground_contact",
+    #    "command_name": "twist",
+    #    "command_threshold": 0.05,
+    #    "asset_cfg": SceneEntityCfg("robot", site_names=foot_sites),
+    #  },
+    #),
+    #"soft_landing": RewardTermCfg(
+    #  func=mdp.soft_landing,
+    #  weight=0.0,
+    #  params={
+    #    "sensor_name": "feet_ground_contact",
+    #    "command_name": "twist",
+    #    "command_threshold": 0.05,
+    #  },
+    #),
   }
   ##
   # Metrics
@@ -566,24 +567,24 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
       ],
     },
    ),
-   "air_time_threshold_min": CurriculumTermCfg(
-      func=mdp.reward_curriculum,
-      params={
-        "reward_name": "air_time",
-        "stages": [
-          {"step": 2000 * 24, "params": {"threshold_min": 0.06}},
-          {"step": 2100 * 24, "params": {"threshold_min": 0.07}},
-          {"step": 2200 * 24, "params": {"threshold_min": 0.08}},
-          {"step": 2300 * 24, "params": {"threshold_min": 0.09}},
-          {"step": 2400 * 24, "params": {"threshold_min": 0.10}},
-          {"step": 2500 * 24, "params": {"threshold_min": 0.11}},
-          {"step": 2600 * 24, "params": {"threshold_min": 0.12}},
-          {"step": 2700 * 24, "params": {"threshold_min": 0.13}},
-          {"step": 2800 * 24, "params": {"threshold_min": 0.14}},
-          {"step": 2900 * 24, "params": {"threshold_min": 0.15}},
-        ],
-      },
-   ),
+   # "air_time_threshold_min": CurriculumTermCfg(
+   #    func=mdp.reward_curriculum,
+   #    params={
+   #      "reward_name": "air_time",
+   #      "stages": [
+   #        {"step": 800 * 24, "params": {"threshold_min": 0.06}},
+   #        {"step": 900 * 24, "params": {"threshold_min": 0.07}},
+   #        {"step": 1000 * 24, "params": {"threshold_min": 0.08}},
+   #        {"step": 1100 * 24, "params": {"threshold_min": 0.09}},
+   #        {"step": 1200 * 24, "params": {"threshold_min": 0.10}},
+   #        {"step": 1300 * 24, "params": {"threshold_min": 0.11}},
+   #        {"step": 1400 * 24, "params": {"threshold_min": 0.12}},
+   #        {"step": 1500 * 24, "params": {"threshold_min": 0.13}},
+   #        {"step": 1600 * 24, "params": {"threshold_min": 0.14}},
+   #        {"step": 1700 * 24, "params": {"threshold_min": 0.15}},
+   #      ],
+   #    },
+   # ),
    # "dr_foot_friction": CurriculumTermCfg(
    #  func=mdp.event_curriculum,
    #  params={
