@@ -290,14 +290,14 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
     #     },
     #   },
     # ),
-    "encoder_bias": EventTermCfg(
-      mode="reset",
-      func=dr.encoder_bias,
-      params={
-        "asset_cfg": SceneEntityCfg("robot", joint_names=(".*",)),
-        "bias_range": (-0.05, 0.05),
-      },
-    ),
+    # "encoder_bias": EventTermCfg(
+    #   mode="reset",
+    #   func=dr.encoder_bias,
+    #   params={
+    #     "asset_cfg": SceneEntityCfg("robot", joint_names=(".*",)),
+    #     "bias_range": (-0.05, 0.05),
+    #   },
+    # ),
   }
 
   ##
