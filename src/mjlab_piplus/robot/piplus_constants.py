@@ -69,12 +69,12 @@ HOME_KEYFRAME = EntityCfg.InitialStateCfg(
     "r_ankle_pitch_joint": 0.45,
     "l_ankle_pitch_joint": -0.45,
     ".*_ankle_roll_joint": 0.0,
-    "r_shoulder_roll_joint": 1.2,
-    "l_shoulder_roll_joint": -1.2,
-    "r_shoulder_pitch_joint": 1.5708,
-    "l_shoulder_pitch_joint": -1.5708,
-    ".*_upper_arm_joint": 0.0,
-    ".*_elbow_joint": 0.0,
+    #"r_shoulder_roll_joint": 1.2,
+    #"l_shoulder_roll_joint": -1.2,
+    #"r_shoulder_pitch_joint": 1.5708,
+    #"l_shoulder_pitch_joint": -1.5708,
+    #".*_upper_arm_joint": 0.0,
+    #".*_elbow_joint": 0.0,
   },
   joint_vel={".*": 0.0},
 )
@@ -109,7 +109,7 @@ FEET_ONLY_COLLISION = CollisionCfg(
 PIPLUS_ARTICULATION = EntityArticulationInfoCfg(
   actuators=(
     #ACTUATOR_3536,
-    ACTUATOR_4438,
+    #ACTUATOR_4438,
     ACTUATOR_5036,
   ),
   soft_joint_pos_limit_factor=0.9,

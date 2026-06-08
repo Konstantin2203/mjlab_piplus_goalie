@@ -249,14 +249,14 @@
 
   <actuator>
     <!-- Arms: 4438 motors -->
-    <position class="pi_actuator_arm" name="r_shoulder_pitch" joint="r_shoulder_pitch_joint"/>
+    <!--<position class="pi_actuator_arm" name="r_shoulder_pitch" joint="r_shoulder_pitch_joint"/>
     <position class="pi_actuator_arm" name="r_shoulder_roll" joint="r_shoulder_roll_joint"/>
     <position class="pi_actuator_arm" name="r_upper_arm" joint="r_upper_arm_joint"/>
     <position class="pi_actuator_arm" name="r_elbow" joint="r_elbow_joint"/>
     <position class="pi_actuator_arm" name="l_shoulder_pitch" joint="l_shoulder_pitch_joint"/>
     <position class="pi_actuator_arm" name="l_shoulder_roll" joint="l_shoulder_roll_joint"/>
     <position class="pi_actuator_arm" name="l_upper_arm" joint="l_upper_arm_joint"/>
-    <position class="pi_actuator_arm" name="l_elbow" joint="l_elbow_joint"/>
+    <position class="pi_actuator_arm" name="l_elbow" joint="l_elbow_joint"/>-->
     <!-- Legs: 5036 motors -->
     <position class="pi_actuator_leg" name="r_hip_pitch" joint="r_hip_pitch_joint"/>
     <position class="pi_actuator_leg" name="r_hip_roll" joint="r_hip_roll_joint"/>
