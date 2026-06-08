@@ -542,8 +542,8 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
       params={
       "reward_name": "action_rate_l2",
       "stages": [
-        {"step": 0, "weight": -0.005},
-        {"step": 3200 * 24, "weight": -0.02},
+        #{"step": 0, "weight": -0.005},
+        {"step": 0 * 3200 * 24, "weight": -0.02},
       ],
     },
    ),
@@ -552,8 +552,8 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
       params={
       "reward_name": "joint_vel_l2",
       "stages": [
-        {"step": 0, "weight": -1e-4},
-        {"step": 3200 * 24, "weight": -1e-3},
+        #{"step": 0, "weight": -1e-4},
+        {"step": 0 * 3200 * 24, "weight": -1e-3},
       ],
     },
    ),
@@ -562,8 +562,8 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
       params={
       "reward_name": "torque_penalty",
       "stages": [
-        {"step": 0, "weight": -1e-5},
-        {"step": 3200 * 24, "weight": -1e-4},
+        #{"step": 0, "weight": -1e-5},
+        {"step": 0 * 3200 * 24, "weight": -1e-4},
       ],
     },
    ),
