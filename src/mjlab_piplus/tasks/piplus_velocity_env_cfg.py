@@ -172,22 +172,33 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
         "asset_cfg": SceneEntityCfg("robot", joint_names=(".*",)),
       },
     ),
-    #"push_robot": EventTermCfg(
-    #  func=mdp.push_by_setting_velocity,
-    #  mode="interval",
-    #  interval_range_s=(1.0, 3.0),
-    #  params={
-    #    "velocity_range": {
-    #    "x": (-0.1, 0.1),
-    #    "y": (-0.1, 0.1),
-    #    "z": (-0.2, 0.2),
-    #    "roll": (-0.52, 0.52),
-    #    "pitch": (-0.52, 0.52),
-    #    "yaw": (-0.78, 0.78),
-    #    },
-    #  },
-    #),
+    "push_robot": EventTermCfg(
+      func=mdp.push_by_setting_velocity,
+      mode="interval",
+      interval_range_s=(1.0, 3.0),
+      params={
+        "velocity_range": {
+        "x": (-0.1, 0.1),
+        "y": (-0.1, 0.1),
+        "z": (-0.2, 0.2),
+        "roll": (-0.52, 0.52),
+        "pitch": (-0.52, 0.52),
+        "yaw": (-0.78, 0.78),
+        },
+      },
+    ),
     # push with impulse
+    "push_robot_impulse": EventTermCfg(
+      func=mdp.apply_body_impulse,
+      mode="step", # required as class keeps track of length of impule itself
+      params={
+        "force_range": (1.0, 5.0),
+        "torque_range": (0.0, 0.0),
+        "duration": (0.1, 0.3),
+        "cooldown": (1.0, 3.0),
+        "asset_cfg": SceneEntityCfg("robot", body_names=("base_link",)),
+      }
+    ),
     # "foot_friction": EventTermCfg(
     #   mode="reset",
     #   func=dr.geom_friction,
