@@ -60,14 +60,14 @@ ACTUATOR_5036 = XmlActuatorCfg(
 HOME_KEYFRAME = EntityCfg.InitialStateCfg(
   pos=(0, 0, 0.39),
   joint_pos={
-    "r_hip_pitch_joint": 0.6,    # axis flipped
-    "l_hip_pitch_joint": -0.6,
+    "r_hip_pitch_joint": 0.45,
+    "l_hip_pitch_joint": -0.45,
     ".*_hip_roll_joint": 0.0,
     ".*_thigh_joint": 0.0,
-    "r_calf_joint": 1.2,
-    "l_calf_joint": -1.2,        # axis flipped
-    "r_ankle_pitch_joint": 0.6,   # axis flipped
-    "l_ankle_pitch_joint": -0.6,
+    "r_calf_joint": 0.9,
+    "l_calf_joint": -0.9,
+    "r_ankle_pitch_joint": 0.45,
+    "l_ankle_pitch_joint": -0.45,
     ".*_ankle_roll_joint": 0.0,
     "r_shoulder_roll_joint": 1.2,
     "l_shoulder_roll_joint": -1.2,

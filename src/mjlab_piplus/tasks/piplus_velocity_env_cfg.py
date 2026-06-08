@@ -293,6 +293,7 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
   # Rewards
   ##
   rewards = {
+    # task rewards
     "track_linear_velocity": RewardTermCfg(
       func=mdp.track_linear_velocity,
       weight=2.0,
@@ -313,6 +314,7 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
       weight=2.0,
       params={"command_name": "twist", "std": math.sqrt(0.05)},
     ),
+    # stability rewards
     "upright": RewardTermCfg(
       func=pi_mdp.upright_relaxed,
       weight=1.0,
@@ -391,7 +393,7 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
       params={
         "sensor_name": "feet_ground_contact",
         "threshold_min": 0.05,
-        "threshold_max": 0.3,
+        "threshold_max": 0.5,
         "command_name": "twist",
         "command_threshold": 0.01,
       },
@@ -528,8 +530,8 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
       params={
       "reward_name": "action_rate_l2",
       "stages": [
-        {"step": 0, "weight": -0.01},
-        {"step": 1600 * 24, "weight": -0.05},
+        {"step": 0, "weight": -0.005},
+        {"step": 3200 * 24, "weight": -0.02},
       ],
     },
    ),
@@ -539,7 +541,7 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
       "reward_name": "joint_vel_l2",
       "stages": [
         {"step": 0, "weight": -1e-4},
-        {"step": 1600 * 24, "weight": -1e-3},
+        {"step": 3200 * 24, "weight": -1e-3},
       ],
     },
    ),
@@ -549,9 +551,27 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
       "reward_name": "torque_penalty",
       "stages": [
         {"step": 0, "weight": -1e-5},
-        {"step": 1600 * 24, "weight": -1e-4},
+        {"step": 3200 * 24, "weight": -1e-4},
       ],
     },
+   ),
+   "air_time_threshold_min": CurriculumTermCfg(
+      func=mdp.reward_curriculum,
+      params={
+        "reward_name": "air_time",
+        "stages": [
+          {"step": 2000 * 24, "params": {"threshold_min": 0.06}},
+          {"step": 2100 * 24, "params": {"threshold_min": 0.07}},
+          {"step": 2200 * 24, "params": {"threshold_min": 0.08}},
+          {"step": 2300 * 24, "params": {"threshold_min": 0.09}},
+          {"step": 2400 * 24, "params": {"threshold_min": 0.10}},
+          {"step": 2500 * 24, "params": {"threshold_min": 0.11}},
+          {"step": 2600 * 24, "params": {"threshold_min": 0.12}},
+          {"step": 2700 * 24, "params": {"threshold_min": 0.13}},
+          {"step": 2800 * 24, "params": {"threshold_min": 0.14}},
+          {"step": 2900 * 24, "params": {"threshold_min": 0.15}},
+        ],
+      },
    ),
    # "dr_foot_friction": CurriculumTermCfg(
    #  func=mdp.event_curriculum,
