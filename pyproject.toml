@@ -19,7 +19,12 @@ mjlab_piplus = "mjlab_piplus.tasks"
 
 [tool.ruff]
 src = ["src"]  # Helpful for recognizing first-party imports.
-indent-width = 4
+indent-width = 2
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I", "B"]
+ignore = ["B011"]
+
 
 [tool.uv.sources]
 mjlab = { git = "https://github.com/mujocolab/mjlab.git", rev = "12dc0db873209bd33e6e4e5d0d8a2760c468fefc" }

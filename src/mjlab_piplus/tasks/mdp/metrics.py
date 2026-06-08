@@ -102,7 +102,9 @@ def joint_pos_deviation(
   """Mean absolute deviation from default joint position, for the selected joint(s)."""
   asset: Entity = env.scene[asset_cfg.name]
   jnt_ids = asset_cfg.joint_ids
-  deviation = (asset.data.joint_pos[:, jnt_ids] - asset.data.default_joint_pos[:, jnt_ids]).abs()
+  deviation = (
+    asset.data.joint_pos[:, jnt_ids] - asset.data.default_joint_pos[:, jnt_ids]
+  ).abs()
   return deviation.mean(dim=-1)
 
 

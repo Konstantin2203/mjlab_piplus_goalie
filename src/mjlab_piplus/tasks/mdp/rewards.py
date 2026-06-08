@@ -45,9 +45,7 @@ class track_angular_velocity_filtered:
     command = env.command_manager.get_command(command_name)
     assert command is not None, f"Command '{command_name}' not found."
     actual = asset.data.root_link_ang_vel_b
-    self._yaw_ema = (
-      1.0 - self._alpha
-    ) * self._yaw_ema + self._alpha * actual[:, 2]
+    self._yaw_ema = (1.0 - self._alpha) * self._yaw_ema + self._alpha * actual[:, 2]
     self._last_yaw_raw = actual[:, 2]
     self._last_yaw_cmd = command[:, 2]
     z_error = torch.square(command[:, 2] - self._yaw_ema)
@@ -90,6 +88,7 @@ class upright_relaxed:
 
   def reset(self, env_ids: torch.Tensor) -> None:
     del env_ids
+
 
 def alive(
   env: ManagerBasedRlEnv,

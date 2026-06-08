@@ -1,4 +1,3 @@
-
 from pathlib import Path
 import os
 import mujoco
@@ -10,13 +9,13 @@ from mjlab.utils.spec_config import CollisionCfg
 # MJCF and assets.
 ##
 
-PIPLUS_XML: Path = (
-  Path(os.path.dirname(__file__)) / "piplus/piplus.xml"
-)
+PIPLUS_XML: Path = Path(os.path.dirname(__file__)) / "piplus/piplus.xml"
+
 
 def get_spec() -> mujoco.MjSpec:
   spec = mujoco.MjSpec.from_file(str(PIPLUS_XML))
   return spec
+
 
 ACTUATOR_LAG_MIN = 1
 ACTUATOR_LAG_MAX = 1
@@ -50,7 +49,7 @@ ACTUATOR_5036 = XmlActuatorCfg(
     ".*_thigh_joint",
     ".*_calf_joint",
     ".*_ankle_pitch_joint",
-    ".*_ankle_roll_joint"
+    ".*_ankle_roll_joint",
   ),
   delay_min_lag=ACTUATOR_LAG_MIN,
   delay_max_lag=ACTUATOR_LAG_MAX,
@@ -69,12 +68,12 @@ HOME_KEYFRAME = EntityCfg.InitialStateCfg(
     "r_ankle_pitch_joint": 0.6,
     "l_ankle_pitch_joint": -0.6,
     ".*_ankle_roll_joint": 0.0,
-    #"r_shoulder_roll_joint": 1.2,
-    #"l_shoulder_roll_joint": -1.2,
-    #"r_shoulder_pitch_joint": 1.5708,
-    #"l_shoulder_pitch_joint": -1.5708,
-    #".*_upper_arm_joint": 0.0,
-    #".*_elbow_joint": 0.0,
+    # "r_shoulder_roll_joint": 1.2,
+    # "l_shoulder_roll_joint": -1.2,
+    # "r_shoulder_pitch_joint": 1.5708,
+    # "l_shoulder_pitch_joint": -1.5708,
+    # ".*_upper_arm_joint": 0.0,
+    # ".*_elbow_joint": 0.0,
   },
   joint_vel={".*": 0.0},
 )
@@ -108,12 +107,13 @@ FEET_ONLY_COLLISION = CollisionCfg(
 
 PIPLUS_ARTICULATION = EntityArticulationInfoCfg(
   actuators=(
-    #ACTUATOR_3536,
-    #ACTUATOR_4438,
+    # ACTUATOR_3536,
+    # ACTUATOR_4438,
     ACTUATOR_5036,
   ),
   soft_joint_pos_limit_factor=0.9,
 )
+
 
 def get_piplus_robot_cfg() -> EntityCfg:
   return EntityCfg(

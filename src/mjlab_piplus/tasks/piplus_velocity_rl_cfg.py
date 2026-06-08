@@ -1,9 +1,9 @@
-
 from mjlab.rl import (
   RslRlModelCfg,
   RslRlOnPolicyRunnerCfg,
   RslRlPpoAlgorithmCfg,
 )
+
 
 def get_piplus_velocity_rl_cfg() -> RslRlOnPolicyRunnerCfg:
   return RslRlOnPolicyRunnerCfg(
@@ -36,7 +36,7 @@ def get_piplus_velocity_rl_cfg() -> RslRlOnPolicyRunnerCfg:
       desired_kl=0.01,
       max_grad_norm=1.0,
     ),
-    wandb_project = "mjlab_piplus",
+    wandb_project="mjlab_piplus",
     experiment_name="piplus_velocity",
     save_interval=50,
     num_steps_per_env=24,

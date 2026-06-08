@@ -10,6 +10,7 @@ Usage:
 
 All commands take wandb run IDs (8-char). Entity/project is hardcoded.
 """
+
 from __future__ import annotations
 
 import sys
@@ -42,7 +43,13 @@ def _key_fields(cfg):
   env = cfg.get("env_cfg", {})
   train = cfg.get("train_cfg", {})
   rewards = env.get("rewards", {})
-  push = env.get("events", {}).get("push_robot", {}).get("params", {}).get("velocity_range", {}) or {}
+  push = (
+    env.get("events", {})
+    .get("push_robot", {})
+    .get("params", {})
+    .get("velocity_range", {})
+    or {}
+  )
   cmd = env.get("commands", {}).get("twist", {})
   return {
     "max_iters": train.get("max_iterations"),
@@ -72,7 +79,9 @@ def cmd_list(n=10):
   for r in list(runs)[: int(n)]:
     rt = r.summary.get("_runtime")
     rt_s = f"{rt / 60:.0f}min" if isinstance(rt, (int, float)) else "?"
-    print(f"{r.id}  {r.name:25s}  {r.state:10s}  {rt_s:>7s}  iters={r.summary.get('_step', '?')}")
+    print(
+      f"{r.id}  {r.name:25s}  {r.state:10s}  {rt_s:>7s}  iters={r.summary.get('_step', '?')}"
+    )
 
 
 def cmd_info(ids):

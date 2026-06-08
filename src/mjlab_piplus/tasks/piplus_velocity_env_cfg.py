@@ -1,42 +1,41 @@
-from copy import deepcopy
 import math
-from mjlab.envs import ManagerBasedRlEnv, ManagerBasedRlEnvCfg
+from mjlab.envs import ManagerBasedRlEnvCfg
 from mjlab.managers.observation_manager import ObservationGroupCfg, ObservationTermCfg
 from mjlab.envs.mdp.actions import JointPositionActionCfg
 from mjlab.managers.action_manager import ActionTermCfg
 from mjlab.managers.command_manager import CommandTermCfg
 from mjlab.managers.curriculum_manager import CurriculumTermCfg
 from mjlab.managers.event_manager import EventTermCfg
-from mjlab.managers.observation_manager import ObservationGroupCfg, ObservationTermCfg
 from mjlab.managers.metrics_manager import MetricsTermCfg
 from mjlab.managers.reward_manager import RewardTermCfg
 from mjlab.managers.scene_entity_config import SceneEntityCfg
 from mjlab.managers.termination_manager import TerminationTermCfg
-from mjlab.envs.mdp.actions import JointPositionActionCfg
 from mjlab.tasks.velocity.mdp import UniformVelocityCommandCfg
-from mjlab.managers.scene_entity_config import SceneEntityCfg
 from mjlab.scene import SceneCfg
 from mjlab.terrains import TerrainEntityCfg
-from mjlab.terrains.config import ROUGH_TERRAINS_CFG
 from mjlab.utils.noise import UniformNoiseCfg as Unoise
 from mjlab.utils.noise import NoiseModelWithAdditiveBiasCfg
 from mjlab.envs.mdp import dr
 from mjlab.tasks.velocity import mdp
-from mjlab.scene import SceneCfg
 from mjlab.sim import MujocoCfg, SimulationCfg
 from mjlab.viewer import ViewerConfig
 from mjlab_piplus.robot.piplus_constants import get_piplus_robot_cfg
 from mjlab_piplus.tasks import mdp as pi_mdp
 
-from mjlab.tasks.velocity.velocity_env_cfg import make_velocity_env_cfg
 from mjlab.sensor import ContactMatch, ContactSensorCfg, TerrainHeightSensorCfg, ObjRef
 
-def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> ManagerBasedRlEnvCfg:
+
+def piplus_velocity_env_cfg(
+  play: bool = False, static: bool = False
+) -> ManagerBasedRlEnvCfg:
   foot_sites = ("l_foot", "r_foot")
-  #foot_geoms = ("l_foot00", "r_foot00")
+  # foot_geoms = ("l_foot00", "r_foot00")
   foot_height_scan = TerrainHeightSensorCfg(
     name="foot_height_scan",
-    frame=(ObjRef(type="site", name="l_foot", entity="robot"), ObjRef(type="site", name="r_foot", entity="robot")),
+    frame=(
+      ObjRef(type="site", name="l_foot", entity="robot"),
+      ObjRef(type="site", name="r_foot", entity="robot"),
+    ),
     ray_alignment="yaw",
     max_distance=1.0,
     exclude_parent_body=True,
@@ -53,61 +52,64 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
   ##
   actor_terms = {
     "base_ang_vel": ObservationTermCfg(
-    func=mdp.builtin_sensor,
-    params={"sensor_name": "robot/gyro"},
-    noise=Unoise(n_min=-0.2, n_max=0.2),
+      func=mdp.builtin_sensor,
+      params={"sensor_name": "robot/gyro"},
+      noise=Unoise(n_min=-0.2, n_max=0.2),
     ),
     "projected_gravity": ObservationTermCfg(
-    func=mdp.projected_gravity,
-    noise=NoiseModelWithAdditiveBiasCfg(
-      noise_cfg=Unoise(n_min=-0.05, n_max=0.05,),
-      bias_noise_cfg=Unoise(n_min=-0.03, n_max=0.03, operation="add"),
-      sample_bias_per_component=True,
-    ),
+      func=mdp.projected_gravity,
+      noise=NoiseModelWithAdditiveBiasCfg(
+        noise_cfg=Unoise(
+          n_min=-0.05,
+          n_max=0.05,
+        ),
+        bias_noise_cfg=Unoise(n_min=-0.03, n_max=0.03, operation="add"),
+        sample_bias_per_component=True,
+      ),
     ),
     "joint_pos": ObservationTermCfg(
-    func=mdp.joint_pos_rel,
-    noise=Unoise(n_min=-0.01, n_max=0.01),
+      func=mdp.joint_pos_rel,
+      noise=Unoise(n_min=-0.01, n_max=0.01),
     ),
     "joint_vel": ObservationTermCfg(
-    func=mdp.joint_vel_rel,
-    noise=Unoise(n_min=-1.5, n_max=1.5),
+      func=mdp.joint_vel_rel,
+      noise=Unoise(n_min=-1.5, n_max=1.5),
     ),
     "actions": ObservationTermCfg(func=mdp.last_action),
     "command": ObservationTermCfg(
-    func=mdp.generated_commands,
-    params={"command_name": "twist"},
+      func=mdp.generated_commands,
+      params={"command_name": "twist"},
     ),
   }
   critic_terms = {
     **actor_terms,
     "foot_height": ObservationTermCfg(
-    func=mdp.foot_height,
-    params={"sensor_name": "foot_height_scan"},
+      func=mdp.foot_height,
+      params={"sensor_name": "foot_height_scan"},
     ),
     "foot_air_time": ObservationTermCfg(
-    func=mdp.foot_air_time,
-    params={"sensor_name": "feet_ground_contact"},
+      func=mdp.foot_air_time,
+      params={"sensor_name": "feet_ground_contact"},
     ),
     "foot_contact": ObservationTermCfg(
-    func=mdp.foot_contact,
-    params={"sensor_name": "feet_ground_contact"},
+      func=mdp.foot_contact,
+      params={"sensor_name": "feet_ground_contact"},
     ),
     "foot_contact_forces": ObservationTermCfg(
-    func=mdp.foot_contact_forces,
-    params={"sensor_name": "feet_ground_contact"},
+      func=mdp.foot_contact_forces,
+      params={"sensor_name": "feet_ground_contact"},
     ),
   }
   observations = {
     "actor": ObservationGroupCfg(
-    terms=actor_terms,
-    concatenate_terms=True,
-    enable_corruption=True,
+      terms=actor_terms,
+      concatenate_terms=True,
+      enable_corruption=True,
     ),
     "critic": ObservationGroupCfg(
-    terms=critic_terms,
-    concatenate_terms=True,
-    enable_corruption=False,
+      terms=critic_terms,
+      concatenate_terms=True,
+      enable_corruption=False,
     ),
   }
 
@@ -117,10 +119,10 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
 
   actions: dict[str, ActionTermCfg] = {
     "joint_pos": JointPositionActionCfg(
-    entity_name="robot",
-    actuator_names=(".*",),
-    scale=0.5,
-    use_default_offset=True,
+      entity_name="robot",
+      actuator_names=(".*",),
+      scale=0.5,
+      use_default_offset=True,
     )
   }
 
@@ -130,19 +132,19 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
 
   commands: dict[str, CommandTermCfg] = {
     "twist": UniformVelocityCommandCfg(
-    entity_name="robot",
-    resampling_time_range=(3.0, 8.0),
-    debug_vis=True,
-    heading_command=False,
-    heading_control_stiffness=0.0,
-    rel_standing_envs=0.1,
-    rel_heading_envs=0.3,
-    rel_forward_envs=0.15,
-    ranges=UniformVelocityCommandCfg.Ranges(
-      lin_vel_x=(-0.5, 0.75),
-      lin_vel_y=(-0.35, 0.35),
-      ang_vel_z=(-math.pi/2, math.pi/2),
-    ),
+      entity_name="robot",
+      resampling_time_range=(3.0, 8.0),
+      debug_vis=True,
+      heading_command=False,
+      heading_control_stiffness=0.0,
+      rel_standing_envs=0.1,
+      rel_heading_envs=0.3,
+      rel_forward_envs=0.15,
+      ranges=UniformVelocityCommandCfg.Ranges(
+        lin_vel_x=(-0.5, 0.75),
+        lin_vel_y=(-0.35, 0.35),
+        ang_vel_z=(-math.pi / 2, math.pi / 2),
+      ),
     )
   }
 
@@ -156,10 +158,10 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
       mode="reset",
       params={
         "pose_range": {
-        "x": (-0.0, 0.0),
-        "y": (-0.0, 0.0),
-        "z": (0.01, 0.05),
-        "yaw": (-3.14, 3.14),
+          "x": (-0.0, 0.0),
+          "y": (-0.0, 0.0),
+          "z": (0.01, 0.05),
+          "yaw": (-3.14, 3.14),
         },
         "velocity_range": {},
       },
@@ -179,26 +181,26 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
       interval_range_s=(1.0, 3.0),
       params={
         "velocity_range": {
-        "x": (-0.1, 0.1),
-        "y": (-0.1, 0.1),
-        "z": (-0.2, 0.2),
-        "roll": (-0.52, 0.52),
-        "pitch": (-0.52, 0.52),
-        "yaw": (-0.78, 0.78),
+          "x": (-0.1, 0.1),
+          "y": (-0.1, 0.1),
+          "z": (-0.2, 0.2),
+          "roll": (-0.52, 0.52),
+          "pitch": (-0.52, 0.52),
+          "yaw": (-0.78, 0.78),
         },
       },
     ),
     # push with impulse
     "push_robot_impulse": EventTermCfg(
       func=mdp.apply_body_impulse,
-      mode="step", # required as class keeps track of length of impule itself
+      mode="step",  # required as class keeps track of length of impule itself
       params={
         "force_range": (1.0, 5.0),
         "torque_range": (0.0, 0.0),
         "duration_s": (0.1, 0.3),
         "cooldown_s": (1.0, 3.0),
         "asset_cfg": SceneEntityCfg("robot", body_names=("base_link",)),
-      }
+      },
     ),
     # "foot_friction": EventTermCfg(
     #   mode="reset",
@@ -338,7 +340,7 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
     "body_ang_vel": RewardTermCfg(
       func=mdp.body_angular_velocity_penalty,
       weight=-0.05,
-      params={"asset_cfg": SceneEntityCfg("robot", body_names=("base_link",))}, 
+      params={"asset_cfg": SceneEntityCfg("robot", body_names=("base_link",))},
     ),
     "angular_momentum": RewardTermCfg(
       func=mdp.angular_momentum_penalty,
@@ -361,7 +363,10 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
     "self_collisions": RewardTermCfg(
       func=mdp.self_collision_cost,
       weight=-1.0,
-      params={"sensor_name": "self_collision", "force_threshold": 2.0}, # we dont want even soft collisions
+      params={
+        "sensor_name": "self_collision",
+        "force_threshold": 2.0,
+      },  # we dont want even soft collisions
     ),
     "pose": RewardTermCfg(
       func=mdp.variable_posture,
@@ -403,7 +408,7 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
       },
     ),
     # encourage feet to be at target height when the foot velocity is high (i.e. during swing)
-    #"foot_clearance": RewardTermCfg(
+    # "foot_clearance": RewardTermCfg(
     #  func=mdp.feet_clearance,
     #  weight=-20.0,
     #  params={
@@ -413,8 +418,8 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
     #    "command_threshold": 0.05,
     #    "asset_cfg": SceneEntityCfg("robot", site_names=foot_sites),
     #  },
-    #),
-    #"foot_swing_height": RewardTermCfg(
+    # ),
+    # "foot_swing_height": RewardTermCfg(
     #  func=mdp.feet_swing_height,
     #  weight=-2.5,
     #  params={
@@ -424,8 +429,8 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
     #    "command_name": "twist",
     #    "command_threshold": 0.05,
     #  },
-    #),
-    #"foot_slip": RewardTermCfg(
+    # ),
+    # "foot_slip": RewardTermCfg(
     #  func=mdp.feet_slip,
     #  weight=0.0,
     #  params={
@@ -434,8 +439,8 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
     #    "command_threshold": 0.05,
     #    "asset_cfg": SceneEntityCfg("robot", site_names=foot_sites),
     #  },
-    #),
-    #"soft_landing": RewardTermCfg(
+    # ),
+    # "soft_landing": RewardTermCfg(
     #  func=mdp.soft_landing,
     #  weight=0.0,
     #  params={
@@ -443,7 +448,7 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
     #    "command_name": "twist",
     #    "command_threshold": 0.05,
     #  },
-    #),
+    # ),
   }
   ##
   # Metrics
@@ -463,10 +468,18 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
   }
   if play:
     _all_joints = [
-      "r_hip_pitch_joint", "r_hip_roll_joint", "r_thigh_joint", "r_calf_joint",
-      "r_ankle_pitch_joint", "r_ankle_roll_joint",
-      "l_hip_pitch_joint", "l_hip_roll_joint", "l_thigh_joint", "l_calf_joint",
-      "l_ankle_pitch_joint", "l_ankle_roll_joint",
+      "r_hip_pitch_joint",
+      "r_hip_roll_joint",
+      "r_thigh_joint",
+      "r_calf_joint",
+      "r_ankle_pitch_joint",
+      "r_ankle_roll_joint",
+      "l_hip_pitch_joint",
+      "l_hip_roll_joint",
+      "l_thigh_joint",
+      "l_calf_joint",
+      "l_ankle_pitch_joint",
+      "l_ankle_roll_joint",
     ]
     for _jname in _all_joints:
       _short = _jname.replace("_joint", "")
@@ -495,117 +508,137 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
   ##
   curriculum = {
     "command_vel": CurriculumTermCfg(
-    func=mdp.commands_vel,
-    params={
-          "command_name": "twist",
-          "velocity_stages": [
-          {"step": 0 * 24, "lin_vel_x": (-0.08, 0.1), "lin_vel_y": (-0.04, 0.04), "ang_vel_z": (-math.pi/6, math.pi/6)},
-          {"step": 200 * 24, "lin_vel_x": (-0.15, 0.2), "lin_vel_y": (-0.1, 0.1), "ang_vel_z": (-math.pi/4, math.pi/4)},
-          {"step": 400 * 24, "lin_vel_x": (-0.35, 0.5), "lin_vel_y": (-0.25, 0.25), "ang_vel_z": (-math.pi/3, math.pi/3)},
-          {"step": 600 * 24, "lin_vel_x": (-0.5, 0.75), "lin_vel_y": (-0.35, 0.35), "ang_vel_z": (-math.pi/2, math.pi/2)},
-          ],
+      func=mdp.commands_vel,
+      params={
+        "command_name": "twist",
+        "velocity_stages": [
+          {
+            "step": 0 * 24,
+            "lin_vel_x": (-0.08, 0.1),
+            "lin_vel_y": (-0.04, 0.04),
+            "ang_vel_z": (-math.pi / 6, math.pi / 6),
+          },
+          {
+            "step": 200 * 24,
+            "lin_vel_x": (-0.15, 0.2),
+            "lin_vel_y": (-0.1, 0.1),
+            "ang_vel_z": (-math.pi / 4, math.pi / 4),
+          },
+          {
+            "step": 400 * 24,
+            "lin_vel_x": (-0.35, 0.5),
+            "lin_vel_y": (-0.25, 0.25),
+            "ang_vel_z": (-math.pi / 3, math.pi / 3),
+          },
+          {
+            "step": 600 * 24,
+            "lin_vel_x": (-0.5, 0.75),
+            "lin_vel_y": (-0.35, 0.35),
+            "ang_vel_z": (-math.pi / 2, math.pi / 2),
+          },
+        ],
       },
-   ),
-   # "dr_foot_friction": CurriculumTermCfg(
-   #  func=mdp.event_curriculum,
-   #  params={
-   #    "event_name": "foot_friction",
-   #    "stages": [
-   #      {"step": 0, "params": {"ranges": (1.0, 1.0)}},
-   #      {"step": 1600 * 24, "params": {"ranges": (0.4, 1.0)}},
-   #    ],
-   #  },
-   # ),
-   # "dr_joint_frictionloss": CurriculumTermCfg(
-   #  func=mdp.event_curriculum,
-   #  params={
-   #    "event_name": "joint_frictionloss",
-   #    "stages": [
-   #      {"step": 0, "params": {"ranges": (1.0, 1.0)}},
-   #      {"step": 1600 * 24, "params": {"ranges": (0.9, 1.1)}},
-   #    ],
-   #  },
-   # ),
-   # "dr_joint_armature": CurriculumTermCfg(
-   #  func=mdp.event_curriculum,
-   #  params={
-   #    "event_name": "joint_armature",
-   #    "stages": [
-   #      {"step": 0, "params": {"ranges": (1.0, 1.0)}},
-   #      {"step": 1600 * 24, "params": {"ranges": (1.0, 1.05)}},
-   #    ],
-   #  },
-   # ),
-   # "dr_joint_damping": CurriculumTermCfg(
-   #  func=mdp.event_curriculum,
-   #  params={
-   #    "event_name": "joint_damping",
-   #    "stages": [
-   #      {"step": 0, "params": {"ranges": (1.0, 1.0)}},
-   #      {"step": 1600 * 24, "params": {"ranges": (0.95, 1.05)}},
-   #    ],
-   #  },
-   # ),
-   # "dr_actuator_gains": CurriculumTermCfg(
-   #  func=mdp.event_curriculum,
-   #  params={
-   #    "event_name": "actuator_gains",
-   #    "stages": [
-   #      {"step": 0, "params": {"kp_range": (1.0, 1.0), "kd_range": (1.0, 1.0)}},
-   #      {"step": 1600 * 24, "params": {"kp_range": (0.75, 1.25), "kd_range": (0.75, 1.25)}},
-   #    ],
-   #  },
-   # ),
-   # "dr_link_masses": CurriculumTermCfg(
-   #  func=mdp.event_curriculum,
-   #  params={
-   #    "event_name": "link_masses",
-   #    "stages": [
-   #      {"step": 0, "params": {"ranges": (1.0, 1.0)}},
-   #      {"step": 1600 * 24, "params": {"ranges": (0.9, 1.1)}},
-   #    ],
-   #  },
-   # ),
-   # "dr_torso_mass": CurriculumTermCfg(
-   #  func=mdp.event_curriculum,
-   #  params={
-   #    "event_name": "torso_mass",
-   #    "stages": [
-   #      {"step": 0, "params": {"ranges": (0.0, 0.0)}},
-   #      {"step": 1600 * 24, "params": {"ranges": (-0.5, 0.5)}},
-   #    ],
-   #  },
-   # ),
-   # "dr_link_com": CurriculumTermCfg(
-   #  func=mdp.event_curriculum,
-   #  params={
-   #    "event_name": "link_com",
-   #    "stages": [
-   #      {"step": 0, "params": {"ranges": {0: (0.0, 0.0), 1: (0.0, 0.0), 2: (0.0, 0.0)}}},
-   #      {"step": 1600 * 24, "params": {"ranges": {0: (-0.01, 0.01), 1: (-0.01, 0.01), 2: (-0.01, 0.01)}}},
-   #    ],
-   #  },
-   # ),
-   # "dr_base_com": CurriculumTermCfg(
-   #  func=mdp.event_curriculum,
-   #  params={
-   #    "event_name": "base_com",
-   #    "stages": [
-   #      {"step": 0, "params": {"ranges": {0: (0.0, 0.0), 1: (0.0, 0.0), 2: (0.0, 0.0)}}},
-   #      {"step": 1600 * 24, "params": {"ranges": {0: (-0.03, 0.03), 1: (-0.03, 0.03), 2: (-0.03, 0.03)}}},
-   #    ],
-   #  },
-   # ),
-   # "dr_encoder_bias": CurriculumTermCfg(
-   #  func=mdp.event_curriculum,
-   #  params={
-   #    "event_name": "encoder_bias",
-   #    "stages": [
-   #      {"step": 0, "params": {"bias_range": (0.0, 0.0)}},
-   #      {"step": 1600 * 24, "params": {"bias_range": (-0.05, 0.05)}},
-   #    ],
-   #  },
-   # ),
+    ),
+    # "dr_foot_friction": CurriculumTermCfg(
+    #  func=mdp.event_curriculum,
+    #  params={
+    #    "event_name": "foot_friction",
+    #    "stages": [
+    #      {"step": 0, "params": {"ranges": (1.0, 1.0)}},
+    #      {"step": 1600 * 24, "params": {"ranges": (0.4, 1.0)}},
+    #    ],
+    #  },
+    # ),
+    # "dr_joint_frictionloss": CurriculumTermCfg(
+    #  func=mdp.event_curriculum,
+    #  params={
+    #    "event_name": "joint_frictionloss",
+    #    "stages": [
+    #      {"step": 0, "params": {"ranges": (1.0, 1.0)}},
+    #      {"step": 1600 * 24, "params": {"ranges": (0.9, 1.1)}},
+    #    ],
+    #  },
+    # ),
+    # "dr_joint_armature": CurriculumTermCfg(
+    #  func=mdp.event_curriculum,
+    #  params={
+    #    "event_name": "joint_armature",
+    #    "stages": [
+    #      {"step": 0, "params": {"ranges": (1.0, 1.0)}},
+    #      {"step": 1600 * 24, "params": {"ranges": (1.0, 1.05)}},
+    #    ],
+    #  },
+    # ),
+    # "dr_joint_damping": CurriculumTermCfg(
+    #  func=mdp.event_curriculum,
+    #  params={
+    #    "event_name": "joint_damping",
+    #    "stages": [
+    #      {"step": 0, "params": {"ranges": (1.0, 1.0)}},
+    #      {"step": 1600 * 24, "params": {"ranges": (0.95, 1.05)}},
+    #    ],
+    #  },
+    # ),
+    # "dr_actuator_gains": CurriculumTermCfg(
+    #  func=mdp.event_curriculum,
+    #  params={
+    #    "event_name": "actuator_gains",
+    #    "stages": [
+    #      {"step": 0, "params": {"kp_range": (1.0, 1.0), "kd_range": (1.0, 1.0)}},
+    #      {"step": 1600 * 24, "params": {"kp_range": (0.75, 1.25), "kd_range": (0.75, 1.25)}},
+    #    ],
+    #  },
+    # ),
+    # "dr_link_masses": CurriculumTermCfg(
+    #  func=mdp.event_curriculum,
+    #  params={
+    #    "event_name": "link_masses",
+    #    "stages": [
+    #      {"step": 0, "params": {"ranges": (1.0, 1.0)}},
+    #      {"step": 1600 * 24, "params": {"ranges": (0.9, 1.1)}},
+    #    ],
+    #  },
+    # ),
+    # "dr_torso_mass": CurriculumTermCfg(
+    #  func=mdp.event_curriculum,
+    #  params={
+    #    "event_name": "torso_mass",
+    #    "stages": [
+    #      {"step": 0, "params": {"ranges": (0.0, 0.0)}},
+    #      {"step": 1600 * 24, "params": {"ranges": (-0.5, 0.5)}},
+    #    ],
+    #  },
+    # ),
+    # "dr_link_com": CurriculumTermCfg(
+    #  func=mdp.event_curriculum,
+    #  params={
+    #    "event_name": "link_com",
+    #    "stages": [
+    #      {"step": 0, "params": {"ranges": {0: (0.0, 0.0), 1: (0.0, 0.0), 2: (0.0, 0.0)}}},
+    #      {"step": 1600 * 24, "params": {"ranges": {0: (-0.01, 0.01), 1: (-0.01, 0.01), 2: (-0.01, 0.01)}}},
+    #    ],
+    #  },
+    # ),
+    # "dr_base_com": CurriculumTermCfg(
+    #  func=mdp.event_curriculum,
+    #  params={
+    #    "event_name": "base_com",
+    #    "stages": [
+    #      {"step": 0, "params": {"ranges": {0: (0.0, 0.0), 1: (0.0, 0.0), 2: (0.0, 0.0)}}},
+    #      {"step": 1600 * 24, "params": {"ranges": {0: (-0.03, 0.03), 1: (-0.03, 0.03), 2: (-0.03, 0.03)}}},
+    #    ],
+    #  },
+    # ),
+    # "dr_encoder_bias": CurriculumTermCfg(
+    #  func=mdp.event_curriculum,
+    #  params={
+    #    "event_name": "encoder_bias",
+    #    "stages": [
+    #      {"step": 0, "params": {"bias_range": (0.0, 0.0)}},
+    #      {"step": 1600 * 24, "params": {"bias_range": (-0.05, 0.05)}},
+    #    ],
+    #  },
+    # ),
   }
 
   ##
@@ -673,7 +706,7 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
   )
   if play:
     curriculum = {}
-    #del events["push_robot"]
+    # del events["push_robot"]
     metrics["foot_air_time"] = MetricsTermCfg(
       func=pi_mdp.current_air_time,
       params={"sensor_name": "feet_ground_contact"},
@@ -682,7 +715,6 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
       func=pi_mdp.last_air_time,
       params={"sensor_name": "feet_ground_contact"},
     )
-
 
   ##
   # Assemble the config

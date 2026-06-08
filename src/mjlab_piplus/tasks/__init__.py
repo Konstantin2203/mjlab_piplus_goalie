@@ -6,9 +6,9 @@ from mjlab.tasks.velocity.rl.runner import VelocityOnPolicyRunner
 
 
 register_mjlab_task(
-    task_id="Mjlab-Velocity-PiPlus",
-    env_cfg=piplus_velocity_env_cfg(),
-    play_env_cfg=piplus_velocity_env_cfg(play=True),
-    rl_cfg=get_piplus_velocity_rl_cfg(),
-    runner_cls=VelocityOnPolicyRunner,
+  task_id="Mjlab-Velocity-PiPlus",
+  env_cfg=piplus_velocity_env_cfg(),
+  play_env_cfg=piplus_velocity_env_cfg(play=True),
+  rl_cfg=get_piplus_velocity_rl_cfg(),
+  runner_cls=VelocityOnPolicyRunner,
 )
