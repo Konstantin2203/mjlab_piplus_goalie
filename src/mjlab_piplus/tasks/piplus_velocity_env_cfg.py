@@ -194,8 +194,8 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
       params={
         "force_range": (1.0, 5.0),
         "torque_range": (0.0, 0.0),
-        "duration": (0.1, 0.3),
-        "cooldown": (1.0, 3.0),
+        "duration_s": (0.1, 0.3),
+        "cooldown_s": (1.0, 3.0),
         "asset_cfg": SceneEntityCfg("robot", body_names=("base_link",)),
       }
     ),
