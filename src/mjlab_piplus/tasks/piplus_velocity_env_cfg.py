@@ -389,7 +389,7 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
     # shaping rewards
     "air_time": RewardTermCfg(
       func=mdp.feet_air_time,
-      weight=1.25,
+      weight=2.0,
       params={
         "sensor_name": "feet_ground_contact",
         "threshold_min": 0.05,
@@ -514,17 +514,17 @@ def piplus_velocity_env_cfg(play: bool = False, static: bool = False) -> Manager
           ],
       },
    ),
-   "feet_air_time_coef": CurriculumTermCfg(
-    func=mdp.reward_curriculum,
-    params={
-      "reward_name": "air_time",
-      "stages": [
-        {"step": 0, "weight": 0.0},
-        {"step": 200 * 24, "weight": 1.25},
-        {"step": 600 * 24, "weight": 2.5},
-      ],
-    },
-   ),
+   #"feet_air_time_coef": CurriculumTermCfg(
+   # func=mdp.reward_curriculum,
+   # params={
+   #   "reward_name": "air_time",
+   #   "stages": [
+   #     {"step": 0, "weight": 0.0},
+   #     {"step": 200 * 24, "weight": 1.25},
+   #     {"step": 600 * 24, "weight": 2.5},
+   #   ],
+   # },
+   #),
    "action_rate_l2_coef": CurriculumTermCfg(
       func=mdp.reward_curriculum,
       params={
