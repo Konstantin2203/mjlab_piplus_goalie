@@ -391,7 +391,7 @@ def piplus_velocity_env_cfg(
           r".*_ankle_pitch_joint": 0.35,
           r".*_ankle_roll_joint": 0.15,
         },
-        "walking_threshold": 0.01,
+        "walking_threshold": 0.00,
         "running_threshold": 0.25,
       },
     ),
@@ -404,7 +404,7 @@ def piplus_velocity_env_cfg(
         "threshold_min": 0.05,
         "threshold_max": 0.5,
         "command_name": "twist",
-        "command_threshold": 0.01,
+        "command_threshold": 0.00,
       },
     ),
     # encourage feet to be at target height when the foot velocity is high (i.e. during swing)
@@ -415,7 +415,7 @@ def piplus_velocity_env_cfg(
     #    "target_height": 0.02,
     #    "height_sensor_name": "foot_height_scan",
     #    "command_name": "twist",
-    #    "command_threshold": 0.05,
+    #    "command_threshold": 0.00,
     #    "asset_cfg": SceneEntityCfg("robot", site_names=foot_sites),
     #  },
     # ),
@@ -427,7 +427,7 @@ def piplus_velocity_env_cfg(
     #    "height_sensor_name": "foot_height_scan",
     #    "target_height": 0.02,
     #    "command_name": "twist",
-    #    "command_threshold": 0.05,
+    #    "command_threshold": 0.00,
     #  },
     # ),
     # "foot_slip": RewardTermCfg(
@@ -436,7 +436,7 @@ def piplus_velocity_env_cfg(
     #  params={
     #    "sensor_name": "feet_ground_contact",
     #    "command_name": "twist",
-    #    "command_threshold": 0.05,
+    #    "command_threshold": 0.00,
     #    "asset_cfg": SceneEntityCfg("robot", site_names=foot_sites),
     #  },
     # ),
@@ -446,7 +446,7 @@ def piplus_velocity_env_cfg(
     #  params={
     #    "sensor_name": "feet_ground_contact",
     #    "command_name": "twist",
-    #    "command_threshold": 0.05,
+    #    "command_threshold": 0.00,
     #  },
     # ),
   }
@@ -497,10 +497,10 @@ def piplus_velocity_env_cfg(
       func=mdp.bad_orientation,
       params={"limit_angle": math.radians(70.0)},
     ),
-    "root_height_below_minimum": TerminationTermCfg(
-      func=mdp.root_height_below_minimum,
-      params={"minimum_height": 0.25},
-    ),
+    #"root_height_below_minimum": TerminationTermCfg(
+    #  func=mdp.root_height_below_minimum,
+    #  params={"minimum_height": 0.25},
+    #),
   }
 
   ##
