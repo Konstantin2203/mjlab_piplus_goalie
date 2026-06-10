@@ -352,12 +352,12 @@ def piplus_velocity_env_cfg(
     "action_rate_l2": RewardTermCfg(func=mdp.action_rate_l2, weight=-0.02),
     "torque_penalty": RewardTermCfg(
       func=mdp.joint_torques_l2,
-      weight=-1e-4,
+      weight=-5e-4,
       params={"asset_cfg": SceneEntityCfg("robot", actuator_names=(".*",))},
     ),
     "joint_vel_l2": RewardTermCfg(
       func=mdp.joint_vel_l2,
-      weight=-1e-3,
+      weight=-5e-3,
       params={"asset_cfg": SceneEntityCfg("robot", joint_names=(".*",))},
     ),
     "self_collisions": RewardTermCfg(
