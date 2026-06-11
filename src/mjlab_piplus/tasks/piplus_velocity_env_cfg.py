@@ -135,7 +135,7 @@ def piplus_velocity_env_cfg(
       entity_name="robot",
       resampling_time_range=(3.0, 8.0),
       debug_vis=True,
-      heading_command=False,
+      heading_command=True,
       heading_control_stiffness=0.0,
       rel_standing_envs=0.1,
       rel_heading_envs=0.3,
@@ -144,7 +144,9 @@ def piplus_velocity_env_cfg(
         lin_vel_x=(-0.5, 0.75),
         lin_vel_y=(-0.35, 0.35),
         ang_vel_z=(-math.pi / 2, math.pi / 2),
+        heading=(-math.pi, math.pi)
       ),
+
     )
   }
 
@@ -320,12 +322,12 @@ def piplus_velocity_env_cfg(
     "track_angular_velocity": RewardTermCfg(
       func=mdp.track_angular_velocity,
       weight=2.0,
-      params={"command_name": "twist", "std": math.sqrt(0.05)},
+      params={"command_name": "twist", "std": math.sqrt(0.3)},
     ),
     "track_angular_velocity_fine": RewardTermCfg(
       func=mdp.track_angular_velocity,
       weight=2.0,
-      params={"command_name": "twist", "std": math.sqrt(0.005)},
+      params={"command_name": "twist", "std": math.sqrt(0.03)},
     ),
     # stability rewards
     "upright": RewardTermCfg(
@@ -527,13 +529,13 @@ def piplus_velocity_env_cfg(
             "step": 400 * 24,
             "lin_vel_x": (-0.35, 0.5),
             "lin_vel_y": (-0.25, 0.25),
-            "ang_vel_z": (-math.pi / 3, math.pi / 3),
+            "ang_vel_z": (-math.pi / 4, math.pi / 4),
           },
           {
             "step": 600 * 24,
             "lin_vel_x": (-0.5, 0.75),
             "lin_vel_y": (-0.35, 0.35),
-            "ang_vel_z": (-math.pi / 2, math.pi / 2),
+            "ang_vel_z": (-math.pi / 4, math.pi / 4),
           },
         ],
       },
