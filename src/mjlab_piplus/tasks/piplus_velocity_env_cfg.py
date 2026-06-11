@@ -312,10 +312,20 @@ def piplus_velocity_env_cfg(
       weight=2.0,
       params={"command_name": "twist", "std": math.sqrt(0.03)},
     ),
+    "track_linear_velocity_fine": RewardTermCfg(
+      func=mdp.track_linear_velocity,
+      weight=2.0,
+      params={"command_name": "twist", "std": math.sqrt(0.003)},
+    ),
     "track_angular_velocity": RewardTermCfg(
       func=mdp.track_angular_velocity,
       weight=2.0,
       params={"command_name": "twist", "std": math.sqrt(0.05)},
+    ),
+    "track_angular_velocity_fine": RewardTermCfg(
+      func=mdp.track_angular_velocity,
+      weight=2.0,
+      params={"command_name": "twist", "std": math.sqrt(0.005)},
     ),
     # stability rewards
     "upright": RewardTermCfg(
