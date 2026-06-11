@@ -308,21 +308,21 @@ def piplus_velocity_env_cfg(
   ##
   rewards = {
     # task rewards
-    "track_linear_velocity": RewardTermCfg(
-      func=mdp.track_linear_velocity,
-      weight=2.0,
-      params={"command_name": "twist", "std": math.sqrt(0.25)},
-    ),
+    #"track_linear_velocity": RewardTermCfg(
+    #  func=mdp.track_linear_velocity,
+    #  weight=2.0,
+    #  params={"command_name": "twist", "std": math.sqrt(0.25)},
+    #),
     "track_linear_velocity_fine": RewardTermCfg(
       func=mdp.track_linear_velocity,
       weight=2.0,
       params={"command_name": "twist", "std": math.sqrt(0.03)},
     ),
-    "track_angular_velocity": RewardTermCfg(
-      func=mdp.track_angular_velocity,
-      weight=2.0,
-      params={"command_name": "twist", "std": math.sqrt(0.5)},
-    ),
+    #"track_angular_velocity": RewardTermCfg(
+    #  func=mdp.track_angular_velocity,
+    #  weight=2.0,
+    #  params={"command_name": "twist", "std": math.sqrt(0.5)},
+    #),
     "track_angular_velocity_fine": RewardTermCfg(
       func=mdp.track_angular_velocity,
       weight=2.0,
@@ -401,7 +401,7 @@ def piplus_velocity_env_cfg(
       weight=2.0,
       params={
         "sensor_name": "feet_ground_contact",
-        "threshold_min": 0.05,
+        "threshold_min": 0.1,
         "threshold_max": 0.5,
         "command_name": "twist",
         "command_threshold": 0.00,
@@ -706,7 +706,6 @@ def piplus_velocity_env_cfg(
   )
   if play:
     curriculum = {}
-    # del events["push_robot"]
     metrics["foot_air_time"] = MetricsTermCfg(
       func=pi_mdp.current_air_time,
       params={"sensor_name": "feet_ground_contact"},
