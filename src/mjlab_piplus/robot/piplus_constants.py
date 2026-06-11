@@ -17,8 +17,8 @@ def get_spec() -> mujoco.MjSpec:
   return spec
 
 
-ACTUATOR_LAG_MIN = 1
-ACTUATOR_LAG_MAX = 1
+ACTUATOR_LAG_MIN = 0
+ACTUATOR_LAG_MAX = 3
 
 # ACTUATOR_3536 = XmlActuatorCfg(
 #   target_names_expr=(

@@ -24,6 +24,8 @@ from mjlab_piplus.tasks import mdp as pi_mdp
 
 from mjlab.sensor import ContactMatch, ContactSensorCfg, TerrainHeightSensorCfg, ObjRef
 
+DELAY_MIN = 0
+DELAY_MAX = 3
 
 def piplus_velocity_env_cfg(
   play: bool = False, static: bool = False
@@ -55,6 +57,8 @@ def piplus_velocity_env_cfg(
       func=mdp.builtin_sensor,
       params={"sensor_name": "robot/gyro"},
       noise=Unoise(n_min=-0.2, n_max=0.2),
+      delay_min_lag=DELAY_MIN,
+      delay_max_lag=DELAY_MAX,
     ),
     "projected_gravity": ObservationTermCfg(
       func=mdp.projected_gravity,
@@ -66,16 +70,25 @@ def piplus_velocity_env_cfg(
         bias_noise_cfg=Unoise(n_min=-0.03, n_max=0.03, operation="add"),
         sample_bias_per_component=True,
       ),
+      delay_min_lag=DELAY_MIN,
+      delay_max_lag=DELAY_MAX,
     ),
     "joint_pos": ObservationTermCfg(
       func=mdp.joint_pos_rel,
       noise=Unoise(n_min=-0.01, n_max=0.01),
+      delay_min_lag=DELAY_MIN,
+      delay_max_lag=DELAY_MAX,
     ),
     "joint_vel": ObservationTermCfg(
       func=mdp.joint_vel_rel,
       noise=Unoise(n_min=-1.5, n_max=1.5),
+      delay_min_lag=DELAY_MIN,
+      delay_max_lag=DELAY_MAX,
     ),
-    "actions": ObservationTermCfg(func=mdp.last_action),
+    "actions": ObservationTermCfg(
+      func=mdp.last_action,
+      #noise=Unoise(n_min=-0.1, n_max=0.1),
+    ),
     "command": ObservationTermCfg(
       func=mdp.generated_commands,
       params={"command_name": "twist"},
