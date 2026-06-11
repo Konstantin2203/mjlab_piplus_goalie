@@ -217,6 +217,15 @@ def piplus_velocity_env_cfg(
         "asset_cfg": SceneEntityCfg("robot", body_names=("base_link",)),
       },
     ),
+    "randomize_reset_pose": EventTermCfg(
+      func=mdp.reset_joints_by_offset,
+      mode="reset",
+      params={
+        "position_range": (-0.2, 0.2),
+        "velocity_range": (-0.5, 0.5),
+        "asset_cfg": SceneEntityCfg("robot", joint_names=(".*",)),
+      },
+    ),
     # "foot_friction": EventTermCfg(
     #   mode="reset",
     #   func=dr.geom_friction,
