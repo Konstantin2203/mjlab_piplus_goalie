@@ -424,7 +424,7 @@ def piplus_velocity_env_cfg(
       weight=2.0,
       params={
         "sensor_name": "feet_ground_contact",
-        "threshold_min": 0.075,
+        "threshold_min": 0.05,
         "threshold_max": 0.5,
         "command_name": "twist",
         "command_threshold": 0.00,
