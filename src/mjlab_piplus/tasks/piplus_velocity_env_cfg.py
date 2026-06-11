@@ -141,9 +141,9 @@ def piplus_velocity_env_cfg(
       rel_heading_envs=0.3,
       rel_forward_envs=0.15,
       ranges=UniformVelocityCommandCfg.Ranges(
-        lin_vel_x=(-0.5, 0.75),
-        lin_vel_y=(-0.35, 0.35),
-        ang_vel_z=(-math.pi / 2, math.pi / 2),
+        lin_vel_x=(-0.25, 0.5),
+        lin_vel_y=(-0.25, 0.25),
+        ang_vel_z=(-math.pi / 4, math.pi / 4),
         heading=(-math.pi, math.pi)
       ),
 
@@ -520,21 +520,21 @@ def piplus_velocity_env_cfg(
             "ang_vel_z": (-math.pi / 6, math.pi / 6),
           },
           {
-            "step": 200 * 24,
+            "step": 400 * 24,
             "lin_vel_x": (-0.15, 0.2),
             "lin_vel_y": (-0.1, 0.1),
             "ang_vel_z": (-math.pi / 4, math.pi / 4),
           },
           {
-            "step": 400 * 24,
-            "lin_vel_x": (-0.35, 0.5),
-            "lin_vel_y": (-0.25, 0.25),
+            "step": 600 * 24,
+            "lin_vel_x": (-0.25, 0.35),
+            "lin_vel_y": (-0.15, 0.15),
             "ang_vel_z": (-math.pi / 4, math.pi / 4),
           },
           {
-            "step": 600 * 24,
-            "lin_vel_x": (-0.5, 0.75),
-            "lin_vel_y": (-0.35, 0.35),
+            "step": 800 * 24,
+            "lin_vel_x": (-0.25, 0.5),
+            "lin_vel_y": (-0.2, 0.25),
             "ang_vel_z": (-math.pi / 4, math.pi / 4),
           },
         ],
