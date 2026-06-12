@@ -161,7 +161,7 @@
         <geom type="mesh" class="visual" rgba="0.752941 0.752941 0.752941 1" mesh="r_hip_pitch_link"/>
         <body name="r_hip_roll_link" pos="0 -0.034 0">
           <inertial pos="0.00102172 -0.00033797 -0.0584583" quat="0.701595 0.0555068 0.0565269 0.708158" mass="0.558201" diaginertia="0.000740261 0.000626564 0.000407515"/>
-          <joint name="r_hip_roll_joint" class="pi_joint_leg" pos="0 0 0" axis="1 0 0" range="-3.1 0.15"/>
+          <joint name="r_hip_roll_joint" class="pi_joint_leg" pos="0 0 0" axis="1 0 0" range="-1 0.15"/>
           <geom type="mesh" class="visual" rgba="0.752941 0.752941 0.752941 1" mesh="r_hip_roll_link"/>
           <body name="r_thigh_link" pos="-0.00035 0 -0.0974">
             <inertial pos="0.00064557 -0.00075206 -0.0208405" quat="0.703792 0.710207 0.0135977 -0.00990732" mass="0.154843" diaginertia="0.000187812 0.000161216 0.000100573"/>
@@ -201,7 +201,7 @@
         <geom type="mesh" class="visual" rgba="0.752941 0.752941 0.752941 1" mesh="l_hip_pitch_link"/>
         <body name="l_hip_roll_link" pos="0 0.034 0">
           <inertial pos="0.00087873 1.341e-05 -0.0584583" quat="0.702052 0.056967 0.0602688 0.70728" mass="0.558201" diaginertia="0.000740475 0.000627166 0.00040724"/>
-          <joint name="l_hip_roll_joint" class="pi_joint_leg" pos="0 0 0" axis="1 0 0" range="-0.15 3.1"/>
+          <joint name="l_hip_roll_joint" class="pi_joint_leg" pos="0 0 0" axis="1 0 0" range="-0.15 1.0"/>
           <geom type="mesh" class="visual" rgba="0.752941 0.752941 0.752941 1" mesh="l_hip_roll_link"/>
           <body name="l_thigh_link" pos="-0.00035 0 -0.0974">
             <inertial pos="0.00071587 0.00075215 -0.0208406" quat="0.710169 0.70371 0.0141108 -0.015948" mass="0.154842" diaginertia="0.000187829 0.000161177 0.000100564"/>
