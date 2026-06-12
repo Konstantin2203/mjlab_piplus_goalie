@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from mjlab.sensor import ContactSensor
 import torch
 
 from mjlab.entity import Entity
@@ -95,3 +96,37 @@ def alive(
   asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
 ) -> torch.Tensor:
   return ~env.termination_manager.terminated
+
+
+def feet_air_time_zero_vel(
+  env: ManagerBasedRlEnv,
+  sensor_name: str,
+  threshold_min: float = 0.05,
+  threshold_max: float = 0.5,
+  command_name: str | None = None,
+  command_threshold: float = 0.5,
+) -> torch.Tensor:
+  """Reward feet air time."""
+  sensor: ContactSensor = env.scene[sensor_name]
+  sensor_data = sensor.data
+  current_air_time = sensor_data.current_air_time
+  assert current_air_time is not None
+  in_range = (current_air_time > threshold_min) & (current_air_time < threshold_max)
+  reward = torch.sum(in_range.float(), dim=1) # number of feet in the air
+  in_air = current_air_time > 0
+  num_in_air = torch.sum(in_air.float())
+  mean_air_time = torch.sum(current_air_time * in_air.float()) / torch.clamp(
+    num_in_air, min=1
+  )
+  env.extras["log"]["Metrics/air_time_mean"] = mean_air_time
+  if command_name is not None:
+    command = env.command_manager.get_command(command_name)
+    if command is not None:
+      linear_norm = torch.norm(command[:, :2], dim=1)
+      angular_norm = torch.abs(command[:, 2])
+      total_command = linear_norm + angular_norm
+      scale = (total_command > command_threshold).float()
+      reward *= scale
+      command_zero_mask = (total_command == 0.0)
+      reward[command_zero_mask] = 1.0 # maybe reward max value, if we reach zero support
+  return reward
