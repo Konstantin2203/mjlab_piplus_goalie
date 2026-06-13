@@ -13,6 +13,7 @@ from mjlab_piplus.tasks.mdp.metrics import (
   yaw_tracking_error_filtered,
   yaw_tracking_error_raw,
 )
+from mjlab_piplus.tasks.mdp.symmetry import PiPlusSymmetry
 from mjlab_piplus.tasks.mdp.rewards import (
   track_angular_velocity_filtered,
   upright_relaxed,
@@ -34,4 +35,5 @@ __all__ = [
   "joint_pos_deviation",
   "last_air_time",
   "step_frequency",
+  "PiPlusSymmetry",
 ]
