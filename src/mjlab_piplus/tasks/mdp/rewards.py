@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from mjlab.sensor import ContactSensor
+from mjlab.sensor import ContactSensor, TerrainHeightSensor
 import torch
 
 from mjlab.entity import Entity

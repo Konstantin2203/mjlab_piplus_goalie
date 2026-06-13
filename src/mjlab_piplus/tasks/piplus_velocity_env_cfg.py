@@ -411,7 +411,7 @@ def piplus_velocity_env_cfg(
     ),
     # shaping rewards
     "air_time": RewardTermCfg(
-      func=mdp.feet_air_time,
+      func=pi_mdp.feet_air_time_zero_vel,
       weight=2.0,
       params={
         "sensor_name": "feet_ground_contact",
@@ -446,7 +446,7 @@ def piplus_velocity_env_cfg(
     ),
     "foot_slip": RewardTermCfg(
      func=mdp.feet_slip,
-     weight=0.0,
+     weight=-0.1,
      params={
        "sensor_name": "feet_ground_contact",
        "command_name": "twist",
@@ -456,7 +456,7 @@ def piplus_velocity_env_cfg(
     ),
     "soft_landing": RewardTermCfg(
      func=mdp.soft_landing,
-     weight=0.0,
+     weight=-1e-5,
      params={
        "sensor_name": "feet_ground_contact",
        "command_name": "twist",

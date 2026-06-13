@@ -18,6 +18,7 @@ from mjlab_piplus.tasks.mdp.rewards import (
   track_angular_velocity_filtered,
   upright_relaxed,
   alive,
+  feet_air_time_zero_vel
 )
 
 __all__ = [
@@ -31,6 +32,7 @@ __all__ = [
   "torso_yaw_swing",
   "base_ang_vel_xy_l2",
   "current_air_time",
+  "feet_air_time_zero_vel",
   "foot_contact_force",
   "joint_pos_deviation",
   "last_air_time",
