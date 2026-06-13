@@ -10,30 +10,8 @@ from tensordict import TensorDict
 if TYPE_CHECKING:
     from rsl_rl.env import VecEnv
 
-# (right_joint, left_joint, sign)
-# sign = +1 when the same value encodes a symmetric posture;
-# sign = -1 when the partner joint's value must be negated to get the
-# symmetric posture (opposite axis direction or negated range convention).
-_JOINT_SYMMETRY = [
-    #("r_shoulder_pitch_joint", "l_shoulder_pitch_joint", -1),  # axes (0,-1,0) vs (0,1,0)
-    #("r_shoulder_roll_joint",  "l_shoulder_roll_joint",  -1),  # same axis, ranges negated
-    #("r_upper_arm_joint",      "l_upper_arm_joint",      +1),  # same axis, same range
-    #("r_elbow_joint",          "l_elbow_joint",          -1),  # axes (0,-1,0) vs (0,1,0)
-    ("r_hip_pitch_joint",      "l_hip_pitch_joint",      -1),  # axes (0,-1,0) vs (0,1,0), defaults ±0.25
-    ("r_hip_roll_joint",       "l_hip_roll_joint",       -1),  # same axis, ranges negated
-    ("r_thigh_joint",          "l_thigh_joint",          +1),  # same axis, same range
-    ("r_calf_joint",           "l_calf_joint",           -1),  # axes (0,1,0) vs (0,-1,0)
-    ("r_ankle_pitch_joint",    "l_ankle_pitch_joint",    -1),  # axes (0,-1,0) vs (0,1,0)
-    ("r_ankle_roll_joint",     "l_ankle_roll_joint",     +1),  # same axis, symmetric range
-]
-
-
 class PiPlusSymmetry:
     """Callable left-right symmetry function for the PiPlus robot.
-
-    Actor observation layout assumed (concatenated in this order):
-      base_lin_vel [3], base_ang_vel [3], projected_gravity [3],
-      joint_pos [N], joint_vel [N], actions [N], command [3]
 
     Passed as ``data_augmentation_func`` to rsl_rl's ``Symmetry`` extension.
     Returns (obs, actions) with the original batch prepended to the mirrored
@@ -47,67 +25,63 @@ class PiPlusSymmetry:
         self._n_joints: int
 
     def _build(self, env: VecEnv) -> None:
-        mjenv = env.unwrapped
-        robot = mjenv.scene["robot"]
-        names = list(robot.joint_names)
-        n = len(names)
-        name_to_i = {name: i for i, name in enumerate(names)}
-
-        perm = list(range(n))
-        joint_sign = [1.0] * n
-        for r_name, l_name, s in _JOINT_SYMMETRY:
-            r_i = name_to_i[r_name]
-            l_i = name_to_i[l_name]
-            perm[r_i] = l_i
-            perm[l_i] = r_i
-            joint_sign[r_i] = float(s)
-            joint_sign[l_i] = float(s)
-
         dev = env.device
-        self._joint_perm = torch.tensor(perm, dtype=torch.long, device=dev)
-        self._joint_sign = torch.tensor(joint_sign, dtype=torch.float32, device=dev)
-        self._n_joints = n
+        self._actor_obs_sign = torch.tensor([
+            -1., 1., -1.,      # base_ang_vel
+            1., -1., 1.,      # projected_gravity
+            -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, # joint_pos
+            -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, # joint vel
+            -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, # actions
+            1., -1., -1.,     # command
+        ], dtype=torch.float32, device=dev)
+        self._critic_obs_sign = torch.hstack([
+            self._actor_obs_sign,
+            torch.tensor([
+                1., -1., 1.,   # base_lin_vel
+                1, 1, # foot height
+                1, 1, # foot air time
+                1, 1, # foot contact
+                1, -1, 1, 1, -1, 1 # foot contact forces
+            ], dtype=torch.float32, device=dev),
+        ])
+        self._action_sign = torch.ones(12, dtype=torch.float32, device=dev) * -1
 
-        # Per-term sign rules.  Joint-space terms are handled separately via _joint_perm.
-        _TERM_SIGNS: dict[str, list[float]] = {
-            "base_lin_vel":      [1., -1., 1.],         # flip y
-            "base_ang_vel":      [-1., 1., -1.],        # flip roll & yaw
-            "projected_gravity": [1., -1., 1.],         # flip y
-            "command":           [1., -1., -1.],         # flip vy & wz
-        }
-        _JOINT_TERMS = {"joint_pos", "joint_vel", "actions"}
+        self._actor_obs_perm = torch.arange(len(self._actor_obs_sign), dtype=torch.int64, device=dev)
+        for k in [6, 18, 30]: # joint pos, vel, actions
+            self._actor_obs_perm[k:k+6] = torch.arange(k+6, k+12, device=dev)
+            self._actor_obs_perm[k+6:k+12] = torch.arange(k, k+6, device=dev)
 
-        # Walk active actor terms in order; compute per-element sign vector.
-        obs_sign: list[float] = []
-        self._joint_slices: list[tuple[int, int]] = []  # (start, end) for joint-space terms
+        critic_only_perm = torch.arange(start=len(self._actor_obs_sign),
+                                        end=len(self._critic_obs_sign)+len(self._actor_obs_sign),
+                                        dtype=torch.int64, device=dev)
+        for k in [3, 5, 7]: # foot height, air time, contact
+            a = critic_only_perm[k].clone()
+            critic_only_perm[k] = critic_only_perm[k+1]
+            critic_only_perm[k+1] = a
 
-        obs_manager = mjenv.observation_manager
-        offset = 0
-        for name in obs_manager.active_terms["actor"]:
-            cfg = obs_manager.get_term_cfg("actor", name)
-            with torch.no_grad():
-                size = int(cfg.func(mjenv, **cfg.params).shape[-1])
-            if name in _JOINT_TERMS:
-                self._joint_slices.append((offset, offset + size))
-                obs_sign.extend([1.0] * size)
-            elif name in _TERM_SIGNS:
-                obs_sign.extend(_TERM_SIGNS[name])
-            else:
-                obs_sign.extend([1.0] * size)
-            offset += size
+        a = critic_only_perm[9:12].clone() # swap foot forces left-right
+        critic_only_perm[9:12] = critic_only_perm[12:15]
+        critic_only_perm[12:15] = a
 
-        self._obs_sign = torch.tensor(obs_sign, dtype=torch.float32, device=dev)
+        self._critic_obs_perm = torch.hstack([
+            self._actor_obs_perm,
+            critic_only_perm,
+        ])
+
+        self._action_perm = torch.arange(12, dtype=torch.int64, device=dev)
+        self._action_perm[0:6] = torch.arange(6, 12, device=dev)
+        self._action_perm[6:12] = torch.arange(0, 6, device=dev)
+
         self._ready = True
 
-    def _mirror_joints(self, x: torch.Tensor) -> torch.Tensor:
-        return x[:, self._joint_perm] * self._joint_sign
+    def _mirror_actions(self, x: torch.Tensor) -> torch.Tensor:
+        return x[:, self._action_perm] * self._action_sign
 
-    def _mirror_obs(self, obs: torch.Tensor) -> torch.Tensor:
-        # Apply per-element sign flips (non-joint terms already handled by _obs_sign).
-        m = obs * self._obs_sign
-        # Overwrite joint-space blocks with permuted + signed values.
-        for start, end in self._joint_slices:
-            m[:, start:end] = obs[:, start:end][:, self._joint_perm] * self._joint_sign
+    def _mirror_obs(self, obs: torch.Tensor, key: str) -> torch.Tensor:
+        if key == "actor":
+            m = obs * self._actor_obs_sign
+        elif key == "critic":
+            m = obs * self._critic_obs_sign
         return m
 
     def __call__(
@@ -123,19 +97,12 @@ class PiPlusSymmetry:
         out_actions = None
 
         if obs is not None:
-            if isinstance(obs, TensorDict):
-                # Mirror actor group; repeat other groups (e.g. critic) unchanged.
-                new_tensors = {}
-                for key, val in obs.items():
-                    mirrored = self._mirror_obs(val) if key == "actor" else val
-                    new_tensors[key] = torch.cat([val, mirrored], dim=0)
-                out_obs = TensorDict(new_tensors, batch_size=[obs.batch_size[0] * 2], device=obs.device)
-            else:
-                mirrored = self._mirror_obs(obs)
-                out_obs = torch.cat([obs, mirrored], dim=0)
+            out_obs = TensorDict({}, batch_size=[obs.batch_size[0] * 2], device=obs.device, names=obs.names)
+            for key, val in obs.items():
+                mirrored = self._mirror_obs(val, key)
+                out_obs[key] = torch.cat([val, mirrored], dim=0)
 
         if actions is not None:
-            mirrored = self._mirror_joints(actions)
+            mirrored = self._mirror_actions(actions)
             out_actions = torch.cat([actions, mirrored], dim=0)
-
         return out_obs, out_actions

@@ -52,7 +52,7 @@ def piplus_velocity_env_cfg(
   ##
   # Observations
   ##
-  actor_terms = {
+  actor_terms = { # careful: when changing, also change symmetry config
     "base_ang_vel": ObservationTermCfg(
       func=mdp.builtin_sensor,
       params={"sensor_name": "robot/gyro"},
