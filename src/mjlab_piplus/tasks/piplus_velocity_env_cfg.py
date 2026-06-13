@@ -96,6 +96,10 @@ def piplus_velocity_env_cfg(
   }
   critic_terms = {
     **actor_terms,
+    "base_lin_vel": ObservationTermCfg(
+      func=mdp.builtin_sensor,
+      params={"sensor_name": "robot/local_linvel"},
+    ),
     "foot_height": ObservationTermCfg(
       func=mdp.foot_height,
       params={"sensor_name": "foot_height_scan"},
