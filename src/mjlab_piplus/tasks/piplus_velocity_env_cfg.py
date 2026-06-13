@@ -422,47 +422,47 @@ def piplus_velocity_env_cfg(
       },
     ),
     # encourage feet to be at target height when the foot velocity is high (i.e. during swing)
-    # "foot_clearance": RewardTermCfg(
-    #  func=mdp.feet_clearance,
-    #  weight=-20.0,
-    #  params={
-    #    "target_height": 0.02,
-    #    "height_sensor_name": "foot_height_scan",
-    #    "command_name": "twist",
-    #    "command_threshold": 0.00,
-    #    "asset_cfg": SceneEntityCfg("robot", site_names=foot_sites),
-    #  },
-    # ),
-    # "foot_swing_height": RewardTermCfg(
-    #  func=mdp.feet_swing_height,
-    #  weight=-2.5,
-    #  params={
-    #    "sensor_name": "feet_ground_contact",
-    #    "height_sensor_name": "foot_height_scan",
-    #    "target_height": 0.02,
-    #    "command_name": "twist",
-    #    "command_threshold": 0.00,
-    #  },
-    # ),
-    # "foot_slip": RewardTermCfg(
-    #  func=mdp.feet_slip,
-    #  weight=0.0,
-    #  params={
-    #    "sensor_name": "feet_ground_contact",
-    #    "command_name": "twist",
-    #    "command_threshold": 0.00,
-    #    "asset_cfg": SceneEntityCfg("robot", site_names=foot_sites),
-    #  },
-    # ),
-    # "soft_landing": RewardTermCfg(
-    #  func=mdp.soft_landing,
-    #  weight=0.0,
-    #  params={
-    #    "sensor_name": "feet_ground_contact",
-    #    "command_name": "twist",
-    #    "command_threshold": 0.00,
-    #  },
-    # ),
+    "foot_clearance": RewardTermCfg(
+     func=mdp.feet_clearance,
+     weight=-20.0,
+     params={
+       "target_height": 0.02,
+       "height_sensor_name": "foot_height_scan",
+       "command_name": "twist",
+       "command_threshold": 0.00,
+       "asset_cfg": SceneEntityCfg("robot", site_names=foot_sites),
+     },
+    ),
+    "foot_swing_height": RewardTermCfg(
+     func=mdp.feet_swing_height,
+     weight=-2.5,
+     params={
+       "sensor_name": "feet_ground_contact",
+       "height_sensor_name": "foot_height_scan",
+       "target_height": 0.02,
+       "command_name": "twist",
+       "command_threshold": 0.00,
+     },
+    ),
+    "foot_slip": RewardTermCfg(
+     func=mdp.feet_slip,
+     weight=0.0,
+     params={
+       "sensor_name": "feet_ground_contact",
+       "command_name": "twist",
+       "command_threshold": 0.00,
+       "asset_cfg": SceneEntityCfg("robot", site_names=foot_sites),
+     },
+    ),
+    "soft_landing": RewardTermCfg(
+     func=mdp.soft_landing,
+     weight=0.0,
+     params={
+       "sensor_name": "feet_ground_contact",
+       "command_name": "twist",
+       "command_threshold": 0.00,
+     },
+    ),
   }
   ##
   # Metrics
