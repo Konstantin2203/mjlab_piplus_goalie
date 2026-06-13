@@ -193,12 +193,12 @@ def piplus_velocity_env_cfg(
     "push_robot": EventTermCfg(
       func=mdp.push_by_setting_velocity,
       mode="interval",
-      interval_range_s=(1.0, 3.0),
+      interval_range_s=(2.0, 6.0),
       params={
         "velocity_range": {
-          "x": (-0.1, 0.1),
-          "y": (-0.1, 0.1),
-          "z": (-0.2, 0.2),
+          "x": (-0.25, 0.25),
+          "y": (-0.25, 0.25),
+          "z": (-0.15, 0.15),
           "roll": (-0.52, 0.52),
           "pitch": (-0.52, 0.52),
           "yaw": (-0.78, 0.78),
