@@ -117,3 +117,13 @@ def foot_contact_force(
   assert sensor.data.force is not None
   # force: [B, N, 3] global frame (netforce reduce)
   return torch.linalg.norm(sensor.data.force, dim=-1).mean(dim=-1)
+
+def phase_metric(
+    env: ManagerBasedRlEnv,
+    frequency: float = 1.75,
+    command_name: str = "twist",
+  ) -> torch.Tensor:
+  """ phase from 0 to 1"""
+  period = 1 / frequency
+  global_phase = (env.episode_length_buf * env.step_dt) % period / period
+  return global_phase

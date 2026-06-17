@@ -342,7 +342,7 @@ def piplus_velocity_env_cfg(
     ),
     "track_angular_velocity": RewardTermCfg(
       func=mdp.track_angular_velocity,
-      weight=2.0,
+      weight=1.0,
       params={"command_name": "twist", "std": math.sqrt(0.5)},
     ),
     # stability rewards
@@ -482,7 +482,7 @@ def piplus_velocity_env_cfg(
       params={"sensor_name": "feet_ground_contact"},
     ),
     "phase_metric": MetricsTermCfg(
-      func=pi_mdp.phase,
+      func=pi_mdp.phase_metric,
       params={
         "frequency": WALK_FREQUENCY,
         "command_name": "twist",
