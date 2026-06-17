@@ -515,20 +515,20 @@ def piplus_velocity_phase_env_cfg(
       params={
         "command_name": "twist",
         "velocity_stages": [
+          # {
+          #   "step": 0 * 24,
+          #   "lin_vel_x": (-0.08, 0.1),
+          #   "lin_vel_y": (-0.04, 0.04),
+          #   "ang_vel_z": (-math.pi / 6, math.pi / 6),
+          # },
+          # {
+          #   "step": 400 * 24,
+          #   "lin_vel_x": (-0.15, 0.2),
+          #   "lin_vel_y": (-0.1, 0.1),
+          #   "ang_vel_z": (-math.pi / 4, math.pi / 4),
+          # },
           {
             "step": 0 * 24,
-            "lin_vel_x": (-0.08, 0.1),
-            "lin_vel_y": (-0.04, 0.04),
-            "ang_vel_z": (-math.pi / 6, math.pi / 6),
-          },
-          {
-            "step": 400 * 24,
-            "lin_vel_x": (-0.15, 0.2),
-            "lin_vel_y": (-0.1, 0.1),
-            "ang_vel_z": (-math.pi / 4, math.pi / 4),
-          },
-          {
-            "step": 600 * 24,
             "lin_vel_x": (-0.25, 0.35),
             "lin_vel_y": (-0.15, 0.15),
             "ang_vel_z": (-math.pi / 4, math.pi / 4),
