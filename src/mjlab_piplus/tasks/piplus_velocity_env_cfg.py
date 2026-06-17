@@ -373,6 +373,7 @@ def piplus_velocity_env_cfg(
       weight=-0.02,
       params={"sensor_name": "robot/root_angmom"},
     ),
+    "is_terminated": RewardTermCfg(func=mdp.is_terminated, weight=-200.0),
     # safety rewards
     "dof_pos_limits": RewardTermCfg(func=mdp.joint_pos_limits, weight=-1.0),
     "action_rate_l2": RewardTermCfg(func=mdp.action_rate_l2, weight=-0.02),
@@ -437,7 +438,7 @@ def piplus_velocity_env_cfg(
     ),
     "foot_clearance": RewardTermCfg(
       func=pi_mdp.feet_clearance,
-      weight=-20.0,
+      weight=-1.0,
       params={
         "target_height": 0.02,
         "command_name": "twist",
@@ -447,7 +448,7 @@ def piplus_velocity_env_cfg(
     ),
     "foot_slip": RewardTermCfg(
       func=pi_mdp.feet_slip,
-      weight=-0.1,
+      weight=-0.25,
       params={
         "sensor_name": "feet_ground_contact",
         "command_name": "twist",
@@ -457,7 +458,7 @@ def piplus_velocity_env_cfg(
     ),
     "soft_landing": RewardTermCfg(
       func=pi_mdp.soft_landing,
-      weight=-1e-5,
+      weight=-1e-3,
       params={
         "sensor_name": "feet_ground_contact",
         "command_name": "twist",
@@ -515,18 +516,6 @@ def piplus_velocity_env_cfg(
       params={
         "command_name": "twist",
         "velocity_stages": [
-          # {
-          #   "step": 0 * 24,
-          #   "lin_vel_x": (-0.08, 0.1),
-          #   "lin_vel_y": (-0.04, 0.04),
-          #   "ang_vel_z": (-math.pi / 6, math.pi / 6),
-          # },
-          # {
-          #   "step": 400 * 24,
-          #   "lin_vel_x": (-0.15, 0.2),
-          #   "lin_vel_y": (-0.1, 0.1),
-          #   "ang_vel_z": (-math.pi / 4, math.pi / 4),
-          # },
           {
             "step": 0 * 24,
             "lin_vel_x": (-0.25, 0.35),
