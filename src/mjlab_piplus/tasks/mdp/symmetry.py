@@ -24,85 +24,49 @@ class PiPlusSymmetry:
         self._joint_sign: torch.Tensor
         self._n_joints: int
 
-    def _build(self, env: VecEnv) -> None:
-        dev = env.device
-        self._actor_obs_sign = torch.tensor([
-            -1., 1., -1.,      # base_ang_vel
-            1., -1., 1.,      # projected_gravity
-            -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, # joint_pos
-            -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, # joint vel
-            -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, # actions
-            1., -1., -1.,     # command
-        ], dtype=torch.float32, device=dev)
-        self._critic_obs_sign = torch.hstack([
-            self._actor_obs_sign,
-            torch.tensor([
-                1., -1., 1.,   # base_lin_vel
-                1, 1, # foot height
-                1, 1, # foot air time
-                1, 1, # foot contact
-                1, -1, 1, 1, -1, 1 # foot contact forces
-            ], dtype=torch.float32, device=dev),
-        ])
-        self._action_sign = torch.ones(12, dtype=torch.float32, device=dev) * -1
-
-        self._actor_obs_perm = torch.arange(len(self._actor_obs_sign), dtype=torch.int64, device=dev)
-        for k in [6, 18, 30]: # joint pos, vel, actions
-            self._actor_obs_perm[k:k+6] = torch.arange(k+6, k+12, device=dev)
-            self._actor_obs_perm[k+6:k+12] = torch.arange(k, k+6, device=dev)
-
-        critic_only_perm = torch.arange(start=len(self._actor_obs_sign),
-                                        end=len(self._critic_obs_sign)+len(self._actor_obs_sign),
-                                        dtype=torch.int64, device=dev)
-        for k in [3, 5, 7]: # foot height, air time, contact
-            a = critic_only_perm[k].clone()
-            critic_only_perm[k] = critic_only_perm[k+1]
-            critic_only_perm[k+1] = a
-
-        a = critic_only_perm[9:12].clone() # swap foot forces left-right
-        critic_only_perm[9:12] = critic_only_perm[12:15]
-        critic_only_perm[12:15] = a
-
-        self._critic_obs_perm = torch.hstack([
-            self._actor_obs_perm,
-            critic_only_perm,
-        ])
-
-        self._action_perm = torch.arange(12, dtype=torch.int64, device=dev)
-        self._action_perm[0:6] = torch.arange(6, 12, device=dev)
-        self._action_perm[6:12] = torch.arange(0, 6, device=dev)
-
-        self._ready = True
-
-    def _mirror_actions(self, x: torch.Tensor) -> torch.Tensor:
-        return x[:, self._action_perm] * self._action_sign
-
-    def _mirror_obs(self, obs: torch.Tensor, key: str) -> torch.Tensor:
-        if key == "actor":
-            m = obs * self._actor_obs_sign
-        elif key == "critic":
-            m = obs * self._critic_obs_sign
-        return m
-
+    @torch.no_grad()
     def __call__(
         self,
         env: VecEnv,
         obs: TensorDict | torch.Tensor | None,
         actions: torch.Tensor | None,
     ) -> tuple[TensorDict | torch.Tensor | None, torch.Tensor | None]:
-        if not self._ready:
-            self._build(env)
-
-        out_obs = None
-        out_actions = None
-
         if obs is not None:
-            out_obs = TensorDict({}, batch_size=[obs.batch_size[0] * 2], device=obs.device, names=obs.names)
-            for key, val in obs.items():
-                mirrored = self._mirror_obs(val, key)
-                out_obs[key] = torch.cat([val, mirrored], dim=0)
+            batch_size = obs.batch_size[0]
+            obs_aug = obs.repeat(2)
+            obs_aug["actor"][:batch_size] = obs["actor"][:]
+            obs_aug["actor"][batch_size:] = _transform_obs(obs["actor"][:])
+        else:
+            obs_aug = None
 
         if actions is not None:
-            mirrored = self._mirror_actions(actions)
-            out_actions = torch.cat([actions, mirrored], dim=0)
-        return out_obs, out_actions
+            batch_size = actions.shape[0]
+            action_aug = torch.zeros((batch_size * 2, actions.shape[1]), device=actions.device, dtype=actions.dtype)
+            action_aug[:batch_size] = actions[:]
+            action_aug[batch_size:] = _transform_actions(actions[:])
+        else:
+            action_aug = None
+
+        return obs_aug, action_aug
+
+def _transform_actions(actions: torch.Tensor) -> torch.Tensor:
+    actions = actions.clone()
+    actions[:] = _switch_left_right(actions[:]) * -1
+    return actions
+
+def _transform_obs(obs: TensorDict) -> TensorDict:
+    obs = obs.clone()
+    device = obs.device
+    obs[:, :3] = obs[:, :3] * torch.tensor([-1., 1., -1.,], device=device) # base ang vel
+    obs[:, 3:6] = obs[:, 3:6] * torch.tensor([1., -1., 1.], device=device) # projected gravity
+    obs[:, 6:18] = _switch_left_right(obs[:, 6:18]) * -1 # joint pos
+    obs[:, 18:30] = _switch_left_right(obs[:, 18:30]) * -1 # joint vel
+    obs[:, 30:42] = _switch_left_right(obs[:, 30:42]) * -1 # actions
+    obs[:, 42:45] = obs[:, 42:45] * torch.tensor([1., -1., -1.], device=device) # command
+    return obs
+
+def _switch_left_right(joint_data : torch.Tensor) -> torch.Tensor:
+    joint_data_switched = joint_data.clone()
+    joint_data_switched[..., [0,1,2,3,4,5]] = joint_data[..., [6,7,8,9,10,11]]
+    joint_data_switched[..., [6,7,8,9,10,11]] = joint_data[..., [0,1,2,3,4,5]]
+    return joint_data_switched

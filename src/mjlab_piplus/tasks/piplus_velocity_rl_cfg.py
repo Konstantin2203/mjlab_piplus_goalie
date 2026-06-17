@@ -14,7 +14,7 @@ class PiPlusPpoAlgorithmCfg(RslRlPpoAlgorithmCfg):
   symmetry_cfg: dict[str, Any] | None = field(default_factory=lambda: {
     "data_augmentation_func": PiPlusSymmetry(),
     "use_mirror_loss": True,
-    "mirror_loss_coeff": 0.1,
+    "mirror_loss_coeff": 0.5,
   })
 
 
