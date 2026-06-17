@@ -133,13 +133,14 @@ def feet_air_time_zero_vel(
 
 def feet_gait(
         env: ManagerBasedRlEnv,
-        period: float,
+        frequency: float,
         offset: list[float],
         threshold: float,
         command_threshold: float,
         command_name: str,
         sensor_name: str,
 ) -> torch.Tensor:
+    period = 1 / frequency
     sensor: ContactSensor = env.scene[sensor_name]
     is_contact = sensor.data.current_contact_time > 0
     global_phase = ((env.episode_length_buf * env.step_dt) / period).unsqueeze(1)

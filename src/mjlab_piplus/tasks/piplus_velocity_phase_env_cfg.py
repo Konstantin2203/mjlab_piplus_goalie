@@ -427,7 +427,7 @@ def piplus_velocity_phase_env_cfg(
       func=pi_mdp.feet_gait,
       weight=0.5,
       params={
-        "period": 1.5,
+        "frequency": 1.5,
         "offset": [0.0, 0.5],
         "threshold": 0.56,
         "command_threshold": 0.01,
