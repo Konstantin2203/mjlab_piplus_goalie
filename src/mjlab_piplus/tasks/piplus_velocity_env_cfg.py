@@ -89,6 +89,14 @@ def piplus_velocity_env_cfg(
       func=mdp.last_action,
       #noise=Unoise(n_min=-0.1, n_max=0.1),
     ),
+    "phase": ObservationTermCfg(
+      func=pi_mdp.phase,
+      params={
+        "frequency": 1.5,
+        "command_name": "twist",
+        "cmd_threshold": 0.01,
+      },
+    ),
     "command": ObservationTermCfg(
       func=mdp.generated_commands,
       params={"command_name": "twist"},
@@ -221,105 +229,105 @@ def piplus_velocity_env_cfg(
         "asset_cfg": SceneEntityCfg("robot", body_names=("base_link",)),
       },
     ),
-    "foot_friction": EventTermCfg(
-      mode="reset",
-      func=dr.geom_friction,
-      params={
-        "asset_cfg": SceneEntityCfg("robot", geom_names=("l_ankle_roll_link_collision.*", "r_ankle_roll_link_collision.*")),
-        "operation": "scale",
-        "ranges": (0.4, 1.0),
-        "shared_random": True,
-      },
-    ),
-    "joint_frictionloss": EventTermCfg(
-      mode="reset",
-      func=dr.joint_friction,
-      params={
-        "asset_cfg": SceneEntityCfg("robot", joint_names=(".*",)),
-        "ranges": (0.9, 1.1),
-        "operation": "scale",
-      },
-    ),
-    "joint_armature": EventTermCfg(
-      mode="reset",
-      func=dr.joint_armature,
-      params={
-        "asset_cfg": SceneEntityCfg("robot", joint_names=(".*",)),
-        "ranges": (1.0, 1.05),
-        "operation": "scale",
-      },
-    ),
-    "joint_damping": EventTermCfg(
-      mode="reset",
-      func=dr.joint_damping,
-      params={
-        "asset_cfg": SceneEntityCfg("robot", joint_names=(".*",)),
-        "ranges": (0.95, 1.05),
-        "operation": "scale",
-      },
-    ),
-    "actuator_gains": EventTermCfg(
-      mode="reset",
-      func=dr.pd_gains,
-      params={
-        "asset_cfg": SceneEntityCfg("robot", actuator_names=(r".*",)),
-        "kp_range": (0.9, 1.1),
-        "kd_range": (0.9, 1.1),
-        "operation": "scale",
-      },
-    ),
-    "link_masses": EventTermCfg(
-      mode="reset",
-      func=dr.body_mass,
-      params={
-        "asset_cfg": SceneEntityCfg("robot", body_names=(".*",)),
-        "ranges": (0.9, 1.1),
-        "operation": "scale",
-      },
-    ),
-    "torso_mass": EventTermCfg(
-      mode="reset",
-      func=dr.body_mass,
-      params={
-        "asset_cfg": SceneEntityCfg("robot", body_names=("base_link",)),
-        "ranges": (-0.25, 0.25),
-        "operation": "add",
-      },
-    ),
-    "link_com": EventTermCfg(
-      mode="reset",
-      func=dr.body_com_offset,
-      params={
-        "asset_cfg": SceneEntityCfg("robot", body_names=(".*",)),
-        "operation": "add",
-        "ranges": {
-          0: (-0.01, 0.01),
-          1: (-0.01, 0.01),
-          2: (-0.01, 0.01),
-        },
-      },
-    ),
-    "base_com": EventTermCfg(
-      mode="reset",
-      func=dr.body_com_offset,
-      params={
-        "asset_cfg": SceneEntityCfg("robot", body_names=("base_link",)),
-        "operation": "add",
-        "ranges": {
-          0: (-0.03, 0.03),
-          1: (-0.03, 0.03),
-          2: (-0.03, 0.03),
-        },
-      },
-    ),
-    "encoder_bias": EventTermCfg(
-      mode="reset",
-      func=dr.encoder_bias,
-      params={
-        "asset_cfg": SceneEntityCfg("robot", joint_names=(".*",)),
-        "bias_range": (-0.05, 0.05),
-      },
-    ),
+    # "foot_friction": EventTermCfg(
+    #   mode="reset",
+    #   func=dr.geom_friction,
+    #   params={
+    #     "asset_cfg": SceneEntityCfg("robot", geom_names=("l_ankle_roll_link_collision.*", "r_ankle_roll_link_collision.*")),
+    #     "operation": "scale",
+    #     "ranges": (0.4, 1.0),
+    #     "shared_random": True,
+    #   },
+    # ),
+    # "joint_frictionloss": EventTermCfg(
+    #   mode="reset",
+    #   func=dr.joint_friction,
+    #   params={
+    #     "asset_cfg": SceneEntityCfg("robot", joint_names=(".*",)),
+    #     "ranges": (0.9, 1.1),
+    #     "operation": "scale",
+    #   },
+    # ),
+    # "joint_armature": EventTermCfg(
+    #   mode="reset",
+    #   func=dr.joint_armature,
+    #   params={
+    #     "asset_cfg": SceneEntityCfg("robot", joint_names=(".*",)),
+    #     "ranges": (1.0, 1.05),
+    #     "operation": "scale",
+    #   },
+    # ),
+    # "joint_damping": EventTermCfg(
+    #   mode="reset",
+    #   func=dr.joint_damping,
+    #   params={
+    #     "asset_cfg": SceneEntityCfg("robot", joint_names=(".*",)),
+    #     "ranges": (0.95, 1.05),
+    #     "operation": "scale",
+    #   },
+    # ),
+    # "actuator_gains": EventTermCfg(
+    #   mode="reset",
+    #   func=dr.pd_gains,
+    #   params={
+    #     "asset_cfg": SceneEntityCfg("robot", actuator_names=(r".*",)),
+    #     "kp_range": (0.9, 1.1),
+    #     "kd_range": (0.9, 1.1),
+    #     "operation": "scale",
+    #   },
+    # ),
+    # "link_masses": EventTermCfg(
+    #   mode="reset",
+    #   func=dr.body_mass,
+    #   params={
+    #     "asset_cfg": SceneEntityCfg("robot", body_names=(".*",)),
+    #     "ranges": (0.9, 1.1),
+    #     "operation": "scale",
+    #   },
+    # ),
+    # "torso_mass": EventTermCfg(
+    #   mode="reset",
+    #   func=dr.body_mass,
+    #   params={
+    #     "asset_cfg": SceneEntityCfg("robot", body_names=("base_link",)),
+    #     "ranges": (-0.25, 0.25),
+    #     "operation": "add",
+    #   },
+    # ),
+    # "link_com": EventTermCfg(
+    #   mode="reset",
+    #   func=dr.body_com_offset,
+    #   params={
+    #     "asset_cfg": SceneEntityCfg("robot", body_names=(".*",)),
+    #     "operation": "add",
+    #     "ranges": {
+    #       0: (-0.01, 0.01),
+    #       1: (-0.01, 0.01),
+    #       2: (-0.01, 0.01),
+    #     },
+    #   },
+    # ),
+    # "base_com": EventTermCfg(
+    #   mode="reset",
+    #   func=dr.body_com_offset,
+    #   params={
+    #     "asset_cfg": SceneEntityCfg("robot", body_names=("base_link",)),
+    #     "operation": "add",
+    #     "ranges": {
+    #       0: (-0.03, 0.03),
+    #       1: (-0.03, 0.03),
+    #       2: (-0.03, 0.03),
+    #     },
+    #   },
+    # ),
+    # "encoder_bias": EventTermCfg(
+    #   mode="reset",
+    #   func=dr.encoder_bias,
+    #   params={
+    #     "asset_cfg": SceneEntityCfg("robot", joint_names=(".*",)),
+    #     "bias_range": (-0.05, 0.05),
+    #   },
+    # ),
   }
 
   ##
@@ -414,58 +422,56 @@ def piplus_velocity_env_cfg(
       },
     ),
     # shaping rewards
-    "air_time": RewardTermCfg(
-      func=pi_mdp.feet_air_time_zero_vel,
-      weight=2.0,
-      params={
-        "sensor_name": "feet_ground_contact",
-        "threshold_min": 0.05,
-        "threshold_max": 0.5,
-        "command_name": "twist",
-        "command_threshold": 0.00,
-      },
-    ),
     # encourage feet to be at target height when the foot velocity is high (i.e. during swing)
-    "foot_clearance": RewardTermCfg(
-     func=mdp.feet_clearance,
-     weight=-20.0,
-     params={
-       "target_height": 0.02,
-       "height_sensor_name": "foot_height_scan",
-       "command_name": "twist",
-       "command_threshold": 0.00,
-       "asset_cfg": SceneEntityCfg("robot", site_names=foot_sites),
-     },
+    "foot_gait": RewardTermCfg(
+      func=pi_mdp.feet_gait,
+      weight=0.5,
+      params={
+        "frequency": 1.5,
+        "offset": [0.0, 0.5],
+        "threshold": 0.56,
+        "command_threshold": 0.01,
+        "command_name": "twist",
+        "sensor_name": "feet_ground_contact",
+      }
     ),
-    "foot_swing_height": RewardTermCfg(
-     func=mdp.feet_swing_height,
-     weight=-2.5,
-     params={
-       "sensor_name": "feet_ground_contact",
-       "height_sensor_name": "foot_height_scan",
-       "target_height": 0.02,
-       "command_name": "twist",
-       "command_threshold": 0.00,
+    "foot_clearance": RewardTermCfg(
+      func=pi_mdp.feet_clearance,
+      weight=-20.0,
+      params={
+        "target_height": 0.02,
+        "command_name": "twist",
+        "command_threshold": 0.01,
+        "asset_cfg": SceneEntityCfg("robot", site_names=foot_sites),
      },
     ),
     "foot_slip": RewardTermCfg(
-     func=mdp.feet_slip,
-     weight=-0.1,
-     params={
-       "sensor_name": "feet_ground_contact",
-       "command_name": "twist",
-       "command_threshold": 0.00,
-       "asset_cfg": SceneEntityCfg("robot", site_names=foot_sites),
-     },
+      func=pi_mdp.feet_slip,
+      weight=-0.1,
+      params={
+        "sensor_name": "feet_ground_contact",
+        "command_name": "twist",
+        "command_threshold": 0.01,
+        "asset_cfg": SceneEntityCfg("robot", site_names=foot_sites),
+      },
     ),
     "soft_landing": RewardTermCfg(
-     func=mdp.soft_landing,
-     weight=-1e-5,
-     params={
-       "sensor_name": "feet_ground_contact",
-       "command_name": "twist",
-       "command_threshold": 0.00,
-     },
+      func=pi_mdp.soft_landing,
+      weight=-1e-5,
+      params={
+        "sensor_name": "feet_ground_contact",
+        "command_name": "twist",
+        "command_threshold": 0.01,
+      },
+    ),
+    "stand_still": RewardTermCfg(
+      func=pi_mdp.stand_still,
+      weight=-1.0,
+      params={
+        "command_name": "twist",
+        "command_threshold": 0.01,
+        "asset_cfg": SceneEntityCfg("robot", joint_names=".*"),
+      },
     ),
   }
   ##
@@ -509,20 +515,20 @@ def piplus_velocity_env_cfg(
       params={
         "command_name": "twist",
         "velocity_stages": [
+          # {
+          #   "step": 0 * 24,
+          #   "lin_vel_x": (-0.08, 0.1),
+          #   "lin_vel_y": (-0.04, 0.04),
+          #   "ang_vel_z": (-math.pi / 6, math.pi / 6),
+          # },
+          # {
+          #   "step": 400 * 24,
+          #   "lin_vel_x": (-0.15, 0.2),
+          #   "lin_vel_y": (-0.1, 0.1),
+          #   "ang_vel_z": (-math.pi / 4, math.pi / 4),
+          # },
           {
             "step": 0 * 24,
-            "lin_vel_x": (-0.08, 0.1),
-            "lin_vel_y": (-0.04, 0.04),
-            "ang_vel_z": (-math.pi / 6, math.pi / 6),
-          },
-          {
-            "step": 400 * 24,
-            "lin_vel_x": (-0.15, 0.2),
-            "lin_vel_y": (-0.1, 0.1),
-            "ang_vel_z": (-math.pi / 4, math.pi / 4),
-          },
-          {
-            "step": 600 * 24,
             "lin_vel_x": (-0.25, 0.35),
             "lin_vel_y": (-0.15, 0.15),
             "ang_vel_z": (-math.pi / 4, math.pi / 4),
@@ -602,7 +608,6 @@ def piplus_velocity_env_cfg(
     ),
   )
   if play:
-    events = {"reset_base": events["reset_base"], "reset_robot_joints": events["reset_robot_joints"]}
     curriculum = {}
     metrics["foot_air_time"] = MetricsTermCfg(
       func=pi_mdp.current_air_time,
