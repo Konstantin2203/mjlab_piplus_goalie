@@ -26,6 +26,7 @@ from mjlab.sensor import ContactMatch, ContactSensorCfg, TerrainHeightSensorCfg,
 
 DELAY_MIN = 0
 DELAY_MAX = 3
+WALK_FREQUENCY = 1.75
 
 def piplus_velocity_env_cfg(
   play: bool = False, static: bool = False
@@ -92,7 +93,7 @@ def piplus_velocity_env_cfg(
     "phase": ObservationTermCfg(
       func=pi_mdp.phase,
       params={
-        "frequency": 1.5,
+        "frequency": WALK_FREQUENCY,
         "command_name": "twist",
         "cmd_threshold": 0.01,
       },
@@ -336,31 +337,20 @@ def piplus_velocity_env_cfg(
   rewards = {
     "track_linear_velocity": RewardTermCfg(
       func=mdp.track_linear_velocity,
-      weight=2.0,
-      params={"command_name": "twist", "std": math.sqrt(0.03)},
-    ),
-    "track_linear_velocity_fine": RewardTermCfg(
-      func=mdp.track_linear_velocity,
-      weight=2.0,
-      params={"command_name": "twist", "std": math.sqrt(0.003)},
+      weight=1.0,
+      params={"command_name": "twist", "std": math.sqrt(0.25)},
     ),
     "track_angular_velocity": RewardTermCfg(
       func=mdp.track_angular_velocity,
       weight=2.0,
-      params={"command_name": "twist", "std": math.sqrt(0.3)},
-    ),
-    "track_angular_velocity_fine": RewardTermCfg(
-      func=mdp.track_angular_velocity,
-      weight=2.0,
-      params={"command_name": "twist", "std": math.sqrt(0.03)},
+      params={"command_name": "twist", "std": math.sqrt(0.5)},
     ),
     # stability rewards
     "upright": RewardTermCfg(
-      func=pi_mdp.upright_relaxed,
-      weight=1.0,
+      func=pi_mdp.body_orientation_l2,
+      weight=-1.0,
       params={
-        "std": 0.025,
-        "asset_cfg": SceneEntityCfg("robot", body_names=("base_link",)),
+        "asset_cfg": SceneEntityCfg("robot", body_names=())
       },
     ),
     "body_ang_vel": RewardTermCfg(
@@ -370,23 +360,24 @@ def piplus_velocity_env_cfg(
     ),
     "angular_momentum": RewardTermCfg(
       func=mdp.angular_momentum_penalty,
-      weight=-0.02,
+      weight=-0.025,
       params={"sensor_name": "robot/root_angmom"},
     ),
     "is_terminated": RewardTermCfg(func=mdp.is_terminated, weight=-200.0),
     # safety rewards
-    "dof_pos_limits": RewardTermCfg(func=mdp.joint_pos_limits, weight=-1.0),
-    "action_rate_l2": RewardTermCfg(func=mdp.action_rate_l2, weight=-0.02),
-    "torque_penalty": RewardTermCfg(
-      func=mdp.joint_torques_l2,
-      weight=-2.5e-4,
-      params={"asset_cfg": SceneEntityCfg("robot", actuator_names=(".*",))},
-    ),
-    "joint_vel_l2": RewardTermCfg(
-      func=mdp.joint_vel_l2,
-      weight=-2.5e-3,
-      params={"asset_cfg": SceneEntityCfg("robot", joint_names=(".*",))},
-    ),
+    "joint_acc_l2": RewardTermCfg(func=mdp.joint_acc_l2, weight=-2.5e-7),
+    "joint_pos_limits": RewardTermCfg(func=mdp.joint_pos_limits, weight=-10.0),
+    "action_rate_l2": RewardTermCfg(func=mdp.action_rate_l2, weight=-0.05),
+    # "torque_penalty": RewardTermCfg(
+    #   func=mdp.joint_torques_l2,
+    #   weight=-2.5e-4,
+    #   params={"asset_cfg": SceneEntityCfg("robot", actuator_names=(".*",))},
+    # ),
+    # "joint_vel_l2": RewardTermCfg(
+    #   func=mdp.joint_vel_l2,
+    #   weight=-2.5e-3,
+    #   params={"asset_cfg": SceneEntityCfg("robot", joint_names=(".*",))},
+    # ),
     "self_collisions": RewardTermCfg(
       func=mdp.self_collision_cost,
       weight=-1.0,
@@ -403,22 +394,22 @@ def piplus_velocity_env_cfg(
         "command_name": "twist",
         "std_standing": {r".*": 0.05},
         "std_walking": {
-          r".*_hip_pitch_joint": 0.3,
+          r".*_hip_pitch_joint": 0.5,
           r".*_hip_roll_joint": 0.15,
           r".*_thigh_joint": 0.15,
-          r".*_calf_joint": 0.35,
-          r".*_ankle_pitch_joint": 0.25,
+          r".*_calf_joint": 0.5,
+          r".*_ankle_pitch_joint": 0.15,
           r".*_ankle_roll_joint": 0.1,
         },
         "std_running": {
           r".*_hip_pitch_joint": 0.5,
-          r".*_hip_roll_joint": 0.2,
-          r".*_thigh_joint": 0.2,
-          r".*_calf_joint": 0.6,
-          r".*_ankle_pitch_joint": 0.35,
-          r".*_ankle_roll_joint": 0.15,
+          r".*_hip_roll_joint": 0.25,
+          r".*_thigh_joint": 0.25,
+          r".*_calf_joint": 0.5,
+          r".*_ankle_pitch_joint": 0.25,
+          r".*_ankle_roll_joint": 0.1,
         },
-        "walking_threshold": 0.00,
+        "walking_threshold": 0.01,
         "running_threshold": 0.25,
       },
     ),
@@ -428,7 +419,7 @@ def piplus_velocity_env_cfg(
       func=pi_mdp.feet_gait,
       weight=0.5,
       params={
-        "frequency": 1.5,
+        "frequency": WALK_FREQUENCY,
         "offset": [0.0, 0.5],
         "threshold": 0.56,
         "command_threshold": 0.01,
@@ -489,6 +480,14 @@ def piplus_velocity_env_cfg(
     "foot_contact_force": MetricsTermCfg(
       func=pi_mdp.foot_contact_force,
       params={"sensor_name": "feet_ground_contact"},
+    ),
+    "phase_metric": MetricsTermCfg(
+      func=pi_mdp.phase,
+      params={
+        "frequency": WALK_FREQUENCY,
+        "command_name": "twist",
+        "cmd_threshold": 0.01,
+      },
     ),
   }
 
