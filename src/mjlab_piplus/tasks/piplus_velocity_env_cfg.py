@@ -602,6 +602,7 @@ def piplus_velocity_env_cfg(
     ),
   )
   if play:
+    events = {"reset_base": events["reset_base"], "reset_robot_joints": events["reset_robot_joints"]}
     curriculum = {}
     metrics["foot_air_time"] = MetricsTermCfg(
       func=pi_mdp.current_air_time,
