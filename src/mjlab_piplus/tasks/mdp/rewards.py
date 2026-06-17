@@ -130,3 +130,184 @@ def feet_air_time_zero_vel(
       command_zero_mask = (total_command == 0.0)
       reward[command_zero_mask] = 1.0 # maybe reward max value, if we reach zero support
   return reward
+
+def feet_gait(
+        env: ManagerBasedRlEnv,
+        period: float,
+        offset: list[float],
+        threshold: float,
+        command_threshold: float,
+        command_name: str,
+        sensor_name: str,
+) -> torch.Tensor:
+    sensor: ContactSensor = env.scene[sensor_name]
+    is_contact = sensor.data.current_contact_time > 0
+    global_phase = ((env.episode_length_buf * env.step_dt) / period).unsqueeze(1)
+    offsets = torch.as_tensor(offset, device=env.device, dtype=global_phase.dtype).view(1, -1)
+    leg_phase = (global_phase + offsets) % 1.0
+    is_stance = (leg_phase < threshold)
+    reward = (is_stance == is_contact).float().mean(dim=1)
+    if command_name is not None:
+        command = env.command_manager.get_command(command_name)
+        if command is not None:
+            linear_norm = torch.norm(command[:, :2], dim=1)
+            angular_norm = torch.abs(command[:, 2])
+            total_command = linear_norm + angular_norm
+            scale = (total_command > command_threshold).float()
+            reward *= scale
+    return reward
+
+
+class feet_swing_height:
+  """Penalize deviation from target swing height, evaluated at landing."""
+
+  def __init__(self, cfg: RewardTermCfg, env: ManagerBasedRlEnv):
+    self.sensor_name = cfg.params["sensor_name"]
+    self.site_names = cfg.params["asset_cfg"].site_names
+    self.peak_heights = torch.zeros(
+      (env.num_envs, len(self.site_names)), device=env.device, dtype=torch.float32
+    )
+    self.step_dt = env.step_dt
+
+  def __call__(
+    self,
+    env: ManagerBasedRlEnv,
+    sensor_name: str,
+    target_height: float,
+    command_name: str,
+    command_threshold: float,
+    asset_cfg: SceneEntityCfg,
+  ) -> torch.Tensor:
+    asset: Entity = env.scene[asset_cfg.name]
+    contact_sensor: ContactSensor = env.scene[sensor_name]
+    command = env.command_manager.get_command(command_name)
+    assert command is not None
+    foot_heights = asset.data.site_pos_w[:, asset_cfg.site_ids, 2]
+    in_air = contact_sensor.data.found == 0
+    self.peak_heights = torch.where(
+      in_air,
+      torch.maximum(self.peak_heights, foot_heights),
+      self.peak_heights,
+    )
+    first_contact = contact_sensor.compute_first_contact(dt=self.step_dt)
+    linear_norm = torch.norm(command[:, :2], dim=1)
+    angular_norm = torch.abs(command[:, 2])
+    total_command = linear_norm + angular_norm
+    active = (total_command > command_threshold).float()
+    error = self.peak_heights / target_height - 1.0
+    cost = torch.sum(torch.square(error) * first_contact.float(), dim=1) * active
+    num_landings = torch.sum(first_contact.float())
+    peak_heights_at_landing = self.peak_heights * first_contact.float()
+    mean_peak_height = torch.sum(peak_heights_at_landing) / torch.clamp(
+      num_landings, min=1
+    )
+    env.extras["log"]["Metrics/peak_height_mean"] = mean_peak_height
+    self.peak_heights = torch.where(
+      first_contact,
+      torch.zeros_like(self.peak_heights),
+      self.peak_heights,
+    )
+    return cost
+
+
+def feet_slip(
+  env: ManagerBasedRlEnv,
+  sensor_name: str,
+  command_name: str,
+  command_threshold: float = 0.01,
+  asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+  """Penalize foot sliding (xy velocity while in contact)."""
+  asset: Entity = env.scene[asset_cfg.name]
+  contact_sensor: ContactSensor = env.scene[sensor_name]
+  command = env.command_manager.get_command(command_name)
+  assert command is not None
+  linear_norm = torch.norm(command[:, :2], dim=1)
+  angular_norm = torch.abs(command[:, 2])
+  total_command = linear_norm + angular_norm
+  active = (total_command > command_threshold).float()
+  assert contact_sensor.data.found is not None
+  in_contact = (contact_sensor.data.found > 0).float()  # [B, N]
+  foot_vel_xy = asset.data.site_lin_vel_w[:, asset_cfg.site_ids, :2]  # [B, N, 2]
+  vel_xy_norm = torch.norm(foot_vel_xy, dim=-1)  # [B, N]
+  vel_xy_norm_sq = torch.square(vel_xy_norm)  # [B, N]
+  cost = torch.sum(vel_xy_norm_sq * in_contact, dim=1) * active
+  num_in_contact = torch.sum(in_contact)
+  mean_slip_vel = torch.sum(vel_xy_norm * in_contact) / torch.clamp(
+    num_in_contact, min=1
+  )
+  env.extras["log"]["Metrics/slip_velocity_mean"] = mean_slip_vel
+  return cost
+
+
+def soft_landing(
+  env: ManagerBasedRlEnv,
+  sensor_name: str,
+  command_name: str | None = None,
+  command_threshold: float = 0.05,
+) -> torch.Tensor:
+  """Penalize high impact forces at landing to encourage soft footfalls."""
+  contact_sensor: ContactSensor = env.scene[sensor_name]
+  sensor_data = contact_sensor.data
+  assert sensor_data.force is not None
+  forces = sensor_data.force  # [B, N, 3]
+  force_magnitude = torch.norm(forces, dim=-1)  # [B, N]
+  first_contact = contact_sensor.compute_first_contact(dt=env.step_dt)  # [B, N]
+  landing_impact = force_magnitude * first_contact.float()  # [B, N]
+  cost = torch.sum(landing_impact, dim=1)  # [B]
+  num_landings = torch.sum(first_contact.float())
+  mean_landing_force = torch.sum(landing_impact) / torch.clamp(num_landings, min=1)
+  env.extras["log"]["Metrics/landing_force_mean"] = mean_landing_force
+  if command_name is not None:
+    command = env.command_manager.get_command(command_name)
+    if command is not None:
+      linear_norm = torch.norm(command[:, :2], dim=1)
+      angular_norm = torch.abs(command[:, 2])
+      total_command = linear_norm + angular_norm
+      active = (total_command > command_threshold).float()
+      cost = cost * active
+  return cost
+
+
+def stand_still(
+        env: ManagerBasedRlEnv,
+        command_name: str,
+        command_threshold: float = 0.1,
+        asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG
+) -> torch.Tensor:
+    asset: Entity = env.scene[asset_cfg.name]
+    diff_angle = asset.data.joint_pos[:, asset_cfg.joint_ids] - asset.data.default_joint_pos[:, asset_cfg.joint_ids]
+    reward = torch.sum(torch.square(diff_angle), dim=1)
+    if command_name is not None:
+        command = env.command_manager.get_command(command_name)
+        if command is not None:
+            linear_norm = torch.norm(command[:, :2], dim=1)
+            angular_norm = torch.abs(command[:, 2])
+            total_command = linear_norm + angular_norm
+            scale = (total_command <= command_threshold).float()
+            reward *= scale
+    return reward
+
+def feet_clearance(
+  env: ManagerBasedRlEnv,
+  target_height: float,
+  command_name: str | None = None,
+  command_threshold: float = 0.1,
+  asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+  """Penalize deviation from target clearance height, weighted by foot velocity."""
+  asset: Entity = env.scene[asset_cfg.name]
+  foot_z = asset.data.site_pos_w[:, asset_cfg.site_ids, 2]  # [B, N]
+  foot_vel_xy = asset.data.site_lin_vel_w[:, asset_cfg.site_ids, :2]  # [B, N, 2]
+  vel_norm = torch.norm(foot_vel_xy, dim=-1)  # [B, N]
+  delta = torch.abs(foot_z - target_height)  # [B, N]
+  cost = torch.sum(delta * vel_norm, dim=1)  # [B]
+  if command_name is not None:
+    command = env.command_manager.get_command(command_name)
+    if command is not None:
+      linear_norm = torch.norm(command[:, :2], dim=1)
+      angular_norm = torch.abs(command[:, 2])
+      total_command = linear_norm + angular_norm
+      active = (total_command > command_threshold).float()
+      cost = cost * active
+  return cost
