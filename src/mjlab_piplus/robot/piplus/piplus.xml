@@ -87,11 +87,11 @@
           <inertial pos="-0.0023165 -0.0172048 0.00020825" quat="-0.034283 0.706989 0.0142854 0.706249" mass="0.139352" diaginertia="0.000145208 0.000122162 7.54598e-05"/>
           <!--<joint name="r_shoulder_pitch_joint" class="pi_joint_arm" pos="0 0 0" axis="0 -1 0" ref="1.5708" range="-2.55 2.55"/>-->
           <geom type="mesh" class="visual" rgba="0.752941 0.752941 0.752941 1" mesh="r_shoulder_pitch_link"/>
-          <body name="r_shoulder_roll_link" pos="0 -0.038 0">
+          <body name="r_shoulder_roll_link" pos="0 -0.038 0" euler="-0.3 0 0">
             <inertial pos="-0.00164862 -0.00020989 -0.024888" quat="0.692267 -0.0208066 -0.015904 0.721166" mass="0.55615" diaginertia="0.000521636 0.000513996 0.000152408"/>
             <!--<joint name="r_shoulder_roll_joint" class="pi_joint_arm" pos="0 0 0" axis="1 0 0" ref="1.5708" range="-1.65 1.4"/>-->
             <geom type="mesh" class="visual" rgba="0.752941 0.752941 0.752941 1" mesh="r_shoulder_roll_link"/>
-            <body name="r_upper_arm_link" pos="0 0 -0.0724" euler="-0.3 0 0">
+            <body name="r_upper_arm_link" pos="0 0 -0.0724">
               <inertial pos="3.107e-05 -0.00138646 -0.0121349" quat="0.619141 0.785272 -0.00344701 0.000473666" mass="0.153183" diaginertia="0.000177072 0.000143883 0.000111845"/>
               <!--<joint name="r_upper_arm_joint" class="pi_joint_arm" pos="0 0 0" axis="0 0 -1" range="-2.55 2.55"/>-->
               <geom type="mesh" class="visual" rgba="0.752941 0.752941 0.752941 1" mesh="r_upper_arm_link"/>
@@ -114,11 +114,11 @@
           <inertial pos="-0.00215543 0.0172048 0.00022511" quat="0.0355111 0.707216 -0.0147967 0.70595" mass="0.139352" diaginertia="0.00014525 0.000122217 7.54432e-05"/>
           <!--<joint name="l_shoulder_pitch_joint" class="pi_joint_arm" pos="0 0 0" axis="0 1 0" ref="-1.5708" range="-2.55 2.55"/>-->
           <geom type="mesh" class="visual" rgba="0.752941 0.752941 0.752941 1" mesh="l_shoulder_pitch_link"/>
-          <body name="l_shoulder_roll_link" pos="0 0.038 0">
+          <body name="l_shoulder_roll_link" pos="0 0.038 0" euler="0.3 0 0">
             <inertial pos="-0.00140359 0.00022205 -0.024888" quat="0.658223 -0.023097 -0.0218074 0.752153" mass="0.55615" diaginertia="0.000522159 0.000514351 0.00015235"/>
             <!--<joint name="l_shoulder_roll_joint" class="pi_joint_arm" pos="0 0 0" axis="1 0 0" ref="-1.5708" range="-1.4 1.65"/>-->
             <geom type="mesh" class="visual" rgba="0.752941 0.752941 0.752941 1" mesh="l_shoulder_roll_link"/>
-            <body name="l_upper_arm_link" pos="0 0 -0.0724" euler="0.3 0 0">
+            <body name="l_upper_arm_link" pos="0 0 -0.0724">
               <inertial pos="-0.00013535 0.00129534 -0.0121342" quat="0.786804 0.617162 -0.00567645 0.00431653" mass="0.153183" diaginertia="0.000177157 0.000144033 0.00011178"/>
               <!--<joint name="l_upper_arm_joint" class="pi_joint_arm" pos="0 0 0" axis="0 0 -1" range="-2.55 2.55"/>-->
               <geom type="mesh" class="visual" rgba="0.752941 0.752941 0.752941 1" mesh="l_upper_arm_link"/>
