@@ -26,7 +26,7 @@ from mjlab.sensor import ContactMatch, ContactSensorCfg, TerrainHeightSensorCfg,
 
 DELAY_MIN = 0
 DELAY_MAX = 3
-WALK_FREQUENCY = 1.75
+WALK_FREQUENCY = 1.5
 
 def piplus_velocity_env_cfg(
   play: bool = False, static: bool = False
@@ -524,7 +524,7 @@ def piplus_velocity_env_cfg(
           {
             "step": 800 * 24,
             "lin_vel_x": (-0.25, 0.5),
-            "lin_vel_y": (-0.2, 0.25),
+            "lin_vel_y": (-0.25, 0.25),
             "ang_vel_z": (-math.pi / 4, math.pi / 4),
           },
         ],
