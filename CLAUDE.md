@@ -68,17 +68,17 @@ Collision configs (`FULL_COLLISION`, `LEG_ONLY_COLLISION`, `FEET_ONLY_COLLISION`
 
 The function `piplus_velocity_env_cfg(play=False)` builds a `ManagerBasedRlEnvCfg`. Key design choices:
 
-- **Actor obs**: base linear/angular velocity, projected gravity, joint pos/vel relative to default, last action, velocity command. All noised.
-- **Critic obs**: actor obs + foot height (from `TerrainHeightSensorCfg`), foot air time, foot contact, foot contact forces. No noise.
+- **Actor obs**: base angular velocity, projected gravity, joint pos/vel relative to default, last action, gait phase (sin/cos), velocity command. The sensor-derived terms (ang vel, gravity, joint pos/vel) are noised; actions, phase, and command are not. **Note:** the actor obs layout is hard-coded by index in `symmetry.py` (`_transform_obs`) — changing term order or dimensions requires updating that file and `check_symmetry.py`.
+- **Critic obs**: actor obs + base linear velocity, foot height (from `TerrainHeightSensorCfg`), foot air time, foot contact, foot contact forces. No noise.
 - **Sensors**: `ContactSensorCfg` for feet ground contact (ankle roll link subtrees vs. terrain), self-collision sensor, terrain height scan anchored at foot sites.
-- **Curriculum**: velocity command ranges ramp up over ~1200 × 24 steps; `air_time` reward weight ramps from 0 to 0.5 over 600 × 24 steps.
-- **Terminations**: time out (20 s episodes), orientation > 70°, root height < 0.25 m.
-- **Simulation**: 5 ms timestep, decimation 4 (→ 200 Hz policy), MuJoCo Warp with 10 solver iterations.
-- In `play` mode: curriculum disabled, push events removed.
+- **Curriculum**: velocity command ranges ramp up in two stages, from step 0 to step 800 × 24 (`command_vel`).
+- **Terminations**: time out (20 s episodes), orientation > 45° (`bad_orientation`). The root-height termination is currently commented out.
+- **Simulation**: 5 ms timestep, decimation 4 (→ 50 Hz policy), MuJoCo Warp with 10 solver iterations.
+- In `play` mode: curriculum disabled, episode length unbounded, extra air-time metrics added. Push events stay active.
 
 ### RL config (`piplus_velocity_rl_cfg.py`)
 
-PPO with asymmetric actor-critic (actor/critic each 512-256-128 MLP, ELU activation). Logs to W&B project `mjlab_piplus`. 24 steps per env per rollout, up to 30 000 iterations, checkpoint every 50 iterations.
+PPO with asymmetric actor-critic (actor/critic each 512-256-128 MLP, ELU activation). Left-right symmetry is enabled via `PiPlusSymmetry` (data augmentation + mirror loss, coeff 0.5). Logs to W&B project `mjlab_piplus`. 24 steps per env per rollout, up to 6 400 iterations, checkpoint every 50 iterations.
 
 ## Editing conventions
 
