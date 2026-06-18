@@ -585,7 +585,7 @@ def piplus_velocity_env_cfg(
   )
   episode_length_s = 20.0
   if play:
-    episode_length_s = 1e99
+    episode_length_s = 1e10
     curriculum = {}
     metrics["foot_air_time"] = MetricsTermCfg(
       func=pi_mdp.current_air_time,
