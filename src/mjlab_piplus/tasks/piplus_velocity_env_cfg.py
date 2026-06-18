@@ -314,7 +314,7 @@ def piplus_velocity_env_cfg(
       func=dr.encoder_bias,
       params={
         "asset_cfg": SceneEntityCfg("robot", joint_names=(".*",)),
-        "bias_range": (-0.05, 0.05),
+        "bias_range": (-0.1, 0.1),
       },
     ),
   }
