@@ -209,25 +209,13 @@ def piplus_velocity_env_cfg(
       interval_range_s=(2.0, 6.0),
       params={
         "velocity_range": {
-          "x": (-0.25, 0.25),
-          "y": (-0.25, 0.25),
-          "z": (-0.15, 0.15),
-          "roll": (-0.52, 0.52),
-          "pitch": (-0.52, 0.52),
-          "yaw": (-0.78, 0.78),
+          "x": (-0.7, 0.7),
+          "y": (-0.7, 0.7),
+          "z": (-0.3, 0.3),
+          "roll": (-1.5, 1.5),
+          "pitch": (-1.5, 1.5),
+          "yaw": (-2.0, 2.0),
         },
-      },
-    ),
-    # push with impulse
-    "push_robot_impulse": EventTermCfg(
-      func=mdp.apply_body_impulse,
-      mode="step",  # required as class keeps track of length of impule itself
-      params={
-        "force_range": (1.0, 5.0),
-        "torque_range": (0.0, 0.0),
-        "duration_s": (0.1, 0.3),
-        "cooldown_s": (1.0, 3.0),
-        "asset_cfg": SceneEntityCfg("robot", body_names=("base_link",)),
       },
     ),
     "foot_friction": EventTermCfg(
