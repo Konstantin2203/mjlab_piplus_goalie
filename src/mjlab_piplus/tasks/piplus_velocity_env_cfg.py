@@ -230,105 +230,105 @@ def piplus_velocity_env_cfg(
         "asset_cfg": SceneEntityCfg("robot", body_names=("base_link",)),
       },
     ),
-    # "foot_friction": EventTermCfg(
-    #   mode="reset",
-    #   func=dr.geom_friction,
-    #   params={
-    #     "asset_cfg": SceneEntityCfg("robot", geom_names=("l_ankle_roll_link_collision.*", "r_ankle_roll_link_collision.*")),
-    #     "operation": "scale",
-    #     "ranges": (0.4, 1.0),
-    #     "shared_random": True,
-    #   },
-    # ),
-    # "joint_frictionloss": EventTermCfg(
-    #   mode="reset",
-    #   func=dr.joint_friction,
-    #   params={
-    #     "asset_cfg": SceneEntityCfg("robot", joint_names=(".*",)),
-    #     "ranges": (0.9, 1.1),
-    #     "operation": "scale",
-    #   },
-    # ),
-    # "joint_armature": EventTermCfg(
-    #   mode="reset",
-    #   func=dr.joint_armature,
-    #   params={
-    #     "asset_cfg": SceneEntityCfg("robot", joint_names=(".*",)),
-    #     "ranges": (1.0, 1.05),
-    #     "operation": "scale",
-    #   },
-    # ),
-    # "joint_damping": EventTermCfg(
-    #   mode="reset",
-    #   func=dr.joint_damping,
-    #   params={
-    #     "asset_cfg": SceneEntityCfg("robot", joint_names=(".*",)),
-    #     "ranges": (0.95, 1.05),
-    #     "operation": "scale",
-    #   },
-    # ),
-    # "actuator_gains": EventTermCfg(
-    #   mode="reset",
-    #   func=dr.pd_gains,
-    #   params={
-    #     "asset_cfg": SceneEntityCfg("robot", actuator_names=(r".*",)),
-    #     "kp_range": (0.9, 1.1),
-    #     "kd_range": (0.9, 1.1),
-    #     "operation": "scale",
-    #   },
-    # ),
-    # "link_masses": EventTermCfg(
-    #   mode="reset",
-    #   func=dr.body_mass,
-    #   params={
-    #     "asset_cfg": SceneEntityCfg("robot", body_names=(".*",)),
-    #     "ranges": (0.9, 1.1),
-    #     "operation": "scale",
-    #   },
-    # ),
-    # "torso_mass": EventTermCfg(
-    #   mode="reset",
-    #   func=dr.body_mass,
-    #   params={
-    #     "asset_cfg": SceneEntityCfg("robot", body_names=("base_link",)),
-    #     "ranges": (-0.25, 0.25),
-    #     "operation": "add",
-    #   },
-    # ),
-    # "link_com": EventTermCfg(
-    #   mode="reset",
-    #   func=dr.body_com_offset,
-    #   params={
-    #     "asset_cfg": SceneEntityCfg("robot", body_names=(".*",)),
-    #     "operation": "add",
-    #     "ranges": {
-    #       0: (-0.01, 0.01),
-    #       1: (-0.01, 0.01),
-    #       2: (-0.01, 0.01),
-    #     },
-    #   },
-    # ),
-    # "base_com": EventTermCfg(
-    #   mode="reset",
-    #   func=dr.body_com_offset,
-    #   params={
-    #     "asset_cfg": SceneEntityCfg("robot", body_names=("base_link",)),
-    #     "operation": "add",
-    #     "ranges": {
-    #       0: (-0.03, 0.03),
-    #       1: (-0.03, 0.03),
-    #       2: (-0.03, 0.03),
-    #     },
-    #   },
-    # ),
-    # "encoder_bias": EventTermCfg(
-    #   mode="reset",
-    #   func=dr.encoder_bias,
-    #   params={
-    #     "asset_cfg": SceneEntityCfg("robot", joint_names=(".*",)),
-    #     "bias_range": (-0.05, 0.05),
-    #   },
-    # ),
+    "foot_friction": EventTermCfg(
+      mode="reset",
+      func=dr.geom_friction,
+      params={
+        "asset_cfg": SceneEntityCfg("robot", geom_names=("l_ankle_roll_link_collision.*", "r_ankle_roll_link_collision.*")),
+        "operation": "scale",
+        "ranges": (0.4, 1.0),
+        "shared_random": True,
+      },
+    ),
+    "joint_frictionloss": EventTermCfg(
+      mode="reset",
+      func=dr.joint_friction,
+      params={
+        "asset_cfg": SceneEntityCfg("robot", joint_names=(".*",)),
+        "ranges": (0.9, 1.1),
+        "operation": "scale",
+      },
+    ),
+    "joint_armature": EventTermCfg(
+      mode="reset",
+      func=dr.joint_armature,
+      params={
+        "asset_cfg": SceneEntityCfg("robot", joint_names=(".*",)),
+        "ranges": (1.0, 1.05),
+        "operation": "scale",
+      },
+    ),
+    "joint_damping": EventTermCfg(
+      mode="reset",
+      func=dr.joint_damping,
+      params={
+        "asset_cfg": SceneEntityCfg("robot", joint_names=(".*",)),
+        "ranges": (0.95, 1.05),
+        "operation": "scale",
+      },
+    ),
+    "actuator_gains": EventTermCfg(
+      mode="reset",
+      func=dr.pd_gains,
+      params={
+        "asset_cfg": SceneEntityCfg("robot", actuator_names=(r".*",)),
+        "kp_range": (0.9, 1.1),
+        "kd_range": (0.9, 1.1),
+        "operation": "scale",
+      },
+    ),
+    "link_masses": EventTermCfg(
+      mode="reset",
+      func=dr.body_mass,
+      params={
+        "asset_cfg": SceneEntityCfg("robot", body_names=(".*",)),
+        "ranges": (0.9, 1.1),
+        "operation": "scale",
+      },
+    ),
+    "torso_mass": EventTermCfg(
+      mode="reset",
+      func=dr.body_mass,
+      params={
+        "asset_cfg": SceneEntityCfg("robot", body_names=("base_link",)),
+        "ranges": (-0.25, 0.25),
+        "operation": "add",
+      },
+    ),
+    "link_com": EventTermCfg(
+      mode="reset",
+      func=dr.body_com_offset,
+      params={
+        "asset_cfg": SceneEntityCfg("robot", body_names=(".*",)),
+        "operation": "add",
+        "ranges": {
+          0: (-0.01, 0.01),
+          1: (-0.01, 0.01),
+          2: (-0.01, 0.01),
+        },
+      },
+    ),
+    "base_com": EventTermCfg(
+      mode="reset",
+      func=dr.body_com_offset,
+      params={
+        "asset_cfg": SceneEntityCfg("robot", body_names=("base_link",)),
+        "operation": "add",
+        "ranges": {
+          0: (-0.03, 0.03),
+          1: (-0.03, 0.03),
+          2: (-0.03, 0.03),
+        },
+      },
+    ),
+    "encoder_bias": EventTermCfg(
+      mode="reset",
+      func=dr.encoder_bias,
+      params={
+        "asset_cfg": SceneEntityCfg("robot", joint_names=(".*",)),
+        "bias_range": (-0.05, 0.05),
+      },
+    ),
   }
 
   ##
