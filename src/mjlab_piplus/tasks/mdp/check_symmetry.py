@@ -21,7 +21,7 @@ from tensordict import TensorDict
 from mjlab_piplus.tasks.mdp.symmetry import PiPlusSymmetry
 
 N = 8
-OBS_DIM = 45
+OBS_DIM = 47  # 3 ang_vel + 3 proj_grav + 12 jpos + 12 jvel + 12 act + 2 phase + 3 command
 ACT_DIM = 12
 
 torch.manual_seed(0)

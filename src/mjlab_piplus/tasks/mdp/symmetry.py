@@ -62,7 +62,8 @@ def _transform_obs(obs: TensorDict) -> TensorDict:
     obs[:, 6:18] = _switch_left_right(obs[:, 6:18]) * -1 # joint pos
     obs[:, 18:30] = _switch_left_right(obs[:, 18:30]) * -1 # joint vel
     obs[:, 30:42] = _switch_left_right(obs[:, 30:42]) * -1 # actions
-    obs[:, 42:45] = obs[:, 42:45] * torch.tensor([1., -1., -1.], device=device) # command
+    obs[:, 42:44] = obs[:, 42:44] * torch.tensor([-1., -1.], device=device) # phase (sin, cos): half-period shift
+    obs[:, 44:47] = obs[:, 44:47] * torch.tensor([1., -1., -1.], device=device) # command
     return obs
 
 def _switch_left_right(joint_data : torch.Tensor) -> torch.Tensor:
