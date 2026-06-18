@@ -449,7 +449,7 @@ def piplus_velocity_env_cfg(
     ),
     "soft_landing": RewardTermCfg(
       func=pi_mdp.soft_landing,
-      weight=-1e-3,
+      weight=-1e-2,
       params={
         "sensor_name": "feet_ground_contact",
         "command_name": "twist",
