@@ -167,9 +167,9 @@ def piplus_velocity_env_cfg(
       rel_heading_envs=0.3,
       rel_forward_envs=0.15,
       ranges=UniformVelocityCommandCfg.Ranges(
-        lin_vel_x=(-0.25, 0.5),
+        lin_vel_x=(-0.25, 1.0),
         lin_vel_y=(-0.25, 0.25),
-        ang_vel_z=(-math.pi / 4, math.pi / 4),
+        ang_vel_z=(-1.2, 1.2),
         heading=(-math.pi, math.pi)
       ),
 
@@ -523,9 +523,9 @@ def piplus_velocity_env_cfg(
           },
           {
             "step": 800 * 24,
-            "lin_vel_x": (-0.25, 0.5),
+            "lin_vel_x": (-0.25, 1.0),
             "lin_vel_y": (-0.25, 0.25),
-            "ang_vel_z": (-math.pi / 4, math.pi / 4),
+            "ang_vel_z": (-1.2, 1.2),
           },
         ],
       },
@@ -595,7 +595,9 @@ def piplus_velocity_env_cfg(
       ccd_iterations=500,
     ),
   )
+  episode_length_s = 20.0
   if play:
+    episode_length_s = 1e99
     curriculum = {}
     metrics["foot_air_time"] = MetricsTermCfg(
       func=pi_mdp.current_air_time,
@@ -622,5 +624,5 @@ def piplus_velocity_env_cfg(
     viewer=viewer,
     sim=sim,
     decimation=4,
-    episode_length_s=20.0,
+    episode_length_s=episode_length_s,
   )
