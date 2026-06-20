@@ -1,0 +1,61 @@
+# Experiment queue for scripts/run_experiments.py
+#
+#   uv run scripts/run_experiments.py experiments.example.yaml --dry-run
+#   uv run scripts/run_experiments.py experiments.example.yaml
+#
+# Experiments are pulled from a central queue by one worker per target
+# (work-stealing): whichever GPU frees up first runs the next experiment.
+# Remote (ssh) runs execute in a detached tmux session, so they keep going if
+# the ssh connection drops; the orchestrator reconnects to track them. Each
+# remote host therefore needs tmux and uv installed.
+
+task: Mjlab-Velocity-PiPlus
+
+# Default project path, used by any target that doesn't set its own
+# project_dir. Optional if every target specifies project_dir.
+project_dir: /homes/15guelden/mjlab_piplus
+
+# Optional extra flags passed to ssh (applied to all non-local targets).
+ssh_opts: ["-o", "BatchMode=yes", "-o", "ConnectTimeout=10"]
+
+# How the orchestrator polls remote tmux sessions for completion.
+poll_interval: 15          # seconds between polls
+max_poll_failures: 40      # give up tracking (run stays in tmux) after this many
+
+# A target's GPU must be free before a run starts there. Workers wait and
+# re-check until the GPU has >= min_free_mem_mb free and <= max_util_pct usage.
+min_free_mem_mb: 10000     # require at least this much free VRAM (MB)
+max_util_pct: 30           # and utilization at or below this (%)
+gpu_check_interval: 30     # seconds between GPU free-checks while waiting
+
+# Applied to every experiment; per-experiment `args` override these.
+# Keys are tyro flags without the leading `--`. Do NOT set gpu-ids here.
+common_args:
+  env.scene.num-envs: 4096
+
+# Static host:gpu list. host "local" runs without ssh. Hostnames must be
+# resolvable (e.g. via ~/.ssh/config — tams* jumps through `uni`). Set
+# project_dir per target when the mjlab checkout lives at a different path on
+# that machine; otherwise the top-level project_dir is used.
+targets:
+  - {host: local, gpu: 0}
+  - {host: tamsgpu5, gpu: 0, project_dir: /home/gueldenstein/mjlab_piplus}
+  - {host: tamsgpu5, gpu: 1, project_dir: /home/gueldenstein/mjlab_piplus}
+  # - {host: othermachine, gpu: 0, project_dir: /data/me/mjlab_piplus}
+
+experiments:
+  - name: baseline
+    args: {}
+
+  - name: strong_push
+    args:
+      env.events.push_robot.params.velocity_range.x: [-1.5, 1.5]
+      env.events.push_robot.params.velocity_range.y: [-1.5, 1.5]
+
+  - name: seed_1
+    args:
+      env.seed: 1
+
+  - name: seed_2
+    args:
+      env.seed: 2
