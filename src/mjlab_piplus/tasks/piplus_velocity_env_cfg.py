@@ -167,7 +167,7 @@ def piplus_velocity_env_cfg(
       rel_heading_envs=0.3,
       rel_forward_envs=0.15,
       ranges=UniformVelocityCommandCfg.Ranges(
-        lin_vel_x=(-0.25, 1.0),
+        lin_vel_x=(-0.25, 0.6),
         lin_vel_y=(-0.25, 0.25),
         ang_vel_z=(-1.2, 1.2),
         heading=(-math.pi, math.pi)
@@ -511,7 +511,7 @@ def piplus_velocity_env_cfg(
           },
           {
             "step": 800 * 24,
-            "lin_vel_x": (-0.25, 1.0),
+            "lin_vel_x": (-0.25, 0.6),
             "lin_vel_y": (-0.25, 0.25),
             "ang_vel_z": (-1.2, 1.2),
           },
