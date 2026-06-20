@@ -1,32 +1,34 @@
 import math
+
 from mjlab.envs import ManagerBasedRlEnvCfg
-from mjlab.managers.observation_manager import ObservationGroupCfg, ObservationTermCfg
+from mjlab.envs.mdp import dr
 from mjlab.envs.mdp.actions import JointPositionActionCfg
 from mjlab.managers.action_manager import ActionTermCfg
 from mjlab.managers.command_manager import CommandTermCfg
 from mjlab.managers.curriculum_manager import CurriculumTermCfg
 from mjlab.managers.event_manager import EventTermCfg
 from mjlab.managers.metrics_manager import MetricsTermCfg
+from mjlab.managers.observation_manager import ObservationGroupCfg, ObservationTermCfg
 from mjlab.managers.reward_manager import RewardTermCfg
 from mjlab.managers.scene_entity_config import SceneEntityCfg
 from mjlab.managers.termination_manager import TerminationTermCfg
-from mjlab.tasks.velocity.mdp import UniformVelocityCommandCfg
 from mjlab.scene import SceneCfg
-from mjlab.terrains import TerrainEntityCfg
-from mjlab.utils.noise import UniformNoiseCfg as Unoise
-from mjlab.utils.noise import NoiseModelWithAdditiveBiasCfg
-from mjlab.envs.mdp import dr
-from mjlab.tasks.velocity import mdp
+from mjlab.sensor import ContactMatch, ContactSensorCfg, ObjRef, TerrainHeightSensorCfg
 from mjlab.sim import MujocoCfg, SimulationCfg
+from mjlab.tasks.velocity import mdp
+from mjlab.tasks.velocity.mdp import UniformVelocityCommandCfg
+from mjlab.terrains import TerrainEntityCfg
+from mjlab.utils.noise import NoiseModelWithAdditiveBiasCfg
+from mjlab.utils.noise import UniformNoiseCfg as Unoise
 from mjlab.viewer import ViewerConfig
+
 from mjlab_piplus.robot.piplus_constants import get_piplus_robot_cfg
 from mjlab_piplus.tasks import mdp as pi_mdp
-
-from mjlab.sensor import ContactMatch, ContactSensorCfg, TerrainHeightSensorCfg, ObjRef
 
 DELAY_MIN = 0
 DELAY_MAX = 3
 WALK_FREQUENCY = 1.5
+
 
 def piplus_velocity_env_cfg(
   play: bool = False, static: bool = False
@@ -53,7 +55,7 @@ def piplus_velocity_env_cfg(
   ##
   # Observations
   ##
-  actor_terms = { # careful: when changing, also change symmetry config
+  actor_terms = {  # careful: when changing, also change symmetry config
     "base_ang_vel": ObservationTermCfg(
       func=mdp.builtin_sensor,
       params={"sensor_name": "robot/gyro"},
@@ -88,7 +90,7 @@ def piplus_velocity_env_cfg(
     ),
     "actions": ObservationTermCfg(
       func=mdp.last_action,
-      #noise=Unoise(n_min=-0.1, n_max=0.1),
+      # noise=Unoise(n_min=-0.1, n_max=0.1),
     ),
     "phase": ObservationTermCfg(
       func=pi_mdp.phase,
@@ -170,9 +172,8 @@ def piplus_velocity_env_cfg(
         lin_vel_x=(-0.25, 0.6),
         lin_vel_y=(-0.25, 0.25),
         ang_vel_z=(-1.2, 1.2),
-        heading=(-math.pi, math.pi)
+        heading=(-math.pi, math.pi),
       ),
-
     )
   }
 
@@ -183,7 +184,7 @@ def piplus_velocity_env_cfg(
   events = {
     "reset_base": EventTermCfg(
       func=mdp.reset_root_state_uniform,
-      mode="reset",
+      mode="startup",
       params={
         "pose_range": {
           "x": (-0.0, 0.0),
@@ -196,7 +197,7 @@ def piplus_velocity_env_cfg(
     ),
     "reset_robot_joints": EventTermCfg(
       func=mdp.reset_joints_by_offset,
-      mode="reset",
+      mode="startup",
       params={
         "position_range": (-0.2, 0.2),
         "velocity_range": (-0.5, 0.5),
@@ -219,17 +220,20 @@ def piplus_velocity_env_cfg(
       },
     ),
     "foot_friction": EventTermCfg(
-      mode="reset",
+      mode="startup",
       func=dr.geom_friction,
       params={
-        "asset_cfg": SceneEntityCfg("robot", geom_names=("l_ankle_roll_link_collision.*", "r_ankle_roll_link_collision.*")),
+        "asset_cfg": SceneEntityCfg(
+          "robot",
+          geom_names=("l_ankle_roll_link_collision.*", "r_ankle_roll_link_collision.*"),
+        ),
         "operation": "scale",
         "ranges": (0.4, 1.0),
         "shared_random": True,
       },
     ),
     "joint_frictionloss": EventTermCfg(
-      mode="reset",
+      mode="startup",
       func=dr.joint_friction,
       params={
         "asset_cfg": SceneEntityCfg("robot", joint_names=(".*",)),
@@ -237,8 +241,15 @@ def piplus_velocity_env_cfg(
         "operation": "scale",
       },
     ),
+    # NOTE: mass/COM/armature DR runs in "startup" mode, not "reset". Each of
+    # these triggers a MuJoCo constant recompute (body_mass/body_ipos ->
+    # set_const, dof_armature -> set_const_0) that is NOT in the CUDA graph.
+    # In "reset" mode this recompute fired on nearly every step (envs reset
+    # constantly early in training), consuming ~21% of total CPU and capping
+    # throughput. Running them once per env at startup keeps per-env diversity
+    # across the 4096 worlds while paying the recompute a single time.
     "joint_armature": EventTermCfg(
-      mode="reset",
+      mode="startup",
       func=dr.joint_armature,
       params={
         "asset_cfg": SceneEntityCfg("robot", joint_names=(".*",)),
@@ -247,7 +258,7 @@ def piplus_velocity_env_cfg(
       },
     ),
     "joint_damping": EventTermCfg(
-      mode="reset",
+      mode="startup",
       func=dr.joint_damping,
       params={
         "asset_cfg": SceneEntityCfg("robot", joint_names=(".*",)),
@@ -256,7 +267,7 @@ def piplus_velocity_env_cfg(
       },
     ),
     "actuator_gains": EventTermCfg(
-      mode="reset",
+      mode="startup",
       func=dr.pd_gains,
       params={
         "asset_cfg": SceneEntityCfg("robot", actuator_names=(r".*",)),
@@ -266,7 +277,7 @@ def piplus_velocity_env_cfg(
       },
     ),
     "link_masses": EventTermCfg(
-      mode="reset",
+      mode="startup",
       func=dr.body_mass,
       params={
         "asset_cfg": SceneEntityCfg("robot", body_names=(".*",)),
@@ -275,7 +286,7 @@ def piplus_velocity_env_cfg(
       },
     ),
     "torso_mass": EventTermCfg(
-      mode="reset",
+      mode="startup",
       func=dr.body_mass,
       params={
         "asset_cfg": SceneEntityCfg("robot", body_names=("base_link",)),
@@ -284,7 +295,7 @@ def piplus_velocity_env_cfg(
       },
     ),
     "link_com": EventTermCfg(
-      mode="reset",
+      mode="startup",
       func=dr.body_com_offset,
       params={
         "asset_cfg": SceneEntityCfg("robot", body_names=(".*",)),
@@ -297,7 +308,7 @@ def piplus_velocity_env_cfg(
       },
     ),
     "base_com": EventTermCfg(
-      mode="reset",
+      mode="startup",
       func=dr.body_com_offset,
       params={
         "asset_cfg": SceneEntityCfg("robot", body_names=("base_link",)),
@@ -310,7 +321,7 @@ def piplus_velocity_env_cfg(
       },
     ),
     "encoder_bias": EventTermCfg(
-      mode="reset",
+      mode="startup",
       func=dr.encoder_bias,
       params={
         "asset_cfg": SceneEntityCfg("robot", joint_names=(".*",)),
@@ -337,9 +348,7 @@ def piplus_velocity_env_cfg(
     "upright": RewardTermCfg(
       func=pi_mdp.body_orientation_l2,
       weight=-1.0,
-      params={
-        "asset_cfg": SceneEntityCfg("robot", body_names=())
-      },
+      params={"asset_cfg": SceneEntityCfg("robot", body_names=("base_link",))},
     ),
     "body_ang_vel": RewardTermCfg(
       func=mdp.body_angular_velocity_penalty,
@@ -413,7 +422,7 @@ def piplus_velocity_env_cfg(
         "command_threshold": 0.01,
         "command_name": "twist",
         "sensor_name": "feet_ground_contact",
-      }
+      },
     ),
     "foot_clearance": RewardTermCfg(
       func=pi_mdp.feet_clearance,
@@ -423,7 +432,7 @@ def piplus_velocity_env_cfg(
         "command_name": "twist",
         "command_threshold": 0.01,
         "asset_cfg": SceneEntityCfg("robot", site_names=foot_sites),
-     },
+      },
     ),
     "foot_slip": RewardTermCfg(
       func=pi_mdp.feet_slip,
@@ -488,10 +497,10 @@ def piplus_velocity_env_cfg(
       func=mdp.bad_orientation,
       params={"limit_angle": math.radians(45.0)},
     ),
-    #"root_height_below_minimum": TerminationTermCfg(
+    # "root_height_below_minimum": TerminationTermCfg(
     #  func=mdp.root_height_below_minimum,
     #  params={"minimum_height": 0.25},
-    #),
+    # ),
   }
 
   ##
