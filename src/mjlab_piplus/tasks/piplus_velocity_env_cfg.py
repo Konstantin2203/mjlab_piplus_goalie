@@ -303,9 +303,9 @@ def piplus_velocity_env_cfg(
         "asset_cfg": SceneEntityCfg("robot", body_names=("base_link",)),
         "operation": "add",
         "ranges": {
-          0: (-0.03, 0.03),
-          1: (-0.03, 0.03),
-          2: (-0.03, 0.03),
+          0: (-0.05, 0.05),
+          1: (-0.05, 0.05),
+          2: (-0.05, 0.05),
         },
       },
     ),
