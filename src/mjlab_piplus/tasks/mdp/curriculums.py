@@ -1,13 +1,49 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, TypedDict
+from typing import TYPE_CHECKING, Any, TypedDict, cast
 
 import torch
+
+from mjlab_piplus.tasks.mdp.commands import GoalPoseCommandCfg
 
 if TYPE_CHECKING:
   from mjlab.envs import ManagerBasedRlEnv
 
-__all__ = ["EventCurriculumStage", "event_curriculum"]
+__all__ = [
+  "EventCurriculumStage",
+  "event_curriculum",
+  "GoalRadiusStage",
+  "commands_goal_radius",
+]
+
+
+class GoalRadiusStage(TypedDict):
+  step: int
+  radius_range: tuple[float, float]
+
+
+def commands_goal_radius(
+  env: ManagerBasedRlEnv,
+  env_ids: torch.Tensor,
+  command_name: str,
+  radius_stages: list[GoalRadiusStage],
+) -> dict[str, torch.Tensor]:
+  """Ramp the goal-pose sampling radius over training steps.
+
+  Later stages take precedence once ``env.common_step_counter`` reaches their
+  ``step`` threshold.
+  """
+  del env_ids  # Unused.
+  command_term = env.command_manager.get_term(command_name)
+  assert command_term is not None
+  cfg = cast(GoalPoseCommandCfg, command_term.cfg)
+  for stage in radius_stages:
+    if env.common_step_counter >= stage["step"]:
+      cfg.radius_range = stage["radius_range"]
+  return {
+    "radius_min": torch.tensor(cfg.radius_range[0]),
+    "radius_max": torch.tensor(cfg.radius_range[1]),
+  }
 
 
 class _EventCurriculumStageOptional(TypedDict, total=False):

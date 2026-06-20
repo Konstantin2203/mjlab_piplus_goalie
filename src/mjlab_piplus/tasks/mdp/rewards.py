@@ -2,12 +2,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from mjlab.sensor import ContactSensor, TerrainHeightSensor
 import torch
-
 from mjlab.entity import Entity
 from mjlab.managers.reward_manager import RewardTermCfg
 from mjlab.managers.scene_entity_config import SceneEntityCfg
+from mjlab.sensor import ContactSensor
 from mjlab.utils.lab_api.math import quat_apply_inverse
 
 if TYPE_CHECKING:
@@ -112,7 +111,7 @@ def feet_air_time_zero_vel(
   current_air_time = sensor_data.current_air_time
   assert current_air_time is not None
   in_range = (current_air_time > threshold_min) & (current_air_time < threshold_max)
-  reward = torch.sum(in_range.float(), dim=1) # number of feet in the air
+  reward = torch.sum(in_range.float(), dim=1)  # number of feet in the air
   in_air = current_air_time > 0
   num_in_air = torch.sum(in_air.float())
   mean_air_time = torch.sum(current_air_time * in_air.float()) / torch.clamp(
@@ -127,36 +126,41 @@ def feet_air_time_zero_vel(
       total_command = linear_norm + angular_norm
       scale = (total_command > command_threshold).float()
       reward *= scale
-      command_zero_mask = (total_command == 0.0)
-      reward[command_zero_mask] = 1.0 # maybe reward max value, if we reach zero support
+      command_zero_mask = total_command == 0.0
+      reward[command_zero_mask] = (
+        1.0  # maybe reward max value, if we reach zero support
+      )
   return reward
 
+
 def feet_gait(
-        env: ManagerBasedRlEnv,
-        frequency: float,
-        offset: list[float],
-        threshold: float,
-        command_threshold: float,
-        command_name: str,
-        sensor_name: str,
+  env: ManagerBasedRlEnv,
+  frequency: float,
+  offset: list[float],
+  threshold: float,
+  command_threshold: float,
+  command_name: str,
+  sensor_name: str,
 ) -> torch.Tensor:
-    period = 1 / frequency
-    sensor: ContactSensor = env.scene[sensor_name]
-    is_contact = sensor.data.current_contact_time > 0
-    global_phase = ((env.episode_length_buf * env.step_dt) / period).unsqueeze(1)
-    offsets = torch.as_tensor(offset, device=env.device, dtype=global_phase.dtype).view(1, -1)
-    leg_phase = (global_phase + offsets) % 1.0
-    is_stance = (leg_phase < threshold)
-    reward = (is_stance == is_contact).float().mean(dim=1)
-    if command_name is not None:
-        command = env.command_manager.get_command(command_name)
-        if command is not None:
-            linear_norm = torch.norm(command[:, :2], dim=1)
-            angular_norm = torch.abs(command[:, 2])
-            total_command = linear_norm + angular_norm
-            scale = (total_command > command_threshold).float()
-            reward *= scale
-    return reward
+  period = 1 / frequency
+  sensor: ContactSensor = env.scene[sensor_name]
+  is_contact = sensor.data.current_contact_time > 0
+  global_phase = ((env.episode_length_buf * env.step_dt) / period).unsqueeze(1)
+  offsets = torch.as_tensor(offset, device=env.device, dtype=global_phase.dtype).view(
+    1, -1
+  )
+  leg_phase = (global_phase + offsets) % 1.0
+  is_stance = leg_phase < threshold
+  reward = (is_stance == is_contact).float().mean(dim=1)
+  if command_name is not None:
+    command = env.command_manager.get_command(command_name)
+    if command is not None:
+      linear_norm = torch.norm(command[:, :2], dim=1)
+      angular_norm = torch.abs(command[:, 2])
+      total_command = linear_norm + angular_norm
+      scale = (total_command > command_threshold).float()
+      reward *= scale
+  return reward
 
 
 class feet_swing_height:
@@ -271,23 +275,27 @@ def soft_landing(
 
 
 def stand_still(
-        env: ManagerBasedRlEnv,
-        command_name: str,
-        command_threshold: float = 0.1,
-        asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG
+  env: ManagerBasedRlEnv,
+  command_name: str,
+  command_threshold: float = 0.1,
+  asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
 ) -> torch.Tensor:
-    asset: Entity = env.scene[asset_cfg.name]
-    diff_angle = asset.data.joint_pos[:, asset_cfg.joint_ids] - asset.data.default_joint_pos[:, asset_cfg.joint_ids]
-    reward = torch.sum(torch.square(diff_angle), dim=1)
-    if command_name is not None:
-        command = env.command_manager.get_command(command_name)
-        if command is not None:
-            linear_norm = torch.norm(command[:, :2], dim=1)
-            angular_norm = torch.abs(command[:, 2])
-            total_command = linear_norm + angular_norm
-            scale = (total_command <= command_threshold).float()
-            reward *= scale
-    return reward
+  asset: Entity = env.scene[asset_cfg.name]
+  diff_angle = (
+    asset.data.joint_pos[:, asset_cfg.joint_ids]
+    - asset.data.default_joint_pos[:, asset_cfg.joint_ids]
+  )
+  reward = torch.sum(torch.square(diff_angle), dim=1)
+  if command_name is not None:
+    command = env.command_manager.get_command(command_name)
+    if command is not None:
+      linear_norm = torch.norm(command[:, :2], dim=1)
+      angular_norm = torch.abs(command[:, 2])
+      total_command = linear_norm + angular_norm
+      scale = (total_command <= command_threshold).float()
+      reward *= scale
+  return reward
+
 
 def feet_clearance(
   env: ManagerBasedRlEnv,
@@ -312,6 +320,107 @@ def feet_clearance(
       active = (total_command > command_threshold).float()
       cost = cost * active
   return cost
+
+
+class goal_progress:
+  """Reward progress toward the goal: the per-step reduction in Euclidean
+  distance to the goal position.
+
+  Normalized so that approaching the goal at ``max_vel`` yields a reward of 1.
+  Moving away yields a proportional negative reward (unbounded below). The
+  reward is capped at 1 so the policy is not encouraged to exceed ``max_vel``,
+  which can be unstable.
+
+  Within ``distance_threshold`` of the goal the reward is always 1, giving the
+  policy a reason to hold position at the goal instead of oscillating once no
+  more progress can be made.
+  """
+
+  def __init__(self, cfg: RewardTermCfg, env: ManagerBasedRlEnv):
+    term = env.command_manager.get_term(cfg.params["command_name"])
+    self.last_dist = torch.linalg.norm(term.command[:, :2], dim=1)
+    self.last_counter = term.command_counter.clone()
+
+  def __call__(
+    self,
+    env: ManagerBasedRlEnv,
+    command_name: str,
+    max_vel: float = 1.0,
+    distance_threshold: float = 0.5,
+  ) -> torch.Tensor:
+    term = env.command_manager.get_term(command_name)
+    assert term is not None, f"Command '{command_name}' not found."
+    dist = torch.linalg.norm(term.command[:, :2], dim=1)  # [B]
+    # Positive when the robot got closer to the goal since the previous step.
+    progress = self.last_dist - dist
+    # On a goal change (periodic resample or episode reset) the distance delta
+    # is meaningless, so zero those steps out.
+    goal_changed = term.command_counter != self.last_counter
+    progress = torch.where(goal_changed, torch.zeros_like(progress), progress)
+    # step_dt already includes decimation (physics_dt * decimation), so the max
+    # distance reachable in one policy step is max_vel * step_dt.
+    reward = torch.clamp(progress / (max_vel * env.step_dt), max=1.0)
+    # Hold reward at the goal so the policy does not oscillate near it.
+    reward = torch.where(dist <= distance_threshold, torch.ones_like(reward), reward)
+    self.last_dist = dist
+    self.last_counter = term.command_counter.clone()
+    return reward
+
+
+def close_to_goal(
+  env: ManagerBasedRlEnv,
+  command_name: str,
+  epsilon: float = 0.5,
+) -> torch.Tensor:
+  """Reward proximity to the goal position: ``exp(-epsilon * d)``.
+
+  ``d`` is the Euclidean distance to the goal position, read from the base-frame
+  goal command ``[dx_b, dy_b, yaw_err]``.
+  """
+  command = env.command_manager.get_command(command_name)
+  assert command is not None, f"Command '{command_name}' not found."
+  d = torch.norm(command[:, :2], dim=1)
+  return torch.exp(-epsilon * d)
+
+
+def align_with_goal(
+  env: ManagerBasedRlEnv,
+  command_name: str,
+  pos_coeff: float = 5.0,
+  ori_coeff: float = 1.0,
+) -> torch.Tensor:
+  """Reward reaching the goal pose: ``exp(-pos_coeff * d) * exp(-ori_coeff * |alpha|)``.
+
+  ``d`` is the Euclidean distance to the goal position and ``alpha`` is the
+  angular distance to the goal orientation (wrapped yaw error).
+  """
+  command = env.command_manager.get_command(command_name)
+  assert command is not None, f"Command '{command_name}' not found."
+  d = torch.norm(command[:, :2], dim=1)
+  alpha = torch.abs(command[:, 2])
+  return torch.exp(-pos_coeff * d) * torch.exp(-ori_coeff * alpha)
+
+
+def orient_towards_goal(
+  env: ManagerBasedRlEnv,
+  command_name: str,
+  coeff: float = 1.0,
+  distance_threshold: float = 0.3,
+) -> torch.Tensor:
+  """Reward facing the goal position while far away.
+
+  When farther than ``distance_threshold`` from the goal, returns
+  ``exp(-coeff * |beta|)`` where ``beta`` is the angle between the robot's
+  forward (base x) axis and the vector from the base to the goal position
+  (i.e. the goal bearing in the base frame). When within
+  ``distance_threshold``, returns 1.
+  """
+  command = env.command_manager.get_command(command_name)
+  assert command is not None, f"Command '{command_name}' not found."
+  d = torch.norm(command[:, :2], dim=1)
+  beta = torch.atan2(command[:, 1], command[:, 0])
+  reward = torch.exp(-coeff * torch.abs(beta))
+  return torch.where(d <= distance_threshold, torch.ones_like(reward), reward)
 
 
 def body_orientation_l2(

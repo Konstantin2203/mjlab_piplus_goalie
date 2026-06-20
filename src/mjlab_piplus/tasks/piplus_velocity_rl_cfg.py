@@ -6,17 +6,30 @@ from mjlab.rl import (
   RslRlOnPolicyRunnerCfg,
   RslRlPpoAlgorithmCfg,
 )
-from mjlab_piplus.tasks.mdp import PiPlusSymmetry
+
+from mjlab_piplus.tasks.mdp import PiPlusGoalPoseSymmetry, PiPlusSymmetry
 
 
 @dataclass
 class PiPlusPpoAlgorithmCfg(RslRlPpoAlgorithmCfg):
-  symmetry_cfg: dict[str, Any] | None = field(default_factory=lambda: {
-    "data_augmentation_func": PiPlusSymmetry(),
-    "use_mirror_loss": True,
-    "mirror_loss_coeff": 0.5,
-  })
+  symmetry_cfg: dict[str, Any] | None = field(
+    default_factory=lambda: {
+      "data_augmentation_func": PiPlusSymmetry(),
+      "use_mirror_loss": True,
+      "mirror_loss_coeff": 0.5,
+    }
+  )
 
+
+@dataclass
+class PiPlusGoalPosePpoAlgorithmCfg(RslRlPpoAlgorithmCfg):
+  symmetry_cfg: dict[str, Any] | None = field(
+    default_factory=lambda: {
+      "data_augmentation_func": PiPlusGoalPoseSymmetry(),
+      "use_mirror_loss": True,
+      "mirror_loss_coeff": 0.5,
+    }
+  )
 
 
 def get_piplus_velocity_rl_cfg() -> RslRlOnPolicyRunnerCfg:
@@ -56,3 +69,12 @@ def get_piplus_velocity_rl_cfg() -> RslRlOnPolicyRunnerCfg:
     num_steps_per_env=24,
     max_iterations=3_200,
   )
+
+
+def get_piplus_goal_pose_rl_cfg() -> RslRlOnPolicyRunnerCfg:
+  cfg = get_piplus_velocity_rl_cfg()
+  cfg.experiment_name = "piplus_goal_pose"
+  # Goal-pose actor obs uses a 4-dim cos/sin command (OBS_DIM 48), so it needs
+  # its own mirror transform.
+  cfg.algorithm.symmetry_cfg = PiPlusGoalPosePpoAlgorithmCfg().symmetry_cfg
+  return cfg

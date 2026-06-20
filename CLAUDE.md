@@ -19,7 +19,7 @@ Always use `uv run`, not `python` directly.
 # logs/rsl_rl/piplus_velocity/2026-04-12_23-56-38 — the last segment is the
 # run name. Then prepend a line to runs.log (newest first):
 # <name>: <id>: <short summary>
-uv run train Mjlab-Velocity-PiPlus --env.scene.num-envs 4096 --enable-nan-guard True --gpu-ids '[GPU]'
+uv run train Mjlab-Velocity-PiPlus --env.scene.num-envs 4096 --gpu-ids '[GPU]'
 
 # Play/evaluate a trained policy — launch as a background process via Bash run_in_background=true (NOT tmux), pick a free GPU via nvidia-smi
 # Export CUDA_VISIBLE_DEVICES to a single GPU before launching.

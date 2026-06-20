@@ -3,7 +3,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import torch
-
 from mjlab.entity import Entity
 from mjlab.managers.scene_entity_config import SceneEntityCfg
 from mjlab.sensor.contact_sensor import ContactSensor
@@ -118,16 +117,20 @@ def foot_contact_force(
   # force: [B, N, 3] global frame (netforce reduce)
   return torch.linalg.norm(sensor.data.force, dim=-1).mean(dim=-1)
 
+
 def phase_metric(
-    env: ManagerBasedRlEnv,
-    frequency: float = 1.75,
-    command_name: str = "twist",
-    cmd_threshold: float = 0.01,
-  ) -> torch.Tensor:
-  """ phase from 0 to 1"""
+  env: ManagerBasedRlEnv,
+  frequency: float = 1.75,
+  command_name: str = "twist",
+  cmd_threshold: float = 0.01,
+) -> torch.Tensor:
+  """phase from 0 to 1"""
   period = 1 / frequency
   global_phase = (env.episode_length_buf * env.step_dt) % period / period
   # zero out phase when command is near zero
-  cmd_zero = torch.linalg.norm(env.command_manager.get_command(command_name), dim=-1) < cmd_threshold
+  cmd_zero = (
+    torch.linalg.norm(env.command_manager.get_command(command_name), dim=-1)
+    < cmd_threshold
+  )
   global_phase = torch.where(cmd_zero, torch.zeros_like(global_phase), global_phase)
   return global_phase
