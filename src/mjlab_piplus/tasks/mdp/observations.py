@@ -11,3 +11,6 @@ def phase(env: ManagerBasedRlEnv, frequency: float, command_name: str, cmd_thres
     stand_mask = torch.linalg.norm(env.command_manager.get_command(command_name), dim=1) < cmd_threshold
     phase = torch.where(stand_mask.unsqueeze(1), torch.zeros_like(phase), phase)
     return phase
+
+def zeros(env: ManagerBasedRlEnv, shape) -> torch.Tensor:
+    return torch.zeros((env.num_envs, *shape), device=env.device)

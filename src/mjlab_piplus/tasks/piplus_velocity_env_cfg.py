@@ -80,12 +80,13 @@ def piplus_velocity_env_cfg(
       delay_min_lag=DELAY_MIN,
       delay_max_lag=DELAY_MAX,
     ),
-    #"joint_vel": ObservationTermCfg(
-    #  func=mdp.joint_vel_rel,
-    #  noise=Unoise(n_min=-0.5, n_max=0.5),
-    #  delay_min_lag=DELAY_MIN,
-    #  delay_max_lag=DELAY_MAX,
-    #),
+    "joint_vel": ObservationTermCfg(
+      func=pi_mdp.zeros,
+      #noise=Unoise(n_min=-0.5, n_max=0.5),
+      delay_min_lag=DELAY_MIN,
+      delay_max_lag=DELAY_MAX,
+      params={"shape": (12,)},
+    ),
     "actions": ObservationTermCfg(
       func=mdp.last_action,
       #noise=Unoise(n_min=-0.1, n_max=0.1),
