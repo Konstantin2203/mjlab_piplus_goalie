@@ -70,7 +70,7 @@ def piplus_velocity_env_cfg(
           n_min=-0.05,
           n_max=0.05,
         ),
-        bias_noise_cfg=Unoise(n_min=-0.03, n_max=0.03, operation="add"),
+        bias_noise_cfg=Unoise(n_min=-0.1, n_max=0.1, operation="add"),
         sample_bias_per_component=True,
       ),
       delay_min_lag=DELAY_MIN,
@@ -314,8 +314,8 @@ def piplus_velocity_env_cfg(
         "asset_cfg": SceneEntityCfg("robot", body_names=("base_link",)),
         "operation": "add",
         "ranges": {
-          0: (-0.05, 0.05),
-          1: (-0.05, 0.05),
+          0: (-0.1, 0.1),
+          1: (-0.1, 0.1),
           2: (-0.05, 0.05),
         },
       },
@@ -425,10 +425,10 @@ def piplus_velocity_env_cfg(
       },
     ),
     "foot_clearance": RewardTermCfg(
-      func=pi_mdp.feet_clearance,
-      weight=-1.0,
+      func=pi_mdp.feet_clearance_positive,
+      weight=1.0,
       params={
-        "target_height": 0.02,
+        "target_height": 0.05,
         "command_name": "twist",
         "command_threshold": 0.01,
         "asset_cfg": SceneEntityCfg("robot", site_names=foot_sites),
@@ -446,7 +446,7 @@ def piplus_velocity_env_cfg(
     ),
     "soft_landing": RewardTermCfg(
       func=pi_mdp.soft_landing,
-      weight=-1e-2,
+      weight=-1e-3,
       params={
         "sensor_name": "feet_ground_contact",
         "command_name": "twist",
