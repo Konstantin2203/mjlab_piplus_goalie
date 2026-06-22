@@ -407,7 +407,7 @@ def piplus_velocity_env_cfg(
           r".*_ankle_roll_joint": 0.1,
         },
         "walking_threshold": 0.01,
-        "running_threshold": 0.25,
+        "running_threshold": 99.0,
       },
     ),
     # shaping rewards
@@ -438,7 +438,7 @@ def piplus_velocity_env_cfg(
       func=pi_mdp.feet_swing_height,
       weight=-1.0,
       params={
-        "target_height": 0.05,
+        "target_height": 0.03,
         "command_name": "twist",
         "command_threshold": 0.01,
         "asset_cfg": SceneEntityCfg("robot", site_names=foot_sites),
