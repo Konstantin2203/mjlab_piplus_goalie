@@ -442,6 +442,7 @@ def piplus_velocity_env_cfg(
         "command_name": "twist",
         "command_threshold": 0.01,
         "asset_cfg": SceneEntityCfg("robot", site_names=foot_sites),
+        "sensor_name": "feet_ground_contact",
       },
     ),
     "foot_slip": RewardTermCfg(
