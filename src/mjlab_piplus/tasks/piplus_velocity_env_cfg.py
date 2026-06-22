@@ -424,9 +424,19 @@ def piplus_velocity_env_cfg(
         "sensor_name": "feet_ground_contact",
       },
     ),
-    "foot_clearance": RewardTermCfg(
-      func=pi_mdp.feet_clearance_positive,
-      weight=1.0,
+    #"foot_clearance": RewardTermCfg(
+    #  func=pi_mdp.feet_clearance_positive,
+    #  weight=1.0,
+    #  params={
+    #    "target_height": 0.05,
+    #    "command_name": "twist",
+    #    "command_threshold": 0.01,
+    #    "asset_cfg": SceneEntityCfg("robot", site_names=foot_sites),
+    #  },
+    #),
+    "feet_swing_height": RewardTermCfg(
+      func=pi_mdp.feet_swing_height,
+      weight=-1.0,
       params={
         "target_height": 0.05,
         "command_name": "twist",
