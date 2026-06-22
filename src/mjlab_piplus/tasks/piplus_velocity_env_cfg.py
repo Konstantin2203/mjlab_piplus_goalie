@@ -497,6 +497,13 @@ def piplus_velocity_env_cfg(
         "cmd_threshold": 0.01,
       },
     ),
+    "feet_swing_peak_height": MetricsTermCfg(
+      func=pi_mdp.feet_swing_peak_height,
+      params={
+        "sensor_name": "feet_ground_contact",
+        "asset_cfg": SceneEntityCfg("robot", site_names=foot_sites),
+      },
+    ),
   }
 
   ##

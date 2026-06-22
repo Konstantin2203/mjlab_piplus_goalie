@@ -9,9 +9,61 @@ from mjlab.sensor.contact_sensor import ContactSensor
 
 if TYPE_CHECKING:
   from mjlab.envs import ManagerBasedRlEnv
+  from mjlab.managers.metrics_manager import MetricsTermCfg
 
 
 _DEFAULT_ASSET_CFG = SceneEntityCfg("robot")
+
+
+class feet_swing_peak_height:
+  """Mean peak swing height of the feet, evaluated at landing (meters).
+
+  Tracks the highest point each foot reaches while airborne and, on touchdown,
+  latches it as that foot's most-recent swing peak. The metric returns the mean
+  latched peak across feet, held between landings (like ``last_air_time``), so
+  the per-step time average reflects the typical swing height. This is the same
+  quantity ``feet_swing_height`` logs as a side effect, extracted as a
+  standalone metric.
+  """
+
+  def __init__(self, cfg: MetricsTermCfg, env: ManagerBasedRlEnv):
+    self.site_names = cfg.params["asset_cfg"].site_names
+    n_feet = len(self.site_names)
+    self.peak_heights = torch.zeros(
+      (env.num_envs, n_feet), device=env.device, dtype=torch.float32
+    )
+    self.last_peak_heights = torch.zeros_like(self.peak_heights)
+    self.step_dt = env.step_dt
+
+  def __call__(
+    self,
+    env: ManagerBasedRlEnv,
+    sensor_name: str,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+  ) -> torch.Tensor:
+    asset: Entity = env.scene[asset_cfg.name]
+    contact_sensor: ContactSensor = env.scene[sensor_name]
+    foot_heights = asset.data.site_pos_w[:, asset_cfg.site_ids, 2]
+    in_air = contact_sensor.data.found == 0
+    self.peak_heights = torch.where(
+      in_air,
+      torch.maximum(self.peak_heights, foot_heights),
+      self.peak_heights,
+    )
+    first_contact = contact_sensor.compute_first_contact(dt=self.step_dt)
+    # Latch the swing peak on touchdown; hold it until the next landing.
+    self.last_peak_heights = torch.where(
+      first_contact, self.peak_heights, self.last_peak_heights
+    )
+    # Reset the running peak for feet that just landed.
+    self.peak_heights = torch.where(
+      first_contact, torch.zeros_like(self.peak_heights), self.peak_heights
+    )
+    return self.last_peak_heights.mean(dim=-1)
+
+  def reset(self, env_ids: torch.Tensor) -> None:
+    self.peak_heights[env_ids] = 0.0
+    self.last_peak_heights[env_ids] = 0.0
 
 
 def _get_filtered_reward(env: ManagerBasedRlEnv, reward_name: str):
