@@ -328,6 +328,14 @@ def piplus_velocity_env_cfg(
         "bias_range": (-0.1, 0.1),
       },
     ),
+    "joint_torque": EventTermCfg(
+      mode="startup",
+      func=dr.effort_limits,
+      params={
+        "effort_limit_range": (0.3, 0.3),
+        "operation": "scale",
+      },
+    ),
   }
 
   ##
