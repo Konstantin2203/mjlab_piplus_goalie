@@ -332,7 +332,7 @@ def piplus_velocity_env_cfg(
       mode="startup",
       func=dr.effort_limits,
       params={
-        "effort_limit_range": (0.3, 0.3),
+        "effort_limit_range": (0.85, 1.0),
         "operation": "scale",
       },
     ),
