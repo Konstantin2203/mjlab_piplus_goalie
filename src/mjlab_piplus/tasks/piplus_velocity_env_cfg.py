@@ -149,7 +149,7 @@ def piplus_velocity_env_cfg(
     "joint_pos": JointPositionActionCfg(
       entity_name="robot",
       actuator_names=(".*",),
-      scale=0.5,
+      scale=0.35,
       use_default_offset=True,
     )
   }
