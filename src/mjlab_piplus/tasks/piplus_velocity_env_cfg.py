@@ -232,6 +232,17 @@ def piplus_velocity_env_cfg(
         "shared_random": True,
       },
     ),
+    "ground_softness": EventTermCfg(
+      mode="startup",
+      func=pi_mdp.geom_solref,
+      params={
+        "asset_cfg": SceneEntityCfg("terrain", geom_names=("terrain",)),
+        # solref[0] = timeconst. Default 0.02; larger = softer ground.
+        # Must stay >= 2 * sim.timestep (= 0.01 at 5 ms).
+        "ranges": (0.05, 0.3),
+        "operation": "abs",
+      },
+    ),
     "joint_frictionloss": EventTermCfg(
       mode="startup",
       func=dr.joint_friction,
@@ -432,7 +443,7 @@ def piplus_velocity_env_cfg(
         "sensor_name": "feet_ground_contact",
       },
     ),
-    #"foot_clearance": RewardTermCfg(
+    # "foot_clearance": RewardTermCfg(
     #  func=pi_mdp.feet_clearance_positive,
     #  weight=1.0,
     #  params={
@@ -441,7 +452,7 @@ def piplus_velocity_env_cfg(
     #    "command_threshold": 0.01,
     #    "asset_cfg": SceneEntityCfg("robot", site_names=foot_sites),
     #  },
-    #),
+    # ),
     "feet_swing_height": RewardTermCfg(
       func=pi_mdp.feet_swing_height,
       weight=-1.0,
@@ -485,7 +496,9 @@ def piplus_velocity_env_cfg(
       func=mdp.flat_orientation_l2,
       weight=-5.0,
       params={
-        "asset_cfg": SceneEntityCfg("robot", body_names=('l_ankle_roll_link', 'r_ankle_roll_link')),
+        "asset_cfg": SceneEntityCfg(
+          "robot", body_names=("l_ankle_roll_link", "r_ankle_roll_link")
+        ),
       },
     ),
   }
