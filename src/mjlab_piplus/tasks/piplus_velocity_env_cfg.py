@@ -27,7 +27,7 @@ from mjlab_piplus.tasks import mdp as pi_mdp
 
 DELAY_MIN = 0
 DELAY_MAX = 3
-WALK_FREQUENCY = 1.5
+WALK_FREQUENCY = 1.75
 
 
 def piplus_velocity_env_cfg(
@@ -169,7 +169,7 @@ def piplus_velocity_env_cfg(
       rel_heading_envs=0.3,
       rel_forward_envs=0.15,
       ranges=UniformVelocityCommandCfg.Ranges(
-        lin_vel_x=(-0.25, 0.6),
+        lin_vel_x=(-0.5, 1.0),
         lin_vel_y=(-0.25, 0.25),
         ang_vel_z=(-1.0, 1.0),
         heading=(-math.pi, math.pi),
@@ -479,6 +479,13 @@ def piplus_velocity_env_cfg(
         "command_name": "twist",
         "command_threshold": 0.01,
         "asset_cfg": SceneEntityCfg("robot", joint_names=".*"),
+      },
+    ),
+    "flat_foot": RewardTermCfg(
+      func=mdp.flat_orientation_l2,
+      weight=-5.0,
+      params={
+        "asset_cfg": SceneEntityCfg("robot", body_names=('l_ankle_roll_link', 'r_ankle_roll_link')),
       },
     ),
   }
