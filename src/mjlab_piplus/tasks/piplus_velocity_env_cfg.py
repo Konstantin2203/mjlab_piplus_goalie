@@ -59,7 +59,7 @@ def piplus_velocity_env_cfg(
     "base_ang_vel": ObservationTermCfg(
       func=mdp.builtin_sensor,
       params={"sensor_name": "robot/gyro"},
-      noise=Unoise(n_min=-0.2, n_max=0.2),
+      noise=Unoise(n_min=-0.05, n_max=0.05),
       delay_min_lag=DELAY_MIN,
       delay_max_lag=DELAY_MAX,
     ),
@@ -67,10 +67,10 @@ def piplus_velocity_env_cfg(
       func=mdp.projected_gravity,
       noise=NoiseModelWithAdditiveBiasCfg(
         noise_cfg=Unoise(
-          n_min=-0.05,
-          n_max=0.05,
+          n_min=-0.01,
+          n_max=0.01,
         ),
-        bias_noise_cfg=Unoise(n_min=-0.1, n_max=0.1, operation="add"),
+        bias_noise_cfg=Unoise(n_min=-0.03, n_max=0.03, operation="add"),
         sample_bias_per_component=True,
       ),
       delay_min_lag=DELAY_MIN,
