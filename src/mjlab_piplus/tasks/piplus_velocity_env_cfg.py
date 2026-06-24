@@ -232,15 +232,24 @@ def piplus_velocity_env_cfg(
         "shared_random": True,
       },
     ),
+    # Ground softness. NOTE: this is applied to the FOOT collision geoms, not the
+    # terrain plane. Every robot collision geom has priority 1 while the plane has
+    # priority 0, and MuJoCo lets the higher-priority geom's solref fully override
+    # the contact, so randomizing the plane's solref has no effect. Softening the
+    # foot contact is physically equivalent to soft ground at the foot contact.
     "ground_softness": EventTermCfg(
       mode="startup",
       func=pi_mdp.geom_solref,
       params={
-        "asset_cfg": SceneEntityCfg("terrain", geom_names=("terrain",)),
+        "asset_cfg": SceneEntityCfg(
+          "robot",
+          geom_names=("l_ankle_roll_link_collision.*", "r_ankle_roll_link_collision.*"),
+        ),
         # solref[0] = timeconst. Default 0.02; larger = softer ground.
         # Must stay >= 2 * sim.timestep (= 0.01 at 5 ms).
-        "ranges": (0.05, 0.3),
+        "ranges": (0.05, 0.4),
         "operation": "abs",
+        "shared_random": True,
       },
     ),
     "joint_frictionloss": EventTermCfg(
@@ -640,6 +649,7 @@ def piplus_velocity_env_cfg(
   )
   episode_length_s = 20.0
   if play:
+    events["ground_softness"].mode = "reset"
     episode_length_s = 1e10
     curriculum = {}
     metrics["foot_air_time"] = MetricsTermCfg(
