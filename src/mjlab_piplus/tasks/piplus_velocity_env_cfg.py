@@ -237,8 +237,11 @@ def piplus_velocity_env_cfg(
     # priority 0, and MuJoCo lets the higher-priority geom's solref fully override
     # the contact, so randomizing the plane's solref has no effect. Softening the
     # foot contact is physically equivalent to soft ground at the foot contact.
+    # Runs on "reset" (not "startup") so the `ground_softness` curriculum, which
+    # widens `ranges` over training, is re-sampled each episode. No constant
+    # recompute is needed for solref, so reset-mode cost is just a field write.
     "ground_softness": EventTermCfg(
-      mode="startup",
+      mode="reset",
       func=pi_mdp.geom_solref,
       params={
         "asset_cfg": SceneEntityCfg(
@@ -246,8 +249,9 @@ def piplus_velocity_env_cfg(
           geom_names=("l_ankle_roll_link_collision.*", "r_ankle_roll_link_collision.*"),
         ),
         # solref[0] = timeconst. Default 0.02; larger = softer ground.
-        # Must stay >= 2 * sim.timestep (= 0.01 at 5 ms).
-        "ranges": (0.05, 0.4),
+        # Must stay >= 2 * sim.timestep (= 0.01 at 5 ms). The max end is ramped
+        # by the `ground_softness` curriculum below.
+        "ranges": (0.02, 0.02),
         "operation": "abs",
         "shared_random": True,
       },
@@ -579,6 +583,18 @@ def piplus_velocity_env_cfg(
             "lin_vel_y": (-0.25, 0.25),
             "ang_vel_z": (-1.0, 1.0),
           },
+        ],
+      },
+    ),
+    # Ramp the foot-contact softness range. `step` is `env.common_step_counter`
+    # (raw env steps); change to `1200 * 24` if you mean training iterations.
+    "ground_softness": CurriculumTermCfg(
+      func=pi_mdp.event_curriculum,
+      params={
+        "event_name": "ground_softness",
+        "stages": [
+          {"step": 0, "params": {"ranges": (0.02, 0.02)}},
+          {"step": 1200, "params": {"ranges": (0.02, 0.2)}},
         ],
       },
     ),
