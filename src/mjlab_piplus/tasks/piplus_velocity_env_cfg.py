@@ -253,7 +253,6 @@ def piplus_velocity_env_cfg(
         # by the `ground_softness` curriculum below.
         "ranges": (0.02, 0.02),
         "operation": "abs",
-        "shared_random": True,
       },
     ),
     "joint_frictionloss": EventTermCfg(
@@ -593,14 +592,15 @@ def piplus_velocity_env_cfg(
       },
     ),
     # Ramp the foot-contact softness range. `step` is `env.common_step_counter`
-    # (raw env steps); change to `1200 * 24` if you mean training iterations.
+    # in raw env steps, so multiply iterations by the 24 steps/rollout (same
+    # convention as `command_vel`): `1200 * 24` = 1200 training iterations.
     "ground_softness": CurriculumTermCfg(
       func=pi_mdp.event_curriculum,
       params={
         "event_name": "ground_softness",
         "stages": [
           {"step": 0, "params": {"ranges": (0.02, 0.02)}},
-          {"step": 1200, "params": {"ranges": (0.02, 0.2)}},
+          {"step": 1200 * 24, "params": {"ranges": (0.02, 0.15)}},
         ],
       },
     ),
@@ -671,7 +671,15 @@ def piplus_velocity_env_cfg(
   )
   episode_length_s = 20.0
   if play:
-    events["ground_softness"].mode = "reset"
+    events = { # remove other dr in play mode
+      "reset_base": events["reset_base"],
+      "reset_robot_joints": events["reset_robot_joints"],
+      "push_robot": events["push_robot"],
+      "ground_softness": events["ground_softness"],
+    }
+    events["ground_softness"].params["ranges"] = (0.155, 0.155)
+    # Unbounded episodes in play: plain time_out (never fires at 1e10 s).
+    terminations["time_out"] = TerminationTermCfg(func=mdp.time_out, time_out=True)
     episode_length_s = 1e10
     curriculum = {}
     metrics["foot_air_time"] = MetricsTermCfg(
