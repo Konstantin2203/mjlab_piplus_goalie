@@ -705,7 +705,7 @@ def piplus_velocity_env_cfg(
     metrics["r_foot_pitch"] = MetricsTermCfg(
       func=pi_mdp.foot_tilt,
       params={"asset_cfg": SceneEntityCfg("robot", site_names=("r_foot",)), "axis": "pitch"},
-    ),
+    )
 
   ##
   # Assemble the config
