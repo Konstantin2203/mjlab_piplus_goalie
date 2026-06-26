@@ -78,7 +78,7 @@ def piplus_velocity_env_cfg(
     ),
     "joint_pos": ObservationTermCfg(
       func=mdp.joint_pos_rel,
-      noise=Unoise(n_min=-0.01, n_max=0.01),
+      noise=Unoise(n_min=-0.05, n_max=0.05),
       delay_min_lag=DELAY_MIN,
       delay_max_lag=DELAY_MAX,
     ),
