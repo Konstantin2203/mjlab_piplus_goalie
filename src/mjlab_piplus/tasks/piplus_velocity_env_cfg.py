@@ -17,13 +17,13 @@ from mjlab.sensor import ContactMatch, ContactSensorCfg, ObjRef, TerrainHeightSe
 from mjlab.sim import MujocoCfg, SimulationCfg
 from mjlab.tasks.velocity import mdp
 from mjlab.tasks.velocity.mdp import UniformVelocityCommandCfg
-from mjlab.terrains import TerrainEntityCfg
 from mjlab.utils.noise import NoiseModelWithAdditiveBiasCfg
 from mjlab.utils.noise import UniformNoiseCfg as Unoise
 from mjlab.viewer import ViewerConfig
 
 from mjlab_piplus.robot.piplus_constants import get_piplus_robot_cfg
 from mjlab_piplus.tasks import mdp as pi_mdp
+from mjlab_piplus.terrain import AstroturfTerrainCfg
 
 DELAY_MIN = 0
 DELAY_MAX = 3
@@ -219,17 +219,16 @@ def piplus_velocity_env_cfg(
         },
       },
     ),
-    "foot_friction": EventTermCfg(
+    # Turf friction DR. Applied to the astroturf top plane, not the feet: the top
+    # plane has priority 2 (> foot priority 1), so its friction governs the
+    # foot-turf contact. Scales the top plane's tangential friction (default 0.6).
+    "turf_friction": EventTermCfg(
       mode="startup",
       func=dr.geom_friction,
       params={
-        "asset_cfg": SceneEntityCfg(
-          "robot",
-          geom_names=("l_ankle_roll_link_collision.*", "r_ankle_roll_link_collision.*"),
-        ),
+        "asset_cfg": SceneEntityCfg("terrain", geom_names=("terrain_top",)),
         "operation": "scale",
         "ranges": (0.4, 1.0),
-        "shared_random": True,
       },
     ),
     # Ground softness. NOTE: this is applied to the FOOT collision geoms, not the
@@ -240,17 +239,18 @@ def piplus_velocity_env_cfg(
     # Runs on "reset" (not "startup") so the `ground_softness` curriculum, which
     # widens `ranges` over training, is re-sampled each episode. No constant
     # recompute is needed for solref, so reset-mode cost is just a field write.
-    "ground_softness": EventTermCfg(
+    # Astroturf softness: set the soft top plane's solref. The top plane has
+    # priority 2 (> robot foot priority 1), so its solref governs the foot-turf
+    # contact. Runs on "reset" so the `astroturf_softness` curriculum, which
+    # widens `ranges`, is re-sampled each episode.
+    "astroturf_softness": EventTermCfg(
       mode="reset",
       func=pi_mdp.geom_solref,
       params={
-        "asset_cfg": SceneEntityCfg(
-          "robot",
-          geom_names=("l_ankle_roll_link_collision.*", "r_ankle_roll_link_collision.*"),
-        ),
-        # solref[0] = timeconst. Default 0.02; larger = softer ground.
+        "asset_cfg": SceneEntityCfg("terrain", geom_names=("terrain_top",)),
+        # solref[0] = timeconst. Default 0.02; larger = softer turf.
         # Must stay >= 2 * sim.timestep (= 0.01 at 5 ms). The max end is ramped
-        # by the `ground_softness` curriculum below.
+        # by the `astroturf_softness` curriculum below.
         "ranges": (0.02, 0.02),
         "operation": "abs",
       },
@@ -542,7 +542,6 @@ def piplus_velocity_env_cfg(
         "asset_cfg": SceneEntityCfg("robot", site_names=foot_sites),
       },
     ),
-
   }
 
   ##
@@ -591,13 +590,15 @@ def piplus_velocity_env_cfg(
         ],
       },
     ),
-    # Ramp the foot-contact softness range. `step` is `env.common_step_counter`
-    # in raw env steps, so multiply iterations by the 24 steps/rollout (same
-    # convention as `command_vel`): `1200 * 24` = 1200 training iterations.
-    "ground_softness": CurriculumTermCfg(
+    # Ramp the astroturf top-plane softness range. `step` is
+    # `env.common_step_counter` in raw env steps, so multiply iterations by the
+    # 24 steps/rollout (same convention as `command_vel`): `1200 * 24` = 1200
+    # training iterations. Increases the upper plane's solref timeconst over
+    # training -> the turf gets progressively softer.
+    "astroturf_softness": CurriculumTermCfg(
       func=pi_mdp.event_curriculum,
       params={
-        "event_name": "ground_softness",
+        "event_name": "astroturf_softness",
         "stages": [
           {"step": 0, "params": {"ranges": (0.02, 0.02)}},
           {"step": 1200 * 24, "params": {"ranges": (0.02, 0.15)}},
@@ -634,11 +635,15 @@ def piplus_velocity_env_cfg(
     history_length=4,
   )
   scene = SceneCfg(
+    num_envs=4096,
     entities={"robot": get_piplus_robot_cfg()},
     sensors=(feet_contact_sensor_cfg, self_collision_cfg, foot_height_scan),
-    terrain=TerrainEntityCfg(
-      terrain_type="plane",
-      terrain_generator=None,
+    terrain=AstroturfTerrainCfg(
+      terrain_type="astroturf",
+      # Soft top plane starts hard (default) and is softened by the
+      # `astroturf_softness` curriculum below.
+      top_solref=(0.02, 1.0),
+      turf_thickness=0.03,
       max_init_terrain_level=0,
     ),
   )
@@ -671,13 +676,14 @@ def piplus_velocity_env_cfg(
   )
   episode_length_s = 20.0
   if play:
-    events = { # remove other dr in play mode
+    scene.num_envs = 1
+    events = {  # remove other dr in play mode
       "reset_base": events["reset_base"],
       "reset_robot_joints": events["reset_robot_joints"],
       "push_robot": events["push_robot"],
-      "ground_softness": events["ground_softness"],
+      "astroturf_softness": events["astroturf_softness"],
     }
-    events["ground_softness"].params["ranges"] = (0.155, 0.155)
+    events["astroturf_softness"].params["ranges"] = (0.155, 0.155)
     # Unbounded episodes in play: plain time_out (never fires at 1e10 s).
     terminations["time_out"] = TerminationTermCfg(func=mdp.time_out, time_out=True)
     episode_length_s = 1e10
@@ -692,19 +698,31 @@ def piplus_velocity_env_cfg(
     )
     metrics["l_foot_roll"] = MetricsTermCfg(
       func=pi_mdp.foot_tilt,
-      params={"asset_cfg": SceneEntityCfg("robot", site_names=("l_foot",)), "axis": "roll"},
+      params={
+        "asset_cfg": SceneEntityCfg("robot", site_names=("l_foot",)),
+        "axis": "roll",
+      },
     )
     metrics["l_foot_pitch"] = MetricsTermCfg(
       func=pi_mdp.foot_tilt,
-      params={"asset_cfg": SceneEntityCfg("robot", site_names=("l_foot",)), "axis": "pitch"},
+      params={
+        "asset_cfg": SceneEntityCfg("robot", site_names=("l_foot",)),
+        "axis": "pitch",
+      },
     )
     metrics["r_foot_roll"] = MetricsTermCfg(
       func=pi_mdp.foot_tilt,
-      params={"asset_cfg": SceneEntityCfg("robot", site_names=("r_foot",)), "axis": "roll"},
+      params={
+        "asset_cfg": SceneEntityCfg("robot", site_names=("r_foot",)),
+        "axis": "roll",
+      },
     )
     metrics["r_foot_pitch"] = MetricsTermCfg(
       func=pi_mdp.foot_tilt,
-      params={"asset_cfg": SceneEntityCfg("robot", site_names=("r_foot",)), "axis": "pitch"},
+      params={
+        "asset_cfg": SceneEntityCfg("robot", site_names=("r_foot",)),
+        "axis": "pitch",
+      },
     )
 
   ##
