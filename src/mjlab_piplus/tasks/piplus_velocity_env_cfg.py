@@ -545,13 +545,21 @@ def piplus_velocity_env_cfg(
         "asset_cfg": SceneEntityCfg("robot", site_names=foot_sites),
       },
     ),
+
   }
 
   ##
   # Terminations
   ##
   terminations = {
-    "time_out": TerminationTermCfg(func=mdp.time_out, time_out=True),
+    # Jittered per-env timeout keeps episode resets decorrelated for the whole
+    # run, preventing the synchronized-reset reward dips. Swapped back to the
+    # plain (never-firing) time_out in play, where episodes are unbounded.
+    "time_out": TerminationTermCfg(
+      func=pi_mdp.time_out_jittered,
+      time_out=True,
+      params={"min_fraction": 0.8},
+    ),
     "fell_over": TerminationTermCfg(
       func=mdp.bad_orientation,
       params={"limit_angle": math.radians(45.0)},
