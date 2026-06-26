@@ -68,8 +68,19 @@ Collision configs (`FULL_COLLISION`, `LEG_ONLY_COLLISION`, `FEET_ONLY_COLLISION`
 
 The function `piplus_velocity_env_cfg(play=False)` builds a `ManagerBasedRlEnvCfg`. Key design choices:
 
-- **Actor obs**: base angular velocity, projected gravity, joint pos/vel relative to default, last action, gait phase (sin/cos), velocity command. The sensor-derived terms (ang vel, gravity, joint pos/vel) are noised; actions, phase, and command are not. **Note:** the actor obs layout is hard-coded by index in `symmetry.py` (`_transform_obs`) — changing term order or dimensions requires updating that file and `check_symmetry.py`.
+- **Actor obs**: base angular velocity, projected gravity, joint pos/vel relative to default, last action, gait phase (sin/cos), velocity command. The sensor-derived terms (ang vel, gravity, joint pos/vel) are noised; actions, phase, and command are not.
 - **Critic obs**: actor obs + base linear velocity, foot height (from `TerrainHeightSensorCfg`), foot air time, foot contact, foot contact forces. No noise.
+
+> ⚠️ **Symmetry depends on the actor obs layout.** The left-right mirror in
+> `symmetry.py` (`_transform_obs` / `_transform_obs_common`) is hard-coded by
+> index, and each term has its own mirror rule (swap left/right joints, plus a
+> sign flip for axial vs. polar quantities — e.g. ang-vel `[-1,1,-1]`, gravity
+> `[1,-1,1]`, command `[1,-1,-1]`, phase half-period shift `[-1,-1]`). **Any
+> change to the actor obs — term order, dimensions, or what a term measures —
+> requires updating `_transform_obs` and `check_symmetry.py` to match.** The
+> **critic obs does NOT need a mirror transform**: under data augmentation the
+> mirrored sample reuses the original's value/return (`V(mirror(s)) == V(s)`),
+> so the value function is only evaluated on the original obs.
 - **Sensors**: `ContactSensorCfg` for feet ground contact (ankle roll link subtrees vs. terrain), self-collision sensor, terrain height scan anchored at foot sites.
 - **Curriculum**: velocity command ranges ramp up in two stages, from step 0 to step 800 × 24 (`command_vel`).
 - **Terminations**: time out (20 s episodes), orientation > 45° (`bad_orientation`). The root-height termination is currently commented out.

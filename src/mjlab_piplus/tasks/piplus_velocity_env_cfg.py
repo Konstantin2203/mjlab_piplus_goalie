@@ -78,6 +78,11 @@ def piplus_velocity_env_cfg(
     ),
     "joint_pos": ObservationTermCfg(
       func=mdp.joint_pos_rel,
+      # biased=True so the actor reads the encoder-biased position (true + bias),
+      # matching the action manager which always compensates the target by
+      # -encoder_bias. Without this the encoder_bias DR is only half-applied (the
+      # actor sees the true position) and models no real calibration error.
+      params={"biased": True},
       noise=Unoise(n_min=-0.05, n_max=0.05),
       delay_min_lag=DELAY_MIN,
       delay_max_lag=DELAY_MAX,
@@ -107,6 +112,14 @@ def piplus_velocity_env_cfg(
   }
   critic_terms = {
     **actor_terms,
+    # Critic is privileged: override the (biased) actor joint_pos with the true
+    # position so the value function sees ground truth.
+    "joint_pos": ObservationTermCfg(
+      func=mdp.joint_pos_rel,
+      params={"biased": False},
+      delay_min_lag=DELAY_MIN,
+      delay_max_lag=DELAY_MAX,
+    ),
     "base_lin_vel": ObservationTermCfg(
       func=mdp.builtin_sensor,
       params={"sensor_name": "robot/local_linvel"},

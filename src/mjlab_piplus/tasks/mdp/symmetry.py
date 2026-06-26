@@ -71,6 +71,11 @@ class PiPlusSymmetry:
   Passed as ``data_augmentation_func`` to rsl_rl's ``Symmetry`` extension.
   Returns (obs, actions) with the original batch prepended to the mirrored
   batch along dim 0 (num_aug = 2).
+
+  Only the actor observation is mirrored. The critic observation is left
+  unmirrored on purpose: under data augmentation the mirrored sample reuses the
+  original's value/return (``V(mirror(s)) == V(s)`` by symmetry), so the value
+  function is only ever evaluated on the original obs.
   """
 
   # Per-task actor-obs mirror transform. Subclasses override for a different
