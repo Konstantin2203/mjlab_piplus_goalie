@@ -83,7 +83,7 @@ def piplus_velocity_env_cfg(
       # -encoder_bias. Without this the encoder_bias DR is only half-applied (the
       # actor sees the true position) and models no real calibration error.
       params={"biased": True},
-      noise=Unoise(n_min=-0.05, n_max=0.05),
+      noise=Unoise(n_min=-0.01, n_max=0.01),
       delay_min_lag=DELAY_MIN,
       delay_max_lag=DELAY_MAX,
     ),
@@ -519,7 +519,7 @@ def piplus_velocity_env_cfg(
     ),
     "flat_foot": RewardTermCfg(
       func=pi_mdp.flat_foot_l2,
-      weight=-5.0,
+      weight=-1.0,
       params={
         "asset_cfg": SceneEntityCfg("robot", site_names=foot_sites),
       },
