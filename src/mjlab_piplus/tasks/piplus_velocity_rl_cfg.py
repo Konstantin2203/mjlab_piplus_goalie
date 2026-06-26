@@ -15,6 +15,10 @@ class PiPlusPpoAlgorithmCfg(RslRlPpoAlgorithmCfg):
   symmetry_cfg: dict[str, Any] | None = field(
     default_factory=lambda: {
       "data_augmentation_func": PiPlusSymmetry(),
+      # NOTE: defaults to False in rsl_rl. Without this, symmetry is enforced
+      # only by the soft mirror loss; enabling it appends mirrored samples to
+      # every mini-batch so the policy gradient itself drives a symmetric gait.
+      "use_data_augmentation": True,
       "use_mirror_loss": True,
       "mirror_loss_coeff": 0.5,
     }
@@ -26,6 +30,7 @@ class PiPlusGoalPosePpoAlgorithmCfg(RslRlPpoAlgorithmCfg):
   symmetry_cfg: dict[str, Any] | None = field(
     default_factory=lambda: {
       "data_augmentation_func": PiPlusGoalPoseSymmetry(),
+      "use_data_augmentation": True,
       "use_mirror_loss": True,
       "mirror_loss_coeff": 0.5,
     }
@@ -65,7 +70,7 @@ def get_piplus_velocity_rl_cfg() -> RslRlOnPolicyRunnerCfg:
     ),
     wandb_project="mjlab_piplus",
     experiment_name="piplus_velocity",
-    save_interval=50,
+    save_interval=200,
     num_steps_per_env=24,
     max_iterations=3_200,
   )
