@@ -506,12 +506,10 @@ def piplus_velocity_env_cfg(
       },
     ),
     "flat_foot": RewardTermCfg(
-      func=mdp.flat_orientation_l2,
+      func=pi_mdp.flat_foot_l2,
       weight=-5.0,
       params={
-        "asset_cfg": SceneEntityCfg(
-          "robot", body_names=("l_ankle_roll_link", "r_ankle_roll_link")
-        ),
+        "asset_cfg": SceneEntityCfg("robot", site_names=foot_sites),
       },
     ),
   }
@@ -684,6 +682,22 @@ def piplus_velocity_env_cfg(
       func=pi_mdp.last_air_time,
       params={"sensor_name": "feet_ground_contact"},
     )
+    metrics["l_foot_roll"] = MetricsTermCfg(
+      func=pi_mdp.foot_tilt,
+      params={"asset_cfg": SceneEntityCfg("robot", site_names=("l_foot",)), "axis": "roll"},
+    )
+    metrics["l_foot_pitch"] = MetricsTermCfg(
+      func=pi_mdp.foot_tilt,
+      params={"asset_cfg": SceneEntityCfg("robot", site_names=("l_foot",)), "axis": "pitch"},
+    )
+    metrics["r_foot_roll"] = MetricsTermCfg(
+      func=pi_mdp.foot_tilt,
+      params={"asset_cfg": SceneEntityCfg("robot", site_names=("r_foot",)), "axis": "roll"},
+    )
+    metrics["r_foot_pitch"] = MetricsTermCfg(
+      func=pi_mdp.foot_tilt,
+      params={"asset_cfg": SceneEntityCfg("robot", site_names=("r_foot",)), "axis": "pitch"},
+    ),
 
   ##
   # Assemble the config

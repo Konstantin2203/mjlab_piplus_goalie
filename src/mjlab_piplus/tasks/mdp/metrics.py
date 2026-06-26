@@ -6,6 +6,7 @@ import torch
 from mjlab.entity import Entity
 from mjlab.managers.scene_entity_config import SceneEntityCfg
 from mjlab.sensor.contact_sensor import ContactSensor
+from mjlab.utils.lab_api.math import quat_apply_inverse
 
 if TYPE_CHECKING:
   from mjlab.envs import ManagerBasedRlEnv
@@ -168,6 +169,27 @@ def foot_contact_force(
   assert sensor.data.force is not None
   # force: [B, N, 3] global frame (netforce reduce)
   return torch.linalg.norm(sensor.data.force, dim=-1).mean(dim=-1)
+
+
+def foot_tilt(
+  env: ManagerBasedRlEnv,
+  asset_cfg: SceneEntityCfg,
+  axis: str = "roll",
+) -> torch.Tensor:
+  """Absolute roll/pitch tilt of a single foot site (radians), yaw-invariant.
+
+  Derived from the foot site's projected gravity, so it measures deviation from
+  level independent of heading. ``axis="roll"`` uses the lateral (foot-x) tilt,
+  ``"pitch"`` the fore-aft (foot-y) tilt — matching the ankle roll/pitch axes.
+  Pairs with the ``flat_foot`` reward. Reported as a magnitude so it doesn't
+  average toward zero over a symmetric gait.
+  """
+  asset: Entity = env.scene[asset_cfg.name]
+  site_id = asset_cfg.site_ids[0]
+  quat = asset.data.site_quat_w[:, site_id]  # (E, 4)
+  proj_g = quat_apply_inverse(quat, asset.data.gravity_vec_w)  # (E, 3)
+  comp = 1 if axis == "roll" else 0  # roll <- g_y, pitch <- g_x
+  return torch.atan2(proj_g[:, comp], -proj_g[:, 2]).abs()
 
 
 def phase_metric(

@@ -451,3 +451,24 @@ def body_orientation_l2(
     # Use root link projected gravity.
     xy_squared = torch.sum(torch.square(asset.data.projected_gravity_b[:, :2]), dim=1)
   return xy_squared
+
+
+def flat_foot_l2(
+  env: ManagerBasedRlEnv,
+  asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+  """Penalize non-flat feet via each foot site's projected gravity.
+
+  Replacement for ``mdp.flat_orientation_l2``, which only reads the *root link*
+  quaternion (ignoring the passed selection) and so penalizes base tilt, not
+  foot tilt. This uses the foot sites in ``asset_cfg.site_names`` and sums the
+  squared xy projected-gravity components over the feet — matching the
+  ``foot_tilt`` metrics. Yaw-invariant.
+  """
+  asset: Entity = env.scene[asset_cfg.name]
+  quat = asset.data.site_quat_w[:, asset_cfg.site_ids]  # (E, n_feet, 4)
+  gravity_w = asset.data.gravity_vec_w.unsqueeze(1).expand(
+    -1, quat.shape[1], -1
+  )  # (E, n_feet, 3)
+  proj_g = quat_apply_inverse(quat, gravity_w)  # (E, n_feet, 3)
+  return torch.sum(torch.square(proj_g[..., :2]), dim=(-2, -1))
