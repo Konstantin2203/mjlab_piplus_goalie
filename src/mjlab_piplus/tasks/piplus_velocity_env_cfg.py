@@ -15,6 +15,7 @@ from mjlab.managers.termination_manager import TerminationTermCfg
 from mjlab.scene import SceneCfg
 from mjlab.sensor import ContactMatch, ContactSensorCfg, ObjRef, TerrainHeightSensorCfg
 from mjlab.sim import MujocoCfg, SimulationCfg
+from mjlab.terrains import TerrainEntityCfg
 from mjlab.tasks.velocity import mdp
 from mjlab.tasks.velocity.mdp import UniformVelocityCommandCfg
 from mjlab.utils.noise import NoiseModelWithAdditiveBiasCfg
@@ -256,18 +257,18 @@ def piplus_velocity_env_cfg(
     # priority 2 (> robot foot priority 1), so its solref governs the foot-turf
     # contact. Runs on "reset" so the `astroturf_softness` curriculum, which
     # widens `ranges`, is re-sampled each episode.
-    "astroturf_softness": EventTermCfg(
-      mode="reset",
-      func=pi_mdp.geom_solref,
-      params={
-        "asset_cfg": SceneEntityCfg("terrain", geom_names=("terrain_top",)),
-        # solref[0] = timeconst. Default 0.02; larger = softer turf.
-        # Must stay >= 2 * sim.timestep (= 0.01 at 5 ms). The max end is ramped
-        # by the `astroturf_softness` curriculum below.
-        "ranges": (0.02, 0.02),
-        "operation": "abs",
-      },
-    ),
+    #"astroturf_softness": EventTermCfg(
+    #  mode="reset",
+    #  func=pi_mdp.geom_solref,
+    #  params={
+    #    "asset_cfg": SceneEntityCfg("terrain", geom_names=("terrain_top",)),
+    #    # solref[0] = timeconst. Default 0.02; larger = softer turf.
+    #    # Must stay >= 2 * sim.timestep (= 0.01 at 5 ms). The max end is ramped
+    #    # by the `astroturf_softness` curriculum below.
+    #    "ranges": (0.02, 0.02),
+    #    "operation": "abs",
+    #  },
+    #),
     "joint_frictionloss": EventTermCfg(
       mode="startup",
       func=dr.joint_friction,
@@ -499,15 +500,15 @@ def piplus_velocity_env_cfg(
         "asset_cfg": SceneEntityCfg("robot", site_names=foot_sites),
       },
     ),
-    "soft_landing": RewardTermCfg(
-      func=pi_mdp.soft_landing,
-      weight=-1e-3,
-      params={
-        "sensor_name": "feet_ground_contact",
-        "command_name": "twist",
-        "command_threshold": 0.01,
-      },
-    ),
+    # "soft_landing": RewardTermCfg(
+    #   func=pi_mdp.soft_landing,
+    #   weight=-1e-3,
+    #   params={
+    #     "sensor_name": "feet_ground_contact",
+    #     "command_name": "twist",
+    #     "command_threshold": 0.01,
+    #   },
+    # ),
     "stand_still": RewardTermCfg(
       func=pi_mdp.stand_still,
       weight=-1.0,
@@ -651,12 +652,17 @@ def piplus_velocity_env_cfg(
     num_envs=4096,
     entities={"robot": get_piplus_robot_cfg()},
     sensors=(feet_contact_sensor_cfg, self_collision_cfg, foot_height_scan),
-    terrain=AstroturfTerrainCfg(
-      terrain_type="astroturf",
-      # Soft top plane starts hard (default) and is softened by the
-      # `astroturf_softness` curriculum below.
-      top_solref=(0.02, 1.0),
-      turf_thickness=0.03,
+    # terrain=AstroturfTerrainCfg(
+    #   terrain_type="astroturf",
+    #   # Soft top plane starts hard (default) and is softened by the
+    #   # `astroturf_softness` curriculum below.
+    #   top_solref=(0.02, 1.0),
+    #   turf_thickness=0.03,
+    #   max_init_terrain_level=0,
+    # ),
+    terrain=TerrainEntityCfg(
+      terrain_type="plane",
+      terrain_generator=None,
       max_init_terrain_level=0,
     ),
   )
