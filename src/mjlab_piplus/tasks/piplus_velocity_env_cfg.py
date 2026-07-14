@@ -236,15 +236,22 @@ def piplus_velocity_env_cfg(
     # Turf friction DR. Applied to the astroturf top plane, not the feet: the top
     # plane has priority 2 (> foot priority 1), so its friction governs the
     # foot-turf contact. Scales the top plane's tangential friction (default 0.6).
-    "turf_friction": EventTermCfg(
+    # "turf_friction": EventTermCfg(
+    #   mode="startup",
+    #   func=dr.geom_friction,
+    #   params={
+    #     "asset_cfg": SceneEntityCfg("terrain", geom_geom_names=("terrain_top",)),
+    #     "operation": "scale",
+    #     "ranges": (0.4, 1.0),
+    #   },
+    # ),
+    "foot_friction": EventTermCfg(
       mode="startup",
       func=dr.geom_friction,
       params={
-        "asset_cfg": SceneEntityCfg("terrain", geom_names=("terrain_top",)),
-        "operation": "scale",
-        "ranges": (0.4, 1.0),
-      },
-    ),
+        "asset_cfg": SceneEntityCfg("robot", geom_names=("l_ankle_roll_link_collision.*", "r_ankle_roll_link_collision.*"),),
+      }
+    )
     # Ground softness. NOTE: this is applied to the FOOT collision geoms, not the
     # terrain plane. Every robot collision geom has priority 1 while the plane has
     # priority 0, and MuJoCo lets the higher-priority geom's solref fully override
