@@ -618,16 +618,16 @@ def piplus_velocity_env_cfg(
     # 24 steps/rollout (same convention as `command_vel`): `1200 * 24` = 1200
     # training iterations. Increases the upper plane's solref timeconst over
     # training -> the turf gets progressively softer.
-    "astroturf_softness": CurriculumTermCfg(
-      func=pi_mdp.event_curriculum,
-      params={
-        "event_name": "astroturf_softness",
-        "stages": [
-          {"step": 0, "params": {"ranges": (0.02, 0.02)}},
-          {"step": 1200 * 24, "params": {"ranges": (0.02, 0.15)}},
-        ],
-      },
-    ),
+    # "astroturf_softness": CurriculumTermCfg(
+    #   func=pi_mdp.event_curriculum,
+    #   params={
+    #     "event_name": "astroturf_softness",
+    #     "stages": [
+    #       {"step": 0, "params": {"ranges": (0.02, 0.02)}},
+    #       {"step": 1200 * 24, "params": {"ranges": (0.02, 0.15)}},
+    #     ],
+    #   },
+    # ),
   }
 
   ##
