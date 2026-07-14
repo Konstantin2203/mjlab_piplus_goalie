@@ -251,7 +251,7 @@ def piplus_velocity_env_cfg(
       params={
         "asset_cfg": SceneEntityCfg("robot", geom_names=("l_ankle_roll_link_collision.*", "r_ankle_roll_link_collision.*"),),
       }
-    )
+    ),
     # Ground softness. NOTE: this is applied to the FOOT collision geoms, not the
     # terrain plane. Every robot collision geom has priority 1 while the plane has
     # priority 0, and MuJoCo lets the higher-priority geom's solref fully override
