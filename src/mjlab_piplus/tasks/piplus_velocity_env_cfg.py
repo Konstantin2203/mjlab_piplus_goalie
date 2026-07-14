@@ -700,9 +700,9 @@ def piplus_velocity_env_cfg(
       "reset_base": events["reset_base"],
       "reset_robot_joints": events["reset_robot_joints"],
       "push_robot": events["push_robot"],
-      "astroturf_softness": events["astroturf_softness"],
+      # "astroturf_softness": events["astroturf_softness"],
     }
-    events["astroturf_softness"].params["ranges"] = (0.155, 0.155)
+    # events["astroturf_softness"].params["ranges"] = (0.155, 0.155)
     # Unbounded episodes in play: plain time_out (never fires at 1e10 s).
     terminations["time_out"] = TerminationTermCfg(func=mdp.time_out, time_out=True)
     episode_length_s = 1e10
