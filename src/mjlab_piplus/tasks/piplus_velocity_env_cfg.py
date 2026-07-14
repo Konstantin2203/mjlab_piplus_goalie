@@ -250,6 +250,8 @@ def piplus_velocity_env_cfg(
       func=dr.geom_friction,
       params={
         "asset_cfg": SceneEntityCfg("robot", geom_names=("l_ankle_roll_link_collision.*", "r_ankle_roll_link_collision.*"),),
+        "operation": "scale",
+        "ranges": (0.4, 1.0),
       }
     ),
     # Ground softness. NOTE: this is applied to the FOOT collision geoms, not the
