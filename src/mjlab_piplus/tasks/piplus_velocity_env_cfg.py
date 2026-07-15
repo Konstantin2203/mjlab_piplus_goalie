@@ -177,8 +177,8 @@ def piplus_velocity_env_cfg(
       debug_vis=True,
       heading_command=True,
       heading_control_stiffness=0.0,
-      rel_standing_envs=0.1,
-      rel_walk_in_place_envs=0.1,
+      rel_standing_envs=0.075,
+      rel_walk_in_place_envs=0.075,
       rel_heading_envs=0.3,
       rel_forward_envs=0.15,
       ranges=pi_mdp.UniformVelocityCommandWithStopCfg.Ranges(
@@ -438,7 +438,7 @@ def piplus_velocity_env_cfg(
           r".*_hip_roll_joint": 0.15,
           r".*_thigh_joint": 0.15,
           r".*_calf_joint": 0.5,
-          r".*_ankle_pitch_joint": 0.15,
+          r".*_ankle_pitch_joint": 0.5,
           r".*_ankle_roll_joint": 0.1,
         },
         "std_running": {
@@ -446,7 +446,7 @@ def piplus_velocity_env_cfg(
           r".*_hip_roll_joint": 0.25,
           r".*_thigh_joint": 0.25,
           r".*_calf_joint": 0.5,
-          r".*_ankle_pitch_joint": 0.25,
+          r".*_ankle_pitch_joint": 0.5,
           r".*_ankle_roll_joint": 0.1,
         },
         "running_threshold": 99.0,
@@ -467,11 +467,12 @@ def piplus_velocity_env_cfg(
     ),
     "feet_phase": RewardTermCfg(
       func=pi_mdp.feet_phase,
-      weight=1.0,
+      weight=1.5,
       params={
         "frequency": WALK_FREQUENCY,
         "offset": [0.0, 0.5],
-        "foot_height": 0.06,
+        "foot_height": 0.045,
+        "std": 0.05,
         "command_name": "twist",
         "asset_cfg": SceneEntityCfg("robot", site_names=foot_sites),
       },
@@ -495,7 +496,7 @@ def piplus_velocity_env_cfg(
     # ),
     "flat_foot": RewardTermCfg(
       func=pi_mdp.flat_foot_l2,
-      weight=0.0,
+      weight=-0.5,
       params={
         "asset_cfg": SceneEntityCfg("robot", site_names=foot_sites),
       },

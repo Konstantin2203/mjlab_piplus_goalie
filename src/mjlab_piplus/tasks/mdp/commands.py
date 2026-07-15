@@ -206,6 +206,7 @@ class UniformVelocityCommandWithStop(CommandTerm):
       self.num_envs, dtype=torch.bool, device=self.device
     )
     self.is_standing_env = torch.zeros_like(self.is_heading_env)
+    self.is_walk_in_place_env = torch.zeros_like(self.is_heading_env)
     self.is_world_env = torch.zeros_like(self.is_heading_env)
     self.is_forward_env = torch.zeros_like(self.is_heading_env)
 
@@ -248,13 +249,15 @@ class UniformVelocityCommandWithStop(CommandTerm):
       assert self.cfg.ranges.heading is not None
       self.heading_target[env_ids] = r.uniform_(*self.cfg.ranges.heading)
       self.is_heading_env[env_ids] = r.uniform_(0.0, 1.0) <= self.cfg.rel_heading_envs
+    # Stand-still and walk-in-place are sampled as two independent probabilities.
+    # Both zero the velocity command; they differ only in the gait: stand-still
+    # freezes it (stand_flag=1), walk-in-place keeps stepping (stand_flag=0). On
+    # the rare overlap (an env drawn as both) stand-still wins.
     self.is_standing_env[env_ids] = r.uniform_(0.0, 1.0) <= self.cfg.rel_standing_envs
-
-    # Among standing (zero-velocity) envs, some stand still and some walk in
-    # place. Moving envs always keep stepping (flag=0).
-    walk_in_place = r.uniform_(0.0, 1.0) <= self.cfg.rel_walk_in_place_envs
-    stand_still = self.is_standing_env[env_ids] & ~walk_in_place
-    self.stand_flag[env_ids, 0] = stand_still.float()
+    self.is_walk_in_place_env[env_ids] = (
+      r.uniform_(0.0, 1.0) <= self.cfg.rel_walk_in_place_envs
+    ) & ~self.is_standing_env[env_ids]
+    self.stand_flag[env_ids, 0] = self.is_standing_env[env_ids].float()
 
     # Randomly assign world-frame envs.
     self.is_world_env[env_ids] = r.uniform_(0.0, 1.0) <= self.cfg.rel_world_envs
@@ -306,9 +309,14 @@ class UniformVelocityCommandWithStop(CommandTerm):
       self.vel_command_b[w_ids, 0] = cos_h * vx_w + sin_h * vy_w
       self.vel_command_b[w_ids, 1] = -sin_h * vx_w + cos_h * vy_w
 
-    standing_env_ids = self.is_standing_env.nonzero(as_tuple=False).flatten()
-    self.vel_command_b[standing_env_ids, :] = 0.0
-    self.vel_command_w[standing_env_ids, :] = 0.0
+    # Zero the velocity for both stand-still and walk-in-place envs.
+    zero_vel_env_ids = (
+      (self.is_standing_env | self.is_walk_in_place_env)
+      .nonzero(as_tuple=False)
+      .flatten()
+    )
+    self.vel_command_b[zero_vel_env_ids, :] = 0.0
+    self.vel_command_w[zero_vel_env_ids, :] = 0.0
 
   # GUI.
 
@@ -461,10 +469,12 @@ class UniformVelocityCommandWithStopCfg(CommandTermCfg):
   heading_command: bool = False
   heading_control_stiffness: float = 1.0
   rel_standing_envs: float = 0.0
+  """Fraction of environments commanded to stand still: zero velocity with the
+  gait frozen (stand_flag=1)."""
   rel_walk_in_place_envs: float = 0.5
-  """Fraction of standing (zero-velocity) envs that walk in place (keep
-  stepping) instead of standing still. The remaining standing envs freeze the
-  gait. Moving envs are unaffected (they always keep stepping)."""
+  """Fraction of environments commanded to walk in place: zero velocity but the
+  gait keeps stepping (stand_flag=0). Sampled independently of
+  ``rel_standing_envs``; on the rare overlap, stand-still takes precedence."""
   rel_heading_envs: float = 1.0
   rel_world_envs: float = 0.0
   """Fraction of environments that use world-frame velocity commands.
