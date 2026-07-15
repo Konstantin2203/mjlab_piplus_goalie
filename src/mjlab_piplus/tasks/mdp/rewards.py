@@ -104,7 +104,6 @@ def feet_air_time_zero_vel(
   threshold_min: float = 0.05,
   threshold_max: float = 0.5,
   command_name: str | None = None,
-  command_threshold: float = 0.5,
 ) -> torch.Tensor:
   """Reward feet air time."""
   sensor: ContactSensor = env.scene[sensor_name]
@@ -122,15 +121,10 @@ def feet_air_time_zero_vel(
   if command_name is not None:
     command = env.command_manager.get_command(command_name)
     if command is not None:
-      linear_norm = torch.norm(command[:, :2], dim=1)
-      angular_norm = torch.abs(command[:, 2])
-      total_command = linear_norm + angular_norm
-      scale = (total_command > command_threshold).float()
-      reward *= scale
-      command_zero_mask = total_command == 0.0
-      reward[command_zero_mask] = (
-        1.0  # maybe reward max value, if we reach zero support
-      )
+      standing = command[:, 3] > 0.5  # stand flag
+      reward *= (~standing).float()
+      # Standing still: reward max value (zero support goal).
+      reward[standing] = 1.0
   return reward
 
 
@@ -139,7 +133,6 @@ def feet_gait(
   frequency: float,
   offset: list[float],
   threshold: float,
-  command_threshold: float,
   command_name: str,
   sensor_name: str,
 ) -> torch.Tensor:
@@ -156,10 +149,8 @@ def feet_gait(
   if command_name is not None:
     command = env.command_manager.get_command(command_name)
     if command is not None:
-      linear_norm = torch.norm(command[:, :2], dim=1)
-      angular_norm = torch.abs(command[:, 2])
-      total_command = linear_norm + angular_norm
-      scale = (total_command > command_threshold).float()
+      # Gate off when the robot should stand still (stand flag at index 3).
+      scale = (command[:, 3] < 0.5).float()
       reward *= scale
   return reward
 
@@ -181,7 +172,6 @@ class feet_swing_height:
     sensor_name: str,
     target_height: float,
     command_name: str,
-    command_threshold: float,
     asset_cfg: SceneEntityCfg,
   ) -> torch.Tensor:
     asset: Entity = env.scene[asset_cfg.name]
@@ -196,10 +186,8 @@ class feet_swing_height:
       self.peak_heights,
     )
     first_contact = contact_sensor.compute_first_contact(dt=self.step_dt)
-    linear_norm = torch.norm(command[:, :2], dim=1)
-    angular_norm = torch.abs(command[:, 2])
-    total_command = linear_norm + angular_norm
-    active = (total_command > command_threshold).float()
+    # Gate off when the robot should stand still (stand flag at index 3).
+    active = (command[:, 3] < 0.5).float()
     error = self.peak_heights / target_height - 1.0
     cost = torch.sum(torch.square(error) * first_contact.float(), dim=1) * active
     num_landings = torch.sum(first_contact.float())
@@ -237,7 +225,6 @@ class feet_swing_height_fixed:
     sensor_name: str,
     target_height: float,
     command_name: str,
-    command_threshold: float,
     asset_cfg: SceneEntityCfg,
   ) -> torch.Tensor:
     asset: Entity = env.scene[asset_cfg.name]
@@ -252,10 +239,8 @@ class feet_swing_height_fixed:
       self.peak_heights,
     )
     first_contact = contact_sensor.compute_first_contact(dt=self.step_dt)
-    linear_norm = torch.norm(command[:, :2], dim=1)
-    angular_norm = torch.abs(command[:, 2])
-    total_command = linear_norm + angular_norm
-    active = (total_command > command_threshold).float()
+    # Gate off when the robot should stand still (stand flag at index 3).
+    active = (command[:, 3] < 0.5).float()
     reached = (self.peak_heights >= target_height).float()
     reward = torch.sum(reached * first_contact.float(), dim=1) * active
     self.peak_heights = torch.where(
@@ -270,7 +255,6 @@ def feet_slip(
   env: ManagerBasedRlEnv,
   sensor_name: str,
   command_name: str,
-  command_threshold: float = 0.01,
   asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
 ) -> torch.Tensor:
   """Penalize foot sliding (xy velocity while in contact)."""
@@ -278,10 +262,8 @@ def feet_slip(
   contact_sensor: ContactSensor = env.scene[sensor_name]
   command = env.command_manager.get_command(command_name)
   assert command is not None
-  linear_norm = torch.norm(command[:, :2], dim=1)
-  angular_norm = torch.abs(command[:, 2])
-  total_command = linear_norm + angular_norm
-  active = (total_command > command_threshold).float()
+  # Gate off when the robot should stand still (stand flag at index 3).
+  active = (command[:, 3] < 0.5).float()
   assert contact_sensor.data.found is not None
   in_contact = (contact_sensor.data.found > 0).float()  # [B, N]
   foot_vel_xy = asset.data.site_lin_vel_w[:, asset_cfg.site_ids, :2]  # [B, N, 2]
@@ -300,7 +282,6 @@ def soft_landing(
   env: ManagerBasedRlEnv,
   sensor_name: str,
   command_name: str | None = None,
-  command_threshold: float = 0.05,
 ) -> torch.Tensor:
   """Penalize high impact forces at landing to encourage soft footfalls."""
   contact_sensor: ContactSensor = env.scene[sensor_name]
@@ -317,10 +298,8 @@ def soft_landing(
   if command_name is not None:
     command = env.command_manager.get_command(command_name)
     if command is not None:
-      linear_norm = torch.norm(command[:, :2], dim=1)
-      angular_norm = torch.abs(command[:, 2])
-      total_command = linear_norm + angular_norm
-      active = (total_command > command_threshold).float()
+      # Gate off when the robot should stand still (stand flag at index 3).
+      active = (command[:, 3] < 0.5).float()
       cost = cost * active
   return cost
 
@@ -328,7 +307,6 @@ def soft_landing(
 def stand_still(
   env: ManagerBasedRlEnv,
   command_name: str,
-  command_threshold: float = 0.1,
   asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
 ) -> torch.Tensor:
   asset: Entity = env.scene[asset_cfg.name]
@@ -340,10 +318,9 @@ def stand_still(
   if command_name is not None:
     command = env.command_manager.get_command(command_name)
     if command is not None:
-      linear_norm = torch.norm(command[:, :2], dim=1)
-      angular_norm = torch.abs(command[:, 2])
-      total_command = linear_norm + angular_norm
-      scale = (total_command <= command_threshold).float()
+      # Only penalize pose deviation when the robot should stand still (stand
+      # flag at index 3). Walk-in-place envs (flag 0) are exempt so they can step.
+      scale = (command[:, 3] > 0.5).float()
       reward *= scale
   return reward
 
@@ -438,7 +415,6 @@ def feet_clearance(
   env: ManagerBasedRlEnv,
   target_height: float,
   command_name: str | None = None,
-  command_threshold: float = 0.1,
   asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
 ) -> torch.Tensor:
   """Penalize deviation from target clearance height, weighted by foot velocity."""
@@ -451,10 +427,8 @@ def feet_clearance(
   if command_name is not None:
     command = env.command_manager.get_command(command_name)
     if command is not None:
-      linear_norm = torch.norm(command[:, :2], dim=1)
-      angular_norm = torch.abs(command[:, 2])
-      total_command = linear_norm + angular_norm
-      active = (total_command > command_threshold).float()
+      # Gate off when the robot should stand still (stand flag at index 3).
+      active = (command[:, 3] < 0.5).float()
       cost = cost * active
   return cost
 

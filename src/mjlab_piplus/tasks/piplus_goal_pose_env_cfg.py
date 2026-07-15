@@ -421,7 +421,6 @@ def piplus_goal_pose_env_cfg(
         "frequency": WALK_FREQUENCY,
         "offset": [0.0, 0.5],
         "threshold": 0.56,
-        "command_threshold": 0.01,
         "command_name": "goal_pose",
         "sensor_name": "feet_ground_contact",
       },
@@ -432,7 +431,6 @@ def piplus_goal_pose_env_cfg(
       params={
         "target_height": 0.02,
         "command_name": "goal_pose",
-        "command_threshold": 0.01,
         "asset_cfg": SceneEntityCfg("robot", site_names=foot_sites),
       },
     ),
@@ -442,7 +440,6 @@ def piplus_goal_pose_env_cfg(
       params={
         "sensor_name": "feet_ground_contact",
         "command_name": "goal_pose",
-        "command_threshold": 0.01,
         "asset_cfg": SceneEntityCfg("robot", site_names=foot_sites),
       },
     ),
@@ -452,7 +449,6 @@ def piplus_goal_pose_env_cfg(
       params={
         "sensor_name": "feet_ground_contact",
         "command_name": "goal_pose",
-        "command_threshold": 0.01,
       },
     ),
     "stand_still": RewardTermCfg(
@@ -460,7 +456,6 @@ def piplus_goal_pose_env_cfg(
       weight=-1.0,
       params={
         "command_name": "goal_pose",
-        "command_threshold": 0.01,
         "asset_cfg": SceneEntityCfg("robot", joint_names=".*"),
       },
     ),

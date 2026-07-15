@@ -472,7 +472,6 @@ def piplus_velocity_env_cfg(
         "frequency": WALK_FREQUENCY,
         "offset": [0.0, 0.5],
         "threshold": 0.56,
-        "command_threshold": 0.01,
         "command_name": "twist",
         "sensor_name": "feet_ground_contact",
       },
@@ -483,7 +482,6 @@ def piplus_velocity_env_cfg(
     #  params={
     #    "target_height": 0.05,
     #    "command_name": "twist",
-    #    "command_threshold": 0.01,
     #    "asset_cfg": SceneEntityCfg("robot", site_names=foot_sites),
     #  },
     # ),
@@ -493,7 +491,6 @@ def piplus_velocity_env_cfg(
     #   params={
     #     "target_height": 0.03,
     #     "command_name": "twist",
-    #     "command_threshold": 0.01,
     #     "asset_cfg": SceneEntityCfg("robot", site_names=foot_sites),
     #     "sensor_name": "feet_ground_contact",
     #   },
@@ -504,7 +501,6 @@ def piplus_velocity_env_cfg(
       params={
         "target_height": 0.015,
         "command_name": "twist",
-        "command_threshold": 0.01,
         "asset_cfg": SceneEntityCfg("robot", site_names=foot_sites),
         "sensor_name": "feet_ground_contact",
       },
@@ -515,7 +511,6 @@ def piplus_velocity_env_cfg(
       params={
         "sensor_name": "feet_ground_contact",
         "command_name": "twist",
-        "command_threshold": 0.01,
         "asset_cfg": SceneEntityCfg("robot", site_names=foot_sites),
       },
     ),
@@ -525,7 +520,6 @@ def piplus_velocity_env_cfg(
     #   params={
     #     "sensor_name": "feet_ground_contact",
     #     "command_name": "twist",
-    #     "command_threshold": 0.01,
     #   },
     # ),
     "stand_still": RewardTermCfg(
@@ -533,7 +527,6 @@ def piplus_velocity_env_cfg(
       weight=-1.0,
       params={
         "command_name": "twist",
-        "command_threshold": 0.01,
         "asset_cfg": SceneEntityCfg("robot", joint_names=".*"),
       },
     ),
