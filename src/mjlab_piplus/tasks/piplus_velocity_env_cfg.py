@@ -465,14 +465,15 @@ def piplus_velocity_env_cfg(
         "sensor_name": "feet_ground_contact",
       },
     ),
-    "feet_swing_height_fixed": RewardTermCfg(
-      func=pi_mdp.feet_swing_height_fixed,
+    "feet_phase": RewardTermCfg(
+      func=pi_mdp.feet_phase,
       weight=1.0,
       params={
-        "target_height": 0.015,
+        "frequency": WALK_FREQUENCY,
+        "offset": [0.0, 0.5],
+        "foot_height": 0.06,
         "command_name": "twist",
         "asset_cfg": SceneEntityCfg("robot", site_names=foot_sites),
-        "sensor_name": "feet_ground_contact",
       },
     ),
     "foot_slip": RewardTermCfg(
@@ -492,14 +493,6 @@ def piplus_velocity_env_cfg(
     #     "command_name": "twist",
     #   },
     # ),
-    "stand_still": RewardTermCfg(
-      func=pi_mdp.stand_still,
-      weight=-1.0,
-      params={
-        "command_name": "twist",
-        "asset_cfg": SceneEntityCfg("robot", joint_names=".*"),
-      },
-    ),
     "flat_foot": RewardTermCfg(
       func=pi_mdp.flat_foot_l2,
       weight=0.0,
@@ -587,21 +580,6 @@ def piplus_velocity_env_cfg(
         ],
       },
     ),
-    # Ramp the astroturf top-plane softness range. `step` is
-    # `env.common_step_counter` in raw env steps, so multiply iterations by the
-    # 24 steps/rollout (same convention as `command_vel`): `1200 * 24` = 1200
-    # training iterations. Increases the upper plane's solref timeconst over
-    # training -> the turf gets progressively softer.
-    # "astroturf_softness": CurriculumTermCfg(
-    #   func=pi_mdp.event_curriculum,
-    #   params={
-    #     "event_name": "astroturf_softness",
-    #     "stages": [
-    #       {"step": 0, "params": {"ranges": (0.02, 0.02)}},
-    #       {"step": 1200 * 24, "params": {"ranges": (0.02, 0.15)}},
-    #     ],
-    #   },
-    # ),
   }
 
   ##
@@ -635,14 +613,6 @@ def piplus_velocity_env_cfg(
     num_envs=4096,
     entities={"robot": get_piplus_robot_cfg()},
     sensors=(feet_contact_sensor_cfg, self_collision_cfg, foot_height_scan),
-    # terrain=AstroturfTerrainCfg(
-    #   terrain_type="astroturf",
-    #   # Soft top plane starts hard (default) and is softened by the
-    #   # `astroturf_softness` curriculum below.
-    #   top_solref=(0.02, 1.0),
-    #   turf_thickness=0.03,
-    #   max_init_terrain_level=0,
-    # ),
     terrain=TerrainEntityCfg(
       terrain_type="plane",
       terrain_generator=None,

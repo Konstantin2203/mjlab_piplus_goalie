@@ -253,6 +253,50 @@ class feet_swing_height_fixed:
     return reward
 
 
+def _get_rz(phase01: torch.Tensor, swing_height: float) -> torch.Tensor:
+  """Target foot height over a normalized gait phase in [0, 1).
+
+  Cubic-Bezier bump rising from 0 to ``swing_height`` over the first half of the
+  cycle and back to 0 over the second half (peak at phase 0.5).
+  """
+
+  def bezier(y0: float, y1: float, t: torch.Tensor) -> torch.Tensor:
+    return y0 + (y1 - y0) * (t**3 + 3.0 * t**2 * (1.0 - t))
+
+  stance = bezier(0.0, swing_height, 2.0 * phase01)
+  swing = bezier(swing_height, 0.0, 2.0 * phase01 - 1.0)
+  return torch.where(phase01 <= 0.5, stance, swing)
+
+
+def feet_phase(
+  env: ManagerBasedRlEnv,
+  frequency: float,
+  offset: list[float],
+  foot_height: float,
+  command_name: str,
+  asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+  std: float = 0.1,
+) -> torch.Tensor:
+  command = env.command_manager.get_command(command_name)
+  assert command is not None
+  asset: Entity = env.scene[asset_cfg.name]
+
+  period = 1.0 / frequency
+  global_phase = (env.episode_length_buf * env.step_dt) % period / period  # [B]
+  offsets = torch.as_tensor(offset, device=env.device, dtype=global_phase.dtype)
+  leg_phase = (global_phase.unsqueeze(1) + offsets.unsqueeze(0)) % 1.0  # [B, N]
+
+  rz = _get_rz(leg_phase, swing_height=foot_height)  # [B, N]
+  foot_z = asset.data.site_pos_w[:, asset_cfg.site_ids, 2]  # [B, N]
+  error = torch.sum(torch.square(torch.clamp(rz - foot_z, min=0.0)), dim=1)  # [B]
+
+  walk_in_place = (torch.norm(command[:, :3], dim=1) < 0.05).float()
+  reward = torch.exp(-error / std**2) * (1.0 + 0.25 * walk_in_place)
+  # Gate off when the robot should stand still (stand flag at index 3).
+  reward = reward * (command[:, 3] < 0.5).float()
+  return reward
+
+
 def feet_slip(
   env: ManagerBasedRlEnv,
   sensor_name: str,
