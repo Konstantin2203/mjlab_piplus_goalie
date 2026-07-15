@@ -128,6 +128,8 @@ def feet_air_time_zero_vel(
   return reward
 
 
+
+
 def feet_gait(
   env: ManagerBasedRlEnv,
   frequency: float,
