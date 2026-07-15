@@ -17,7 +17,6 @@ from mjlab.sensor import ContactMatch, ContactSensorCfg, ObjRef, TerrainHeightSe
 from mjlab.sim import MujocoCfg, SimulationCfg
 from mjlab.terrains import TerrainEntityCfg
 from mjlab.tasks.velocity import mdp
-from mjlab.tasks.velocity.mdp import UniformVelocityCommandCfg
 from mjlab.utils.noise import NoiseModelWithAdditiveBiasCfg
 from mjlab.utils.noise import UniformNoiseCfg as Unoise
 from mjlab.viewer import ViewerConfig
@@ -182,7 +181,7 @@ def piplus_velocity_env_cfg(
       rel_walk_in_place_envs=0.1,
       rel_heading_envs=0.3,
       rel_forward_envs=0.15,
-      ranges=UniformVelocityCommandCfg.Ranges(
+      ranges=pi_mdp.UniformVelocityCommandWithStopCfg.Ranges(
         lin_vel_x=(-0.5, 1.0),
         lin_vel_y=(-0.25, 0.25),
         ang_vel_z=(-1.0, 1.0),
@@ -419,16 +418,6 @@ def piplus_velocity_env_cfg(
     "joint_acc_l2": RewardTermCfg(func=mdp.joint_acc_l2, weight=-2.5e-7),
     "joint_pos_limits": RewardTermCfg(func=mdp.joint_pos_limits, weight=-10.0),
     "action_rate_l2": RewardTermCfg(func=mdp.action_rate_l2, weight=-0.05),
-    # "torque_penalty": RewardTermCfg(
-    #   func=mdp.joint_torques_l2,
-    #   weight=-2.5e-4,
-    #   params={"asset_cfg": SceneEntityCfg("robot", actuator_names=(".*",))},
-    # ),
-    # "joint_vel_l2": RewardTermCfg(
-    #   func=mdp.joint_vel_l2,
-    #   weight=-2.5e-3,
-    #   params={"asset_cfg": SceneEntityCfg("robot", joint_names=(".*",))},
-    # ),
     "self_collisions": RewardTermCfg(
       func=mdp.self_collision_cost,
       weight=-1.0,
@@ -476,25 +465,6 @@ def piplus_velocity_env_cfg(
         "sensor_name": "feet_ground_contact",
       },
     ),
-    # "foot_clearance": RewardTermCfg(
-    #  func=pi_mdp.feet_clearance_positive,
-    #  weight=1.0,
-    #  params={
-    #    "target_height": 0.05,
-    #    "command_name": "twist",
-    #    "asset_cfg": SceneEntityCfg("robot", site_names=foot_sites),
-    #  },
-    # ),
-    # "feet_swing_height": RewardTermCfg(
-    #   func=pi_mdp.feet_swing_height,
-    #   weight=-1.0,
-    #   params={
-    #     "target_height": 0.03,
-    #     "command_name": "twist",
-    #     "asset_cfg": SceneEntityCfg("robot", site_names=foot_sites),
-    #     "sensor_name": "feet_ground_contact",
-    #   },
-    # ),
     "feet_swing_height_fixed": RewardTermCfg(
       func=pi_mdp.feet_swing_height_fixed,
       weight=1.0,
