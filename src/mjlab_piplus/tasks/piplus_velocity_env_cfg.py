@@ -391,12 +391,12 @@ def piplus_velocity_env_cfg(
     "track_linear_velocity": RewardTermCfg(
       func=mdp.track_linear_velocity,
       weight=1.0,
-      params={"command_name": "twist", "std": math.sqrt(0.25)},
+      params={"command_name": "twist", "std": math.sqrt(0.125)},
     ),
     "track_angular_velocity": RewardTermCfg(
       func=mdp.track_angular_velocity,
       weight=1.0,
-      params={"command_name": "twist", "std": math.sqrt(0.5)},
+      params={"command_name": "twist", "std": math.sqrt(0.25)},
     ),
     # stability rewards
     "upright": RewardTermCfg(
@@ -418,7 +418,7 @@ def piplus_velocity_env_cfg(
     # safety rewards
     "joint_acc_l2": RewardTermCfg(func=mdp.joint_acc_l2, weight=-2.5e-7),
     "joint_pos_limits": RewardTermCfg(func=mdp.joint_pos_limits, weight=-10.0),
-    "action_rate_l2": RewardTermCfg(func=mdp.action_rate_l2, weight=-0.0125),
+    "action_rate_l2": RewardTermCfg(func=mdp.action_rate_l2, weight=-0.05),
     # "torque_penalty": RewardTermCfg(
     #   func=mdp.joint_torques_l2,
     #   weight=-2.5e-4,
@@ -488,11 +488,22 @@ def piplus_velocity_env_cfg(
     #    "asset_cfg": SceneEntityCfg("robot", site_names=foot_sites),
     #  },
     # ),
-    "feet_swing_height": RewardTermCfg(
-      func=pi_mdp.feet_swing_height,
-      weight=-1.0,
+    # "feet_swing_height": RewardTermCfg(
+    #   func=pi_mdp.feet_swing_height,
+    #   weight=-1.0,
+    #   params={
+    #     "target_height": 0.03,
+    #     "command_name": "twist",
+    #     "command_threshold": 0.01,
+    #     "asset_cfg": SceneEntityCfg("robot", site_names=foot_sites),
+    #     "sensor_name": "feet_ground_contact",
+    #   },
+    # ),
+    "feet_swing_height_fixed": RewardTermCfg(
+      func=pi_mdp.feet_swing_height_fixed,
+      weight=1.0,
       params={
-        "target_height": 0.03,
+        "target_height": 0.015,
         "command_name": "twist",
         "command_threshold": 0.01,
         "asset_cfg": SceneEntityCfg("robot", site_names=foot_sites),
@@ -529,7 +540,7 @@ def piplus_velocity_env_cfg(
     ),
     "flat_foot": RewardTermCfg(
       func=pi_mdp.flat_foot_l2,
-      weight=-1.0,
+      weight=0.0,
       params={
         "asset_cfg": SceneEntityCfg("robot", site_names=foot_sites),
       },
@@ -574,11 +585,13 @@ def piplus_velocity_env_cfg(
     # Jittered per-env timeout keeps episode resets decorrelated for the whole
     # run, preventing the synchronized-reset reward dips. Swapped back to the
     # plain (never-firing) time_out in play, where episodes are unbounded.
-    "time_out": TerminationTermCfg(
-      func=pi_mdp.time_out_jittered,
-      time_out=True,
-      params={"min_fraction": 0.8},
-    ),
+    #"time_out": TerminationTermCfg(
+    #  func=pi_mdp.time_out_jittered,
+    #  time_out=True,
+    #  params={"min_fraction": 0.8},
+    #),
+
+    "time_out": TerminationTermCfg(func=mdp.time_out, time_out=True),
     "fell_over": TerminationTermCfg(
       func=mdp.bad_orientation,
       params={"limit_angle": math.radians(45.0)},

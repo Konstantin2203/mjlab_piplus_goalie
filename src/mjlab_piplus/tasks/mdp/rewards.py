@@ -215,6 +215,56 @@ class feet_swing_height:
     return cost
 
 
+class feet_swing_height_fixed:
+  """Reward reaching a fixed swing height, evaluated at landing.
+
+  Gives a reward of 1 per foot whose peak height during the swing phase was
+  at or above ``target_height``, granted at the moment of touchdown.
+  """
+
+  def __init__(self, cfg: RewardTermCfg, env: ManagerBasedRlEnv):
+    self.sensor_name = cfg.params["sensor_name"]
+    self.site_names = cfg.params["asset_cfg"].site_names
+    self.peak_heights = torch.zeros(
+      (env.num_envs, len(self.site_names)), device=env.device, dtype=torch.float32
+    )
+    self.step_dt = env.step_dt
+
+  def __call__(
+    self,
+    env: ManagerBasedRlEnv,
+    sensor_name: str,
+    target_height: float,
+    command_name: str,
+    command_threshold: float,
+    asset_cfg: SceneEntityCfg,
+  ) -> torch.Tensor:
+    asset: Entity = env.scene[asset_cfg.name]
+    contact_sensor: ContactSensor = env.scene[sensor_name]
+    command = env.command_manager.get_command(command_name)
+    assert command is not None
+    foot_heights = asset.data.site_pos_w[:, asset_cfg.site_ids, 2]
+    in_air = contact_sensor.data.found == 0
+    self.peak_heights = torch.where(
+      in_air,
+      torch.maximum(self.peak_heights, foot_heights),
+      self.peak_heights,
+    )
+    first_contact = contact_sensor.compute_first_contact(dt=self.step_dt)
+    linear_norm = torch.norm(command[:, :2], dim=1)
+    angular_norm = torch.abs(command[:, 2])
+    total_command = linear_norm + angular_norm
+    active = (total_command > command_threshold).float()
+    reached = (self.peak_heights >= target_height).float()
+    reward = torch.sum(reached * first_contact.float(), dim=1) * active
+    self.peak_heights = torch.where(
+      first_contact,
+      torch.zeros_like(self.peak_heights),
+      self.peak_heights,
+    )
+    return reward
+
+
 def feet_slip(
   env: ManagerBasedRlEnv,
   sensor_name: str,
