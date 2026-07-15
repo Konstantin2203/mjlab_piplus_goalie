@@ -43,10 +43,15 @@ def _transform_obs_common(obs: torch.Tensor) -> torch.Tensor:
 
 
 def _transform_obs(obs: torch.Tensor) -> torch.Tensor:
-  """Velocity task: 3-dim command [vx, vy, wz] at 44:47 (OBS_DIM 47)."""
+  """Velocity task: 4-dim command [vx, vy, wz, stand_flag] at 44:48 (OBS_DIM 48).
+
+  The stand flag is invariant under a left-right reflection (mirror sign +1).
+  """
   obs = obs.clone()
   obs = _transform_obs_common(obs)
-  obs[:, 44:47] = obs[:, 44:47] * torch.tensor([1.0, -1.0, -1.0], device=obs.device)
+  obs[:, 44:48] = obs[:, 44:48] * torch.tensor(
+    [1.0, -1.0, -1.0, 1.0], device=obs.device
+  )
   return obs
 
 

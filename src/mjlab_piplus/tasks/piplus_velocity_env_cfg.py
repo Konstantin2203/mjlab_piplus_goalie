@@ -103,7 +103,6 @@ def piplus_velocity_env_cfg(
       params={
         "frequency": WALK_FREQUENCY,
         "command_name": "twist",
-        "cmd_threshold": 0.01,
       },
     ),
     "command": ObservationTermCfg(
@@ -173,13 +172,14 @@ def piplus_velocity_env_cfg(
   ##
 
   commands: dict[str, CommandTermCfg] = {
-    "twist": UniformVelocityCommandCfg(
+    "twist": pi_mdp.UniformVelocityCommandWithStopCfg(
       entity_name="robot",
       resampling_time_range=(3.0, 8.0),
       debug_vis=True,
       heading_command=True,
       heading_control_stiffness=0.0,
       rel_standing_envs=0.1,
+      rel_walk_in_place_envs=0.1,
       rel_heading_envs=0.3,
       rel_forward_envs=0.15,
       ranges=UniformVelocityCommandCfg.Ranges(
@@ -396,7 +396,7 @@ def piplus_velocity_env_cfg(
     "track_angular_velocity": RewardTermCfg(
       func=mdp.track_angular_velocity,
       weight=1.0,
-      params={"command_name": "twist", "std": math.sqrt(0.25)},
+      params={"command_name": "twist", "std": math.sqrt(0.35)},
     ),
     # stability rewards
     "upright": RewardTermCfg(
@@ -438,7 +438,7 @@ def piplus_velocity_env_cfg(
       },  # we dont want even soft collisions
     ),
     "pose": RewardTermCfg(
-      func=mdp.variable_posture,
+      func=pi_mdp.variable_posture,
       weight=1.0,
       params={
         "asset_cfg": SceneEntityCfg("robot", joint_names=(".*",)),
@@ -460,7 +460,6 @@ def piplus_velocity_env_cfg(
           r".*_ankle_pitch_joint": 0.25,
           r".*_ankle_roll_joint": 0.1,
         },
-        "walking_threshold": 0.01,
         "running_threshold": 99.0,
       },
     ),
@@ -566,7 +565,6 @@ def piplus_velocity_env_cfg(
       params={
         "frequency": WALK_FREQUENCY,
         "command_name": "twist",
-        "cmd_threshold": 0.01,
       },
     ),
     "feet_swing_peak_height": MetricsTermCfg(
@@ -721,7 +719,7 @@ def piplus_velocity_env_cfg(
     events = {  # remove other dr in play mode
       "reset_base": events["reset_base"],
       "reset_robot_joints": events["reset_robot_joints"],
-      "push_robot": events["push_robot"],
+      # "push_robot": events["push_robot"],
       # "astroturf_softness": events["astroturf_softness"],
     }
     # events["astroturf_softness"].params["ranges"] = (0.155, 0.155)

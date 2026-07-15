@@ -8,6 +8,7 @@ from mjlab.managers.reward_manager import RewardTermCfg
 from mjlab.managers.scene_entity_config import SceneEntityCfg
 from mjlab.sensor import ContactSensor
 from mjlab.utils.lab_api.math import quat_apply_inverse
+from mjlab.utils.lab_api.string import resolve_matching_names_values
 
 if TYPE_CHECKING:
   from mjlab.envs import ManagerBasedRlEnv
@@ -345,6 +346,86 @@ def stand_still(
       scale = (total_command <= command_threshold).float()
       reward *= scale
   return reward
+
+
+class variable_posture:
+  """Penalize deviation from default pose with a stand/walk/run-dependent std.
+
+  Copy of mjlab's ``variable_posture``, but the standing regime is selected by
+  the command's stand flag (``command[:, 3]`` of ``UniformVelocityCommandWithStop``)
+  rather than a velocity ``walking_threshold``. This way a "walk in place" env
+  (zero velocity, stand flag 0) gets the looser ``std_walking`` tolerance so it
+  can step, while a "stand still" env (flag 1) gets the tight ``std_standing``
+  tolerance to hold the default pose. The walking/running split still uses the
+  command speed via ``running_threshold``.
+  """
+
+  def __init__(self, cfg: RewardTermCfg, env: ManagerBasedRlEnv):
+    asset: Entity = env.scene[cfg.params["asset_cfg"].name]
+    default_joint_pos = asset.data.default_joint_pos
+    assert default_joint_pos is not None
+    self.default_joint_pos = default_joint_pos
+
+    _, joint_names = asset.find_joints(cfg.params["asset_cfg"].joint_names)
+
+    _, _, std_standing = resolve_matching_names_values(
+      data=cfg.params["std_standing"],
+      list_of_strings=joint_names,
+    )
+    self.std_standing = torch.tensor(
+      std_standing, device=env.device, dtype=torch.float32
+    )
+
+    _, _, std_walking = resolve_matching_names_values(
+      data=cfg.params["std_walking"],
+      list_of_strings=joint_names,
+    )
+    self.std_walking = torch.tensor(std_walking, device=env.device, dtype=torch.float32)
+
+    _, _, std_running = resolve_matching_names_values(
+      data=cfg.params["std_running"],
+      list_of_strings=joint_names,
+    )
+    self.std_running = torch.tensor(std_running, device=env.device, dtype=torch.float32)
+
+  def __call__(
+    self,
+    env: ManagerBasedRlEnv,
+    std_standing,
+    std_walking,
+    std_running,
+    asset_cfg: SceneEntityCfg,
+    command_name: str,
+    running_threshold: float = 1.5,
+  ) -> torch.Tensor:
+    del std_standing, std_walking, std_running  # Unused.
+
+    asset: Entity = env.scene[asset_cfg.name]
+    command = env.command_manager.get_command(command_name)
+    assert command is not None
+
+    total_speed = torch.norm(command[:, :2], dim=1) + torch.abs(command[:, 2])
+
+    # Standing is driven by the command's stand flag, not the speed.
+    standing = command[:, 3] > 0.5
+    running = (total_speed >= running_threshold) & ~standing
+    walking = ~standing & ~running
+
+    standing_mask = standing.float()
+    walking_mask = walking.float()
+    running_mask = running.float()
+
+    std = (
+      self.std_standing * standing_mask.unsqueeze(1)
+      + self.std_walking * walking_mask.unsqueeze(1)
+      + self.std_running * running_mask.unsqueeze(1)
+    )
+
+    current_joint_pos = asset.data.joint_pos[:, asset_cfg.joint_ids]
+    desired_joint_pos = self.default_joint_pos[:, asset_cfg.joint_ids]
+    error_squared = torch.square(current_joint_pos - desired_joint_pos)
+
+    return torch.exp(-torch.mean(error_squared / (std**2), dim=1))
 
 
 def feet_clearance_positive(

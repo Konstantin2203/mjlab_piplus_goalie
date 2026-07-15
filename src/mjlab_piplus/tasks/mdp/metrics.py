@@ -196,15 +196,13 @@ def phase_metric(
   env: ManagerBasedRlEnv,
   frequency: float = 1.75,
   command_name: str = "twist",
-  cmd_threshold: float = 0.01,
 ) -> torch.Tensor:
   """phase from 0 to 1"""
   period = 1 / frequency
   global_phase = (env.episode_length_buf * env.step_dt) % period / period
-  # zero out phase when command is near zero
-  cmd_zero = (
-    torch.linalg.norm(env.command_manager.get_command(command_name), dim=-1)
-    < cmd_threshold
-  )
-  global_phase = torch.where(cmd_zero, torch.zeros_like(global_phase), global_phase)
+  # Zero out phase when the command asks the robot to stand still (stand flag at
+  # index 3). Matches the ``phase`` observation.
+  command = env.command_manager.get_command(command_name)
+  stand = command[:, 3] > 0.5
+  global_phase = torch.where(stand, torch.zeros_like(global_phase), global_phase)
   return global_phase

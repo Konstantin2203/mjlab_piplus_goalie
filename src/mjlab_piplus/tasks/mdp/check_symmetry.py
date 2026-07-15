@@ -68,7 +68,7 @@ def check(label: str, sym, obs_dim: int) -> None:
 
 
 # Velocity: 3 ang_vel + 3 proj_grav + 12 jpos + 12 jvel + 12 act + 2 phase
-# + 3 command = 47.
-check("velocity", PiPlusSymmetry(), 47)
+# + 4 command [vx, vy, wz, stand_flag] = 48.
+check("velocity", PiPlusSymmetry(), 48)
 # Goal-pose: same prefix + 4-dim [dx, dy, cos(yaw), sin(yaw)] command = 48.
 check("goal_pose", PiPlusGoalPoseSymmetry(), 48)

@@ -96,7 +96,6 @@ def piplus_goal_pose_env_cfg(
       params={
         "frequency": WALK_FREQUENCY,
         "command_name": "goal_pose",
-        "cmd_threshold": 0.01,
       },
     ),
     "command": ObservationTermCfg(
@@ -486,7 +485,6 @@ def piplus_goal_pose_env_cfg(
       params={
         "frequency": WALK_FREQUENCY,
         "command_name": "goal_pose",
-        "cmd_threshold": 0.01,
       },
     ),
   }
