@@ -135,8 +135,7 @@ def piplus_path_env_cfg(
           },
         ],
       },
-    ),
-
+    )
 
     cfg.curriculum["goal_reached_weight"] = CurriculumTermCfg(
       func=pi_mdp.reward_weight,
