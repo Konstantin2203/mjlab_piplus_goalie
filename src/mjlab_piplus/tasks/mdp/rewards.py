@@ -305,6 +305,7 @@ class feet_phase:
     command_name: str,
     foot_geom_names: list[tuple[str, ...]],
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+    baseline_height: float = 0.0,
     stance_threshold: float = 0.56,
     std: float = 0.1,
   ) -> torch.Tensor:
@@ -329,11 +330,15 @@ class feet_phase:
       _get_rz(swing_phase, swing_height=foot_height),
     )  # [B, N]
 
-    # Foot clearance = lowest collision geom per foot (tilt-invariant).
+    # Foot clearance = lowest collision geom per foot (tilt-invariant). Subtract
+    # the resting clearance ``baseline_height`` (collision geom centers sit above
+    # the ground when planted) so a planted foot reads ~0 and the target refers
+    # to clearance above the ground.
     geom_z = asset.data.geom_pos_w[:, :, 2]  # [B, num_geoms]
     foot_z = torch.stack(
       [geom_z[:, ids].amin(dim=1) for ids in self.geom_id_groups], dim=1
     )  # [B, N]
+    foot_z = foot_z - baseline_height
     error = torch.sum(torch.square(torch.clamp(rz - foot_z, min=0.0)), dim=1)  # [B]
 
     walk_in_place = (torch.norm(command[:, :3], dim=1) < 0.05).float()

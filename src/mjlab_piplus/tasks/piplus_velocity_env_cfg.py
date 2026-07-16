@@ -471,7 +471,7 @@ def piplus_velocity_env_cfg(
       params={
         "frequency": WALK_FREQUENCY,
         "offset": [0.0, 0.5],
-        "foot_height": 0.06,
+        "foot_height": 0.03,
         "stance_threshold": 0.56,
         "std": 0.05,
         "command_name": "twist",
@@ -482,6 +482,9 @@ def piplus_velocity_env_cfg(
           ("r_ankle_roll_link_collision.*",),
           ("l_ankle_roll_link_collision.*",),
         ],
+        # Resting clearance of the lowest geom center when the foot is planted;
+        # subtracted so a planted foot reads ~0.
+        "baseline_height": 0.019,
       },
     ),
     "foot_slip": RewardTermCfg(
@@ -503,7 +506,7 @@ def piplus_velocity_env_cfg(
     # ),
     "flat_foot": RewardTermCfg(
       func=pi_mdp.flat_foot_l2,
-      weight=-1.0,
+      weight=-0.0,
       params={
         "asset_cfg": SceneEntityCfg("robot", site_names=foot_sites),
       },
