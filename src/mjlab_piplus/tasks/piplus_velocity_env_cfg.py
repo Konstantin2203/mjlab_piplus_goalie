@@ -182,9 +182,9 @@ def piplus_velocity_env_cfg(
       rel_heading_envs=0.3,
       rel_forward_envs=0.15,
       ranges=pi_mdp.UniformVelocityCommandWithStopCfg.Ranges(
-        lin_vel_x=(-0.5, 1.5),
+        lin_vel_x=(-0.5, 1.0),
         lin_vel_y=(-0.25, 0.25),
-        ang_vel_z=(-2.0, 2.0),
+        ang_vel_z=(-1.5, 1.5),
         heading=(-math.pi, math.pi),
       ),
     )
@@ -389,13 +389,13 @@ def piplus_velocity_env_cfg(
   rewards = {
     "track_linear_velocity": RewardTermCfg(
       func=mdp.track_linear_velocity,
-      weight=1.0,
+      weight=2.0,
       params={"command_name": "twist", "std": math.sqrt(0.125)},
     ),
     "track_angular_velocity": RewardTermCfg(
       func=mdp.track_angular_velocity,
-      weight=1.0,
-      params={"command_name": "twist", "std": math.sqrt(0.35)},
+      weight=2.0,
+      params={"command_name": "twist", "std": math.sqrt(0.5)},
     ),
     # stability rewards
     "upright": RewardTermCfg(
@@ -428,7 +428,7 @@ def piplus_velocity_env_cfg(
     ),
     "pose": RewardTermCfg(
       func=pi_mdp.variable_posture,
-      weight=0.5,
+      weight=1.0,
       params={
         "asset_cfg": SceneEntityCfg("robot", joint_names=(".*",)),
         "command_name": "twist",
@@ -449,14 +449,14 @@ def piplus_velocity_env_cfg(
           r".*_ankle_pitch_joint": 0.5,
           r".*_ankle_roll_joint": 0.1,
         },
-        "running_threshold": 99.0,
+        "running_threshold": 0.5,
       },
     ),
     # shaping rewards
     # encourage feet to be at target height when the foot velocity is high (i.e. during swing)
     "foot_gait": RewardTermCfg(
       func=pi_mdp.feet_gait,
-      weight=0.5,
+      weight=1.0,
       params={
         "frequency": WALK_FREQUENCY,
         "offset": [0.0, 0.5],
@@ -467,13 +467,13 @@ def piplus_velocity_env_cfg(
     ),
     "feet_phase": RewardTermCfg(
       func=pi_mdp.feet_phase,
-      weight=1.5,
+      weight=1.0,
       params={
         "frequency": WALK_FREQUENCY,
         "offset": [0.0, 0.5],
         "foot_height": 0.03,
         "stance_threshold": 0.56,
-        "std": 0.05,
+        "std": 0.025,
         "command_name": "twist",
         "asset_cfg": SceneEntityCfg("robot"),
         # Clearance is the lowest collision geom per foot (tilt-invariant).
@@ -504,36 +504,36 @@ def piplus_velocity_env_cfg(
     #     "command_name": "twist",
     #   },
     # ),
-    "flat_foot": RewardTermCfg(
-      func=pi_mdp.flat_foot_l2,
-      weight=-0.0,
-      params={
-        "asset_cfg": SceneEntityCfg("robot", site_names=foot_sites),
-      },
-    ),
+    # "flat_foot": RewardTermCfg(
+    #   func=pi_mdp.flat_foot_l2,
+    #   weight=-0.0,
+    #   params={
+    #     "asset_cfg": SceneEntityCfg("robot", site_names=foot_sites),
+    #   },
+    # ),
   }
   ##
   # Metrics
   ##
   metrics = {
-    "base_ang_vel_xy_l2": MetricsTermCfg(
-      func=pi_mdp.base_ang_vel_xy_l2,
-    ),
-    "step_frequency": MetricsTermCfg(
-      func=pi_mdp.step_frequency,
-      params={"sensor_name": "feet_ground_contact"},
-    ),
-    "foot_contact_force": MetricsTermCfg(
-      func=pi_mdp.foot_contact_force,
-      params={"sensor_name": "feet_ground_contact"},
-    ),
-    "phase_metric": MetricsTermCfg(
-      func=pi_mdp.phase_metric,
-      params={
-        "frequency": WALK_FREQUENCY,
-        "command_name": "twist",
-      },
-    ),
+    #"base_ang_vel_xy_l2": MetricsTermCfg(
+    #  func=pi_mdp.base_ang_vel_xy_l2,
+    #),
+    #"step_frequency": MetricsTermCfg(
+    #  func=pi_mdp.step_frequency,
+    #  params={"sensor_name": "feet_ground_contact"},
+    #),
+    #"foot_contact_force": MetricsTermCfg(
+    #  func=pi_mdp.foot_contact_force,
+    #  params={"sensor_name": "feet_ground_contact"},
+    #),
+    #"phase_metric": MetricsTermCfg(
+    #  func=pi_mdp.phase_metric,
+    #  params={
+    #    "frequency": WALK_FREQUENCY,
+    #    "command_name": "twist",
+    #  },
+    #),
     "feet_swing_peak_height": MetricsTermCfg(
       func=pi_mdp.feet_swing_peak_height,
       params={
@@ -547,16 +547,14 @@ def piplus_velocity_env_cfg(
   # Terminations
   ##
   terminations = {
-    # Jittered per-env timeout keeps episode resets decorrelated for the whole
-    # run, preventing the synchronized-reset reward dips. Swapped back to the
-    # plain (never-firing) time_out in play, where episodes are unbounded.
-    #"time_out": TerminationTermCfg(
-    #  func=pi_mdp.time_out_jittered,
-    #  time_out=True,
-    #  params={"min_fraction": 0.8},
-    #),
+    # Jittered per-env timeout keeps episode resets decorrelated
+    "time_out": TerminationTermCfg(
+      func=pi_mdp.time_out_jittered,
+      time_out=True,
+      params={"min_fraction": 0.8},
+    ),
 
-    "time_out": TerminationTermCfg(func=mdp.time_out, time_out=True),
+    #"time_out": TerminationTermCfg(func=mdp.time_out, time_out=True),
     "fell_over": TerminationTermCfg(
       func=mdp.bad_orientation,
       params={"limit_angle": math.radians(45.0)},
@@ -584,9 +582,9 @@ def piplus_velocity_env_cfg(
           },
           {
             "step": 800 * 24,
-            "lin_vel_x": (-0.5, 1.0),
-            "lin_vel_y": (-0.25, 0.25),
-            "ang_vel_z": (-2.0, 2.0),
+            "lin_vel_x": (-0.5, 0.8),
+            "lin_vel_y": (-0.4, 0.4),
+            "ang_vel_z": (-1.5, 1.5),
           },
         ],
       },
