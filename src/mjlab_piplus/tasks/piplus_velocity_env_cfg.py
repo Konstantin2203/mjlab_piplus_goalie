@@ -456,7 +456,7 @@ def piplus_velocity_env_cfg(
     # encourage feet to be at target height when the foot velocity is high (i.e. during swing)
     "foot_gait": RewardTermCfg(
       func=pi_mdp.feet_gait,
-      weight=0.0,
+      weight=0.5,
       params={
         "frequency": WALK_FREQUENCY,
         "offset": [0.0, 0.5],
@@ -471,7 +471,7 @@ def piplus_velocity_env_cfg(
       params={
         "frequency": WALK_FREQUENCY,
         "offset": [0.0, 0.5],
-        "foot_height": 0.045,
+        "foot_height": 0.06,
         "stance_threshold": 0.56,
         "std": 0.05,
         "command_name": "twist",
@@ -592,7 +592,7 @@ def piplus_velocity_env_cfg(
     name="feet_ground_contact",
     primary=ContactMatch(
       mode="subtree",
-      pattern=r"^(r_ankle_roll_link|l_ankle_roll_link)$",
+      pattern=r"^(l_ankle_roll_link|r_ankle_roll_link)$",
       entity="robot",
     ),
     secondary=ContactMatch(mode="body", pattern="terrain"),
@@ -698,11 +698,15 @@ def piplus_velocity_env_cfg(
         "axis": "pitch",
       },
     )
+    # NOTE: SceneEntityCfg.resolve() sorts sites by model index, so the reward's
+    # site order is (r_foot=idx0, l_foot=idx1) — i.e. offset[0]=0.0 drives the
+    # RIGHT foot and offset[1]=0.5 the LEFT foot. The metric offsets below are
+    # matched to that so each label tracks the correct physical foot.
     metrics["l_foot_rz_target"] = MetricsTermCfg(
       func=pi_mdp.feet_phase_target,
       params={
         "frequency": WALK_FREQUENCY,
-        "offset": 0.0,
+        "offset": 0.5,
         "foot_height": 0.045,
         "stance_threshold": 0.56,
       },
@@ -711,7 +715,7 @@ def piplus_velocity_env_cfg(
       func=pi_mdp.feet_phase_target,
       params={
         "frequency": WALK_FREQUENCY,
-        "offset": 0.5,
+        "offset": 0.0,
         "foot_height": 0.045,
         "stance_threshold": 0.56,
       },
