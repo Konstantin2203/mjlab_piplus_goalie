@@ -27,7 +27,7 @@ from mjlab_piplus.terrain import AstroturfTerrainCfg
 
 DELAY_MIN = 0
 DELAY_MAX = 3
-WALK_FREQUENCY = 1.75
+WALK_FREQUENCY = 1.3
 
 
 def piplus_velocity_env_cfg(
