@@ -13,6 +13,7 @@ from mjlab.envs import ManagerBasedRlEnvCfg
 from mjlab.managers.curriculum_manager import CurriculumTermCfg
 from mjlab.managers.reward_manager import RewardTermCfg
 from mjlab.managers.scene_entity_config import SceneEntityCfg
+from mjlab.tasks.velocity import mdp
 
 from mjlab_piplus.tasks import mdp as pi_mdp
 from mjlab_piplus.tasks.mdp.path_following import (
@@ -53,9 +54,9 @@ def piplus_path_env_cfg(
       rel_heading_envs=0.0,
       rel_forward_envs=0.0,
       ranges=pi_mdp.UniformVelocityCommandWithStopCfg.Ranges(
-        lin_vel_x=(1.0, 1.0),
-        lin_vel_y=(1.0, 1.0),
-        ang_vel_z=(1.0, 1.0),
+        lin_vel_x=(0.25, 0.25), # use tighter pose rewards first
+        lin_vel_y=(0.0, 0.0),
+        ang_vel_z=(0.0, 0.0),
       ),
   )
 
@@ -115,7 +116,27 @@ def piplus_path_env_cfg(
   # in over training. (The velocity cfg already clears the curriculum in play.)
   ##
   if not play:
-    del cfg.curriculum["command_vel"]
+    cfg.curriculum["command_vel"] = CurriculumTermCfg(
+      func=mdp.commands_vel,
+      params={
+        "command_name": "twist",
+        "velocity_stages": [
+          {
+            "step": 0 * 24,
+            "lin_vel_x": (0.25, 0.25),
+            "lin_vel_y": (0.0, 0.0),
+            "ang_vel_z": (0.0, 0.0),
+          },
+          {
+            "step": 1600 * 24,
+            "lin_vel_x": (1.0, 1.0),
+            "lin_vel_y": (0.0, 0.0),
+            "ang_vel_z": (0.0, 0.0),
+          },
+        ],
+      },
+    ),
+
 
     cfg.curriculum["goal_reached_weight"] = CurriculumTermCfg(
       func=pi_mdp.reward_weight,
