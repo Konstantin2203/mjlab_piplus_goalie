@@ -143,8 +143,7 @@ def piplus_path_env_cfg(
         "reward_name": "goal_reached_reward",
         "weight_stages": [
           {"step": 0, "weight": 0.0},
-          {"step": 400 * 24, "weight": 0.5},
-          {"step": 1600 * 24, "weight": 1.0},
+          {"step": 400 * 24, "weight": 1.0},
         ],
       },
     )
@@ -154,8 +153,7 @@ def piplus_path_env_cfg(
         "reward_name": "path_progress_reward",
         "weight_stages": [
           {"step": 0, "weight": 0.0},
-          {"step": 400 * 24, "weight": 0.125},
-          {"step": 1600 * 24, "weight": 0.25},
+          {"step": 400 * 24, "weight": 0.75},
         ],
       },
     )
@@ -165,8 +163,7 @@ def piplus_path_env_cfg(
         "reward_name": "close_to_path_reward",
         "weight_stages": [
           {"step": 0, "weight": 0.0},
-          {"step": 400 * 24, "weight": 0.75},
-          {"step": 1600 * 24, "weight": 1.5},
+          {"step": 400 * 24, "weight": 2.0},
         ],
       },
     )
@@ -176,8 +173,7 @@ def piplus_path_env_cfg(
         "reward_name": "alignment_with_path_reward",
         "weight_stages": [
           {"step": 0, "weight": 0.0},
-          {"step": 400 * 24, "weight": 0.25},
-          {"step": 1600 * 24, "weight": 0.5},
+          {"step": 400 * 24, "weight": 1.0},
         ],
       },
     )
