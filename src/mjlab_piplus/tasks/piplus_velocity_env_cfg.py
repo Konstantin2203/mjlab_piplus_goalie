@@ -27,7 +27,7 @@ from mjlab_piplus.terrain import AstroturfTerrainCfg
 
 DELAY_MIN = 0
 DELAY_MAX = 3
-WALK_FREQUENCY = 1.3
+WALK_FREQUENCY = 1.75
 
 
 def piplus_velocity_env_cfg(
@@ -456,7 +456,7 @@ def piplus_velocity_env_cfg(
     # encourage feet to be at target height when the foot velocity is high (i.e. during swing)
     "foot_gait": RewardTermCfg(
       func=pi_mdp.feet_gait,
-      weight=0.5,
+      weight=0.0,
       params={
         "frequency": WALK_FREQUENCY,
         "offset": [0.0, 0.5],
@@ -696,6 +696,24 @@ def piplus_velocity_env_cfg(
       params={
         "asset_cfg": SceneEntityCfg("robot", site_names=("r_foot",)),
         "axis": "pitch",
+      },
+    )
+    metrics["l_foot_rz_target"] = MetricsTermCfg(
+      func=pi_mdp.feet_phase_target,
+      params={
+        "frequency": WALK_FREQUENCY,
+        "offset": 0.0,
+        "foot_height": 0.045,
+        "stance_threshold": 0.56,
+      },
+    )
+    metrics["r_foot_rz_target"] = MetricsTermCfg(
+      func=pi_mdp.feet_phase_target,
+      params={
+        "frequency": WALK_FREQUENCY,
+        "offset": 0.5,
+        "foot_height": 0.045,
+        "stance_threshold": 0.56,
       },
     )
 

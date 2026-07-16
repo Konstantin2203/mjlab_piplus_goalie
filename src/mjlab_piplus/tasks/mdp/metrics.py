@@ -8,6 +8,8 @@ from mjlab.managers.scene_entity_config import SceneEntityCfg
 from mjlab.sensor.contact_sensor import ContactSensor
 from mjlab.utils.lab_api.math import quat_apply_inverse
 
+from mjlab_piplus.tasks.mdp.rewards import _get_rz
+
 if TYPE_CHECKING:
   from mjlab.envs import ManagerBasedRlEnv
   from mjlab.managers.metrics_manager import MetricsTermCfg
@@ -206,3 +208,28 @@ def phase_metric(
   stand = command[:, 3] > 0.5
   global_phase = torch.where(stand, torch.zeros_like(global_phase), global_phase)
   return global_phase
+
+
+def feet_phase_target(
+  env: ManagerBasedRlEnv,
+  frequency: float,
+  offset: float,
+  foot_height: float,
+  stance_threshold: float = 0.56,
+) -> torch.Tensor:
+  """Target swing height ``rz`` for a single foot from the ``feet_phase`` gait.
+
+  Mirrors ``pi_mdp.feet_phase``'s target: zero during stance, cubic-Bezier bump
+  centered in the swing window. ``offset`` selects the foot (e.g. 0.0 for the
+  left, 0.5 for the right). Intended as a play-mode visualization of the gait
+  target the reward is tracking.
+  """
+  period = 1.0 / frequency
+  global_phase = (env.episode_length_buf * env.step_dt) % period / period  # [B]
+  leg_phase = (global_phase + offset) % 1.0
+  swing_phase = (leg_phase - stance_threshold) / (1.0 - stance_threshold)
+  return torch.where(
+    leg_phase < stance_threshold,
+    torch.zeros_like(leg_phase),
+    _get_rz(swing_phase, swing_height=foot_height),
+  )
