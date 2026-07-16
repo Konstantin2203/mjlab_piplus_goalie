@@ -18,8 +18,8 @@ class PiPlusPpoAlgorithmCfg(RslRlPpoAlgorithmCfg):
       # NOTE: defaults to False in rsl_rl. Without this, symmetry is enforced
       # only by the soft mirror loss; enabling it appends mirrored samples to
       # every mini-batch so the policy gradient itself drives a symmetric gait.
-      "use_data_augmentation": True,
-      "use_mirror_loss": True,
+      "use_data_augmentation": False,
+      "use_mirror_loss": False,
       "mirror_loss_coeff": 0.5,
     }
   )

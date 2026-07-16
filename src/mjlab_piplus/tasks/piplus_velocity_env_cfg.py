@@ -197,7 +197,7 @@ def piplus_velocity_env_cfg(
   events = {
     "reset_base": EventTermCfg(
       func=mdp.reset_root_state_uniform,
-      mode="startup",
+      mode="reset",
       params={
         "pose_range": {
           "x": (-0.0, 0.0),
@@ -210,7 +210,7 @@ def piplus_velocity_env_cfg(
     ),
     "reset_robot_joints": EventTermCfg(
       func=mdp.reset_joints_by_offset,
-      mode="startup",
+      mode="reset",
       params={
         "position_range": (-0.2, 0.2),
         "velocity_range": (-0.5, 0.5),

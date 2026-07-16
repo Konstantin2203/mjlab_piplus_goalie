@@ -1,6 +1,8 @@
 from mjlab.tasks.registry import register_mjlab_task
 from mjlab.tasks.velocity.rl.runner import VelocityOnPolicyRunner
 
+from .piplus_path_env_cfg import piplus_path_env_cfg
+from .piplus_path_rl_cfg import get_piplus_path_rl_cfg
 from .piplus_velocity_env_cfg import piplus_velocity_env_cfg
 from .piplus_velocity_rl_cfg import get_piplus_velocity_rl_cfg
 
@@ -9,5 +11,12 @@ register_mjlab_task(
   env_cfg=piplus_velocity_env_cfg(),
   play_env_cfg=piplus_velocity_env_cfg(play=True),
   rl_cfg=get_piplus_velocity_rl_cfg(),
+  runner_cls=VelocityOnPolicyRunner,
+)
+register_mjlab_task(
+  task_id="Mjlab-Path-PiPlus",
+  env_cfg=piplus_path_env_cfg(),
+  play_env_cfg=piplus_path_env_cfg(play=True),
+  rl_cfg=get_piplus_path_rl_cfg(),
   runner_cls=VelocityOnPolicyRunner,
 )

@@ -14,7 +14,34 @@ __all__ = [
   "event_curriculum",
   "GoalRadiusStage",
   "commands_goal_radius",
+  "RewardWeightStage",
+  "reward_weight",
 ]
+
+
+class RewardWeightStage(TypedDict):
+  step: int
+  weight: float
+
+
+def reward_weight(
+  env: ManagerBasedRlEnv,
+  env_ids: torch.Tensor,
+  reward_name: str,
+  weight_stages: list[RewardWeightStage],
+) -> torch.Tensor:
+  """Ramp a reward term's weight over training steps.
+
+  Later stages take precedence once ``env.common_step_counter`` passes their
+  ``step`` threshold. Mirrors the ``reward_weight`` curriculum shipped with some
+  mjlab builds, which this project's mjlab version does not include.
+  """
+  del env_ids  # Unused.
+  reward_term_cfg = env.reward_manager.get_term_cfg(reward_name)
+  for stage in weight_stages:
+    if env.common_step_counter > stage["step"]:
+      reward_term_cfg.weight = stage["weight"]
+  return torch.tensor([reward_term_cfg.weight])
 
 
 class GoalRadiusStage(TypedDict):
