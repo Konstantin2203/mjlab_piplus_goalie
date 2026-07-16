@@ -413,7 +413,7 @@ def piplus_velocity_env_cfg(
       weight=-0.025,
       params={"sensor_name": "robot/root_angmom"},
     ),
-    "is_terminated": RewardTermCfg(func=mdp.is_terminated, weight=-5.0),
+    "is_terminated": RewardTermCfg(func=mdp.is_terminated, weight=-50.0),
     # safety rewards
     "joint_acc_l2": RewardTermCfg(func=mdp.joint_acc_l2, weight=-2.5e-7),
     "joint_pos_limits": RewardTermCfg(func=mdp.joint_pos_limits, weight=-10.0),
