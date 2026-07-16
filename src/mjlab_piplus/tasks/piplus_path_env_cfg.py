@@ -137,54 +137,50 @@ def piplus_path_env_cfg(
       },
     )
 
-    # cfg.curriculum["goal_reached_weight"] = CurriculumTermCfg(
-    #   func=pi_mdp.reward_weight,
-    #   params={
-    #     "reward_name": "goal_reached_reward",
-    #     "weight_stages": [
-    #       {"step": 0, "weight": 0.0},
-    #       {"step": 400 * 24, "weight": 1.0},
-    #     ],
-    #   },
-    # )
-    # cfg.curriculum["path_progress_weight"] = CurriculumTermCfg(
-    #   func=pi_mdp.reward_weight,
-    #   params={
-    #     "reward_name": "path_progress_reward",
-    #     "weight_stages": [
-    #       {"step": 0, "weight": 0.0},
-    #       {"step": 400 * 24, "weight": 0.75},
-    #     ],
-    #   },
-    # )
-    # cfg.curriculum["close_to_path_weight"] = CurriculumTermCfg(
-    #   func=pi_mdp.reward_weight,
-    #   params={
-    #     "reward_name": "close_to_path_reward",
-    #     "weight_stages": [
-    #       {"step": 0, "weight": 0.0},
-    #       {"step": 400 * 24, "weight": 2.0},
-    #     ],
-    #   },
-    # )
-    # cfg.curriculum["alignment_with_path_weight"] = CurriculumTermCfg(
-    #   func=pi_mdp.reward_weight,
-    #   params={
-    #     "reward_name": "alignment_with_path_reward",
-    #     "weight_stages": [
-    #       {"step": 0, "weight": 0.0},
-    #       {"step": 400 * 24, "weight": 1.0},
-    #     ],
-    #   },
-    # )
+    cfg.curriculum["goal_reached_weight"] = CurriculumTermCfg(
+      func=pi_mdp.reward_weight,
+      params={
+        "reward_name": "goal_reached_reward",
+        "weight_stages": [
+          {"step": 0, "weight": 0.0},
+          {"step": 400 * 24, "weight": 1.0},
+        ],
+      },
+    )
+    cfg.curriculum["path_progress_weight"] = CurriculumTermCfg(
+      func=pi_mdp.reward_weight,
+      params={
+        "reward_name": "path_progress_reward",
+        "weight_stages": [
+          {"step": 0, "weight": 0.0},
+          {"step": 400 * 24, "weight": 0.75},
+        ],
+      },
+    )
+    cfg.curriculum["close_to_path_weight"] = CurriculumTermCfg(
+      func=pi_mdp.reward_weight,
+      params={
+        "reward_name": "close_to_path_reward",
+        "weight_stages": [
+          {"step": 0, "weight": 0.0},
+          {"step": 400 * 24, "weight": 2.0},
+        ],
+      },
+    )
+    cfg.curriculum["alignment_with_path_weight"] = CurriculumTermCfg(
+      func=pi_mdp.reward_weight,
+      params={
+        "reward_name": "alignment_with_path_reward",
+        "weight_stages": [
+          {"step": 0, "weight": 0.0},
+          {"step": 400 * 24, "weight": 1.0},
+        ],
+      },
+    )
 
   if play:
     # No curriculum in play: set the path rewards to their final (curriculum)
     # weights so play shows the trained behavior.
-    cfg.rewards["goal_reached_reward"].weight = 1.0
-    cfg.rewards["path_progress_reward"].weight = 0.75
-    cfg.rewards["close_to_path_reward"].weight = 2.0
-    cfg.rewards["alignment_with_path_reward"].weight = 1.0
     cfg.commands["path"].pathlib_size = 1000
     cfg.commands["path"].resampling_time_range = (30.0, 30.0)
 
