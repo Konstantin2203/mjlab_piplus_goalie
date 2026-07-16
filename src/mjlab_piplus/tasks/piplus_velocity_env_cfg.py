@@ -428,7 +428,7 @@ def piplus_velocity_env_cfg(
     ),
     "pose": RewardTermCfg(
       func=pi_mdp.variable_posture,
-      weight=1.0,
+      weight=0.5,
       params={
         "asset_cfg": SceneEntityCfg("robot", joint_names=(".*",)),
         "command_name": "twist",
@@ -496,7 +496,7 @@ def piplus_velocity_env_cfg(
     # ),
     "flat_foot": RewardTermCfg(
       func=pi_mdp.flat_foot_l2,
-      weight=-0.5,
+      weight=-1.0,
       params={
         "asset_cfg": SceneEntityCfg("robot", site_names=foot_sites),
       },
@@ -574,7 +574,7 @@ def piplus_velocity_env_cfg(
           },
           {
             "step": 800 * 24,
-            "lin_vel_x": (-0.5, 1.5),
+            "lin_vel_x": (-0.5, 1.0),
             "lin_vel_y": (-0.25, 0.25),
             "ang_vel_z": (-2.0, 2.0),
           },
