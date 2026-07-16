@@ -268,43 +268,79 @@ def _get_rz(phase01: torch.Tensor, swing_height: float) -> torch.Tensor:
   return torch.where(phase01 <= 0.5, stance, swing)
 
 
-def feet_phase(
-  env: ManagerBasedRlEnv,
-  frequency: float,
-  offset: list[float],
-  foot_height: float,
-  command_name: str,
-  asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
-  stance_threshold: float = 0.56,
-  std: float = 0.1,
-) -> torch.Tensor:
-  command = env.command_manager.get_command(command_name)
-  assert command is not None
-  asset: Entity = env.scene[asset_cfg.name]
+class feet_phase:
+  """Reward feet tracking a gait-phase-aligned swing-height target.
 
-  period = 1.0 / frequency
-  global_phase = (env.episode_length_buf * env.step_dt) % period / period  # [B]
-  offsets = torch.as_tensor(offset, device=env.device, dtype=global_phase.dtype)
-  leg_phase = (global_phase.unsqueeze(1) + offsets.unsqueeze(0)) % 1.0  # [B, N]
+  Port of ``_reward_feet_phase`` from Flova's mujoco_playground piplus task,
+  with two adaptations:
 
-  # Target height is zero during stance (leg_phase < stance_threshold) and a
-  # cubic-Bezier bump over the swing window [stance_threshold, 1), remapped so
-  # the peak is centered in swing. This matches ``feet_gait``'s stance/swing
-  # split (same ``offset`` and ``threshold``).
-  swing_phase = (leg_phase - stance_threshold) / (1.0 - stance_threshold)  # [B, N]
-  rz = torch.where(
-    leg_phase < stance_threshold,
-    torch.zeros_like(leg_phase),
-    _get_rz(swing_phase, swing_height=foot_height),
-  )  # [B, N]
-  foot_z = asset.data.site_pos_w[:, asset_cfg.site_ids, 2]  # [B, N]
-  error = torch.sum(torch.square(torch.clamp(rz - foot_z, min=0.0)), dim=1)  # [B]
+  - The target height (see :func:`_get_rz`) is zero during stance and a
+    cubic-Bezier bump centered in the swing window ``[stance_threshold, 1)``.
+  - The foot height is measured as the **minimum z over the foot's collision
+    geoms** (its lowest point / ground clearance) rather than a single foot
+    site. A single site can be raised just by tilting the ankle, which the
+    policy exploits to "reach" the target without lifting the foot; the lowest
+    collision point only rises when the whole foot actually leaves the ground,
+    so it can't be gamed by rotation.
 
-  walk_in_place = (torch.norm(command[:, :3], dim=1) < 0.05).float()
-  reward = torch.exp(-error / std**2) * (1.0 + 0.25 * walk_in_place)
-  # Gate off when the robot should stand still (stand flag at index 3).
-  reward = reward * (command[:, 3] < 0.5).float()
-  return reward
+  ``foot_geom_names`` is a list of geom-name tuples, one entry per foot, in the
+  same order as ``offset`` (e.g. right foot first, left foot second).
+  """
+
+  def __init__(self, cfg: RewardTermCfg, env: ManagerBasedRlEnv):
+    self.asset_name = cfg.params["asset_cfg"].name
+    # Resolve each foot's collision geoms once, preserving the given foot order.
+    self.geom_id_groups: list[list[int]] = []
+    for names in cfg.params["foot_geom_names"]:
+      sc = SceneEntityCfg(self.asset_name, geom_names=tuple(names))
+      sc.resolve(env.scene)
+      self.geom_id_groups.append(list(sc.geom_ids))
+
+  def __call__(
+    self,
+    env: ManagerBasedRlEnv,
+    frequency: float,
+    offset: list[float],
+    foot_height: float,
+    command_name: str,
+    foot_geom_names: list[tuple[str, ...]],
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+    stance_threshold: float = 0.56,
+    std: float = 0.1,
+  ) -> torch.Tensor:
+    del foot_geom_names  # resolved to geom ids in __init__.
+    command = env.command_manager.get_command(command_name)
+    assert command is not None
+    asset: Entity = env.scene[asset_cfg.name]
+
+    period = 1.0 / frequency
+    global_phase = (env.episode_length_buf * env.step_dt) % period / period  # [B]
+    offsets = torch.as_tensor(offset, device=env.device, dtype=global_phase.dtype)
+    leg_phase = (global_phase.unsqueeze(1) + offsets.unsqueeze(0)) % 1.0  # [B, N]
+
+    # Target height is zero during stance (leg_phase < stance_threshold) and a
+    # cubic-Bezier bump over the swing window [stance_threshold, 1), remapped so
+    # the peak is centered in swing. This matches ``feet_gait``'s stance/swing
+    # split (same ``offset`` and ``threshold``).
+    swing_phase = (leg_phase - stance_threshold) / (1.0 - stance_threshold)  # [B, N]
+    rz = torch.where(
+      leg_phase < stance_threshold,
+      torch.zeros_like(leg_phase),
+      _get_rz(swing_phase, swing_height=foot_height),
+    )  # [B, N]
+
+    # Foot clearance = lowest collision geom per foot (tilt-invariant).
+    geom_z = asset.data.geom_pos_w[:, :, 2]  # [B, num_geoms]
+    foot_z = torch.stack(
+      [geom_z[:, ids].amin(dim=1) for ids in self.geom_id_groups], dim=1
+    )  # [B, N]
+    error = torch.sum(torch.square(torch.clamp(rz - foot_z, min=0.0)), dim=1)  # [B]
+
+    walk_in_place = (torch.norm(command[:, :3], dim=1) < 0.05).float()
+    reward = torch.exp(-error / std**2) * (1.0 + 0.25 * walk_in_place)
+    # Gate off when the robot should stand still (stand flag at index 3).
+    reward = reward * (command[:, 3] < 0.5).float()
+    return reward
 
 
 def feet_slip(

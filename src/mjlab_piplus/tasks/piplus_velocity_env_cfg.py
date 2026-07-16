@@ -475,7 +475,13 @@ def piplus_velocity_env_cfg(
         "stance_threshold": 0.56,
         "std": 0.05,
         "command_name": "twist",
-        "asset_cfg": SceneEntityCfg("robot", site_names=foot_sites),
+        "asset_cfg": SceneEntityCfg("robot"),
+        # Clearance is the lowest collision geom per foot (tilt-invariant).
+        # Order matches `offset`: right (0.0) first, left (0.5) second.
+        "foot_geom_names": [
+          ("r_ankle_roll_link_collision.*",),
+          ("l_ankle_roll_link_collision.*",),
+        ],
       },
     ),
     "foot_slip": RewardTermCfg(
