@@ -35,23 +35,23 @@ def piplus_velocity_env_cfg(
 ) -> ManagerBasedRlEnvCfg:
   foot_sites = ("l_foot", "r_foot")
   # foot_geoms = ("l_foot00", "r_foot00")
-  foot_height_scan = TerrainHeightSensorCfg(
-    name="foot_height_scan",
-    frame=(
-      ObjRef(type="site", name="l_foot", entity="robot"),
-      ObjRef(type="site", name="r_foot", entity="robot"),
-    ),
-    ray_alignment="yaw",
-    max_distance=1.0,
-    exclude_parent_body=True,
-    include_geom_groups=(0,),  # Terrain only.
-    debug_vis=False,
-    viz=TerrainHeightSensorCfg.VizCfg(
-      show_rays=True,
-      hit_color=(1.0, 0.0, 1.0, 0.8),  # Magenta rays.
-      hit_sphere_color=(1.0, 0.0, 1.0, 1.0),
-    ),
-  )
+  # foot_height_scan = TerrainHeightSensorCfg(
+  #   name="foot_height_scan",
+  #   frame=(
+  #     ObjRef(type="site", name="l_foot", entity="robot"),
+  #     ObjRef(type="site", name="r_foot", entity="robot"),
+  #   ),
+  #   ray_alignment="yaw",
+  #   max_distance=1.0,
+  #   exclude_parent_body=True,
+  #   include_geom_groups=(0,),  # Terrain only.
+  #   debug_vis=False,
+  #   viz=TerrainHeightSensorCfg.VizCfg(
+  #     show_rays=True,
+  #     hit_color=(1.0, 0.0, 1.0, 0.8),  # Magenta rays.
+  #     hit_sphere_color=(1.0, 0.0, 1.0, 1.0),
+  #   ),
+  # )
   ##
   # Observations
   ##
@@ -123,10 +123,10 @@ def piplus_velocity_env_cfg(
       func=mdp.builtin_sensor,
       params={"sensor_name": "robot/local_linvel"},
     ),
-    "foot_height": ObservationTermCfg(
-      func=mdp.foot_height,
-      params={"sensor_name": "foot_height_scan"},
-    ),
+    # "foot_height": ObservationTermCfg(
+    #   func=mdp.foot_height,
+    #   params={"sensor_name": "foot_height_scan"},
+    # ),
     "foot_air_time": ObservationTermCfg(
       func=mdp.foot_air_time,
       params={"sensor_name": "feet_ground_contact"},
@@ -614,7 +614,7 @@ def piplus_velocity_env_cfg(
   scene = SceneCfg(
     num_envs=4096,
     entities={"robot": get_piplus_robot_cfg()},
-    sensors=(feet_contact_sensor_cfg, self_collision_cfg, foot_height_scan),
+    sensors=(feet_contact_sensor_cfg, self_collision_cfg,), # foot_height_scan),
     terrain=TerrainEntityCfg(
       terrain_type="plane",
       terrain_generator=None,
