@@ -472,6 +472,7 @@ def piplus_velocity_env_cfg(
         "frequency": WALK_FREQUENCY,
         "offset": [0.0, 0.5],
         "foot_height": 0.045,
+        "stance_threshold": 0.56,
         "std": 0.05,
         "command_name": "twist",
         "asset_cfg": SceneEntityCfg("robot", site_names=foot_sites),

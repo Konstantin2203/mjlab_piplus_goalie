@@ -275,6 +275,7 @@ def feet_phase(
   foot_height: float,
   command_name: str,
   asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+  stance_threshold: float = 0.56,
   std: float = 0.1,
 ) -> torch.Tensor:
   command = env.command_manager.get_command(command_name)
@@ -286,7 +287,16 @@ def feet_phase(
   offsets = torch.as_tensor(offset, device=env.device, dtype=global_phase.dtype)
   leg_phase = (global_phase.unsqueeze(1) + offsets.unsqueeze(0)) % 1.0  # [B, N]
 
-  rz = _get_rz(leg_phase, swing_height=foot_height)  # [B, N]
+  # Target height is zero during stance (leg_phase < stance_threshold) and a
+  # cubic-Bezier bump over the swing window [stance_threshold, 1), remapped so
+  # the peak is centered in swing. This matches ``feet_gait``'s stance/swing
+  # split (same ``offset`` and ``threshold``).
+  swing_phase = (leg_phase - stance_threshold) / (1.0 - stance_threshold)  # [B, N]
+  rz = torch.where(
+    leg_phase < stance_threshold,
+    torch.zeros_like(leg_phase),
+    _get_rz(swing_phase, swing_height=foot_height),
+  )  # [B, N]
   foot_z = asset.data.site_pos_w[:, asset_cfg.site_ids, 2]  # [B, N]
   error = torch.sum(torch.square(torch.clamp(rz - foot_z, min=0.0)), dim=1)  # [B]
 
