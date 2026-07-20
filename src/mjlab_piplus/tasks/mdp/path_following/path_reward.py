@@ -50,6 +50,20 @@ class path_progress_reward:
     self.last_command_counter = torch.zeros(
       env.num_envs, dtype=torch.long, device=env.device
     )
+    # Set by reset() for envs reset since the last __call__. Needed because the
+    # command counter alone does NOT flag an episode reset here: on reset the
+    # command manager zeroes command_counter then resamples (+1), and the path
+    # command never resamples mid-episode (resampling_time_range ~1e6), so the
+    # counter is pinned at 1 every episode. Without this flag a reset would leave
+    # prev pointing at the far end of the old path and yield a large negative
+    # progress against the new path.
+    self._was_reset = torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
+
+  def reset(self, env_ids: torch.Tensor | slice | None = None) -> None:
+    if env_ids is None or isinstance(env_ids, slice):
+      self._was_reset[:] = True
+    else:
+      self._was_reset[env_ids] = True
 
   def __call__(
     self,
@@ -63,9 +77,13 @@ class path_progress_reward:
     assert command is not None, f"Command '{command_name}' not found."
     root_position = base_footprint_xy(env, foot_asset_cfg)
 
-    is_new_command = command.command_counter != self.last_command_counter
+    # New path if the command resampled OR the env was reset last step.
+    is_new_command = (
+      command.command_counter != self.last_command_counter
+    ) | self._was_reset
     self.prev_closest_waypoint_indices[is_new_command] = 0  # reset for new paths
     self.last_command_counter = command.command_counter.clone()
+    self._was_reset[:] = False
 
     # Compute closest waypoint index
     waypoints = command.paths[..., :2]  # (num_envs, num_waypoints, 2)
