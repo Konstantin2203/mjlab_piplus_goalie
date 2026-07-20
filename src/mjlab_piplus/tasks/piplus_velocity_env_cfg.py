@@ -437,11 +437,11 @@ def piplus_velocity_env_cfg(
         "command_name": "twist",
         "std_standing": {r".*": 0.05},
         "std_walking": {
-          r".*_hip_pitch_joint": 0.5,
+          r".*_hip_pitch_joint": 0.35,
           r".*_hip_roll_joint": 0.15,
           r".*_thigh_joint": 0.15,
-          r".*_calf_joint": 0.5,
-          r".*_ankle_pitch_joint": 0.5,
+          r".*_calf_joint": 0.35,
+          r".*_ankle_pitch_joint": 0.35,
           r".*_ankle_roll_joint": 0.1,
         },
         "std_running": {

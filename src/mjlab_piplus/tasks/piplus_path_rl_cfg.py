@@ -1,15 +1,33 @@
+from dataclasses import dataclass, field
+from typing import Any
+
 from mjlab.rl import (
   RslRlModelCfg,
   RslRlOnPolicyRunnerCfg,
   RslRlPpoAlgorithmCfg,
 )
 
+from mjlab_piplus.tasks.mdp import PiPlusPathSymmetry
+
+
+@dataclass
+class PiPlusPathPpoAlgorithmCfg(RslRlPpoAlgorithmCfg):
+  # Left-right symmetry for the path task. PiPlusPathSymmetry mirrors the actor
+  # obs whose command tail is N base-frame path points [x, y] (each -> [x, -y]);
+  # see symmetry.py. Both enforcement paths are on: data augmentation appends
+  # mirrored samples to every mini-batch, and the mirror loss adds a soft
+  # symmetry penalty.
+  symmetry_cfg: dict[str, Any] | None = field(
+    default_factory=lambda: {
+      "data_augmentation_func": PiPlusPathSymmetry(),
+      "use_data_augmentation": True,
+      "use_mirror_loss": True,
+      "mirror_loss_coeff": 0.5,
+    }
+  )
+
 
 def get_piplus_path_rl_cfg() -> RslRlOnPolicyRunnerCfg:
-  # NOTE: no left-right symmetry here. PiPlusSymmetry is hard-coded to the
-  # velocity task's actor obs layout (phase + 3-dim twist command); the path
-  # task replaces those with a high-dimensional path command, so symmetry is
-  # disabled (as in the mjlab_x02 path task).
   return RslRlOnPolicyRunnerCfg(
     actor=RslRlModelCfg(
       hidden_dims=(512, 256, 128),
@@ -26,7 +44,7 @@ def get_piplus_path_rl_cfg() -> RslRlOnPolicyRunnerCfg:
       activation="elu",
       obs_normalization=True,
     ),
-    algorithm=RslRlPpoAlgorithmCfg(
+    algorithm=PiPlusPathPpoAlgorithmCfg(
       value_loss_coef=1.0,
       use_clipped_value_loss=True,
       clip_param=0.2,

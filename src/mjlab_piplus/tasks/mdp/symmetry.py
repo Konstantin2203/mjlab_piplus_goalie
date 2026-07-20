@@ -70,6 +70,23 @@ def _transform_obs_goal_pose(obs: torch.Tensor) -> torch.Tensor:
   return obs
 
 
+def _transform_obs_path(obs: torch.Tensor) -> torch.Tensor:
+  """Path task: the command tail is N future path points [x, y] in the robot
+  base frame, at indices 44: (OBS_DIM = 44 + 2N).
+
+  Under a left-right reflection each point mirrors as (x, -y): the forward (x)
+  component is unchanged and the lateral (y) component flips. This is robust to
+  the number of path points — the sign pattern is inferred from the tail width.
+  """
+  obs = obs.clone()
+  obs = _transform_obs_common(obs)
+  tail = obs[:, 44:]
+  assert tail.shape[1] % 2 == 0, "path command tail must be [x, y] pairs"
+  sign = torch.tensor([1.0, -1.0], device=obs.device).repeat(tail.shape[1] // 2)
+  obs[:, 44:] = tail * sign
+  return obs
+
+
 class PiPlusSymmetry:
   """Callable left-right symmetry function for the PiPlus robot.
 
@@ -120,4 +137,19 @@ class PiPlusGoalPoseSymmetry(PiPlusSymmetry):
 
   obs_transform: Callable[[torch.Tensor], torch.Tensor] = staticmethod(
     _transform_obs_goal_pose
+  )
+
+
+class PiPlusPathSymmetry(PiPlusSymmetry):
+  """Symmetry for the path-following task.
+
+  The command tail is N future path points [x, y] in the robot base frame, so
+  OBS_DIM = 44 + 2N. The task is left-right symmetric: reflecting the path
+  across the robot's forward axis together with a mirrored policy yields
+  mirrored behavior with identical reward (path distance and heading alignment
+  are both reflection-invariant), so the augmentation is valid.
+  """
+
+  obs_transform: Callable[[torch.Tensor], torch.Tensor] = staticmethod(
+    _transform_obs_path
   )
