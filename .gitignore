@@ -208,3 +208,6 @@ __marimo__/
 
 **/wandb/**
 **/logs/**
+
+# Cached path library (regenerated on demand, keyed on gen params)
+**/path_cache/**

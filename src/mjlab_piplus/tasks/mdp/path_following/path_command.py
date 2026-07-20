@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -29,14 +30,7 @@ class PathCommand(CommandTerm):
     self.align = False
     self.global_command_counter = 0
     if cfg.use_pathlib:
-      self.all_paths, self.all_waypoints = generate_parametric_paths(
-        num_paths=cfg.pathlib_size,
-        max_point_dxy=cfg.max_point_dxy,
-        num_waypoints=cfg.num_waypoints,
-        curvature_limit=cfg.curvature_limit,
-        device=self.device,
-        progress=True,
-      )
+      self.all_paths, self.all_waypoints = self._load_or_generate_pathlib(cfg)
       # randomly select a path for each environment
       indices = torch.randint(0, cfg.pathlib_size, (self.num_envs,), device=self.device)
       self.paths = self.all_paths[indices]
@@ -53,6 +47,45 @@ class PathCommand(CommandTerm):
       self.num_envs, cfg.num_observations * 2, device=self.device
     )
     self._update_robot_pose()
+
+  def _load_or_generate_pathlib(
+    self, cfg: PathCommandCfg
+  ) -> tuple[torch.Tensor, torch.Tensor]:
+    """Load the pre-generated path library from disk, or generate and cache it.
+
+    Path generation is deterministic (``generate_parametric_paths`` seeds numpy
+    with 0), so the library is fully determined by the generation parameters.
+    We key the cache file on those params; a cache hit skips regenerating all
+    ``pathlib_size`` paths on every training run.
+    """
+    cache_dir = Path(cfg.cache_dir or (Path(__file__).parent / "path_cache"))
+    # resolution is not exposed on the cfg; keep it in sync with the default
+    # used by generate_parametric_paths so the key stays correct.
+    fname = (
+      f"pathlib_n{cfg.pathlib_size}_wp{cfg.num_waypoints}"
+      f"_dxy{cfg.max_point_dxy}_curv{cfg.curvature_limit}_res1000.pt"
+    )
+    cache_path = cache_dir / fname
+
+    if cache_path.exists():
+      print(f"Loading cached path library from {cache_path}")
+      data = torch.load(cache_path, map_location=self.device)
+      return data["paths"], data["waypoints"]
+
+    all_paths, all_waypoints = generate_parametric_paths(
+      num_paths=cfg.pathlib_size,
+      max_point_dxy=cfg.max_point_dxy,
+      num_waypoints=cfg.num_waypoints,
+      curvature_limit=cfg.curvature_limit,
+      device=self.device,
+      progress=True,
+    )
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    torch.save(
+      {"paths": all_paths.cpu(), "waypoints": all_waypoints.cpu()}, cache_path
+    )
+    print(f"Cached path library to {cache_path}")
+    return all_paths, all_waypoints
 
   @property
   def command(self) -> torch.Tensor:
@@ -219,11 +252,11 @@ class PathCommandCfg(CommandTermCfg):
   num_waypoints: int = 4  # Number of waypoints in the generated path.
   curvature_limit: float = 10.0  # Max curvature; higher allows sharper turns.
   max_point_dxy: float = 3.0  # Max change in x/y between consecutive waypoints.
-  align_start: bool = False  # Align first path point with robot heading if True.
   num_observations: int = 20  # Number of future path points in the command obs.
   observation_spacing: int = 15  # Spacing between observed path points.
   use_pathlib: bool = True
   pathlib_size: int = 50_000
+  cache_dir: str | None = None  # Directory for the cached path library
   eval_mode: bool = False  # Use a fixed set of paths for evaluation if True.
 
   @dataclass

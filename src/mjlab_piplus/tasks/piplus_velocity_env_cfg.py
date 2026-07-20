@@ -202,7 +202,7 @@ def piplus_velocity_env_cfg(
         "pose_range": {
           "x": (-0.0, 0.0),
           "y": (-0.0, 0.0),
-          "z": (0.01, 0.05),
+          "z": (0.01, 0.01),
           "yaw": (-3.14, 3.14),
         },
         "velocity_range": {},
@@ -212,7 +212,7 @@ def piplus_velocity_env_cfg(
       func=mdp.reset_joints_by_offset,
       mode="reset",
       params={
-        "position_range": (-0.2, 0.2),
+        "position_range": (-0.1, 0.1),
         "velocity_range": (-0.5, 0.5),
         "asset_cfg": SceneEntityCfg("robot", joint_names=(".*",)),
       },
@@ -399,9 +399,12 @@ def piplus_velocity_env_cfg(
     ),
     # stability rewards
     "upright": RewardTermCfg(
-      func=pi_mdp.body_orientation_l2,
-      weight=-1.0,
-      params={"asset_cfg": SceneEntityCfg("robot", body_names=("base_link",))},
+        func=mdp.upright,
+        weight=1.0,
+        params={
+            "std": math.sqrt(0.2),
+            "asset_cfg": SceneEntityCfg("robot", body_names=("base_link",)),
+        },
     ),
     "body_ang_vel": RewardTermCfg(
       func=mdp.body_angular_velocity_penalty,
@@ -413,7 +416,7 @@ def piplus_velocity_env_cfg(
       weight=-0.025,
       params={"sensor_name": "robot/root_angmom"},
     ),
-    "is_terminated": RewardTermCfg(func=mdp.is_terminated, weight=-50.0),
+    "is_terminated": RewardTermCfg(func=mdp.is_terminated, weight=-200.0),
     # safety rewards
     "joint_acc_l2": RewardTermCfg(func=mdp.joint_acc_l2, weight=-2.5e-7),
     "joint_pos_limits": RewardTermCfg(func=mdp.joint_pos_limits, weight=-10.0),
@@ -551,9 +554,8 @@ def piplus_velocity_env_cfg(
     "time_out": TerminationTermCfg(
       func=pi_mdp.time_out_jittered,
       time_out=True,
-      params={"min_fraction": 0.8},
+      params={"min_fraction": 0.5},
     ),
-
     #"time_out": TerminationTermCfg(func=mdp.time_out, time_out=True),
     "fell_over": TerminationTermCfg(
       func=mdp.bad_orientation,
@@ -620,12 +622,14 @@ def piplus_velocity_env_cfg(
   )
   scene = SceneCfg(
     num_envs=4096,
+    env_spacing=0.0,
     entities={"robot": get_piplus_robot_cfg()},
     sensors=(feet_contact_sensor_cfg, self_collision_cfg,), # foot_height_scan),
     terrain=TerrainEntityCfg(
       terrain_type="plane",
       terrain_generator=None,
       max_init_terrain_level=0,
+      env_spacing=0.0,
     ),
   )
 

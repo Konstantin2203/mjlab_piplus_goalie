@@ -79,8 +79,8 @@ def close_to_path_reward(
   waypoints = command.paths[..., :2]  # (num_envs, num_waypoints, 2)
   dists = torch.norm(waypoints - root_position.unsqueeze(1), dim=-1)
   closest_dists = torch.min(dists, dim=-1).values  # (num_envs,)
-  reward = torch.exp(-closest_dists / std**2)
-  env.extras["log"]["Metrics/mean_close_to_path_reward"] = torch.mean(reward).item()
+  reward = torch.exp(-closest_dists**2 / std**2)
+  env.extras["log"]["Metrics/mean_close_to_path_distance"] = torch.mean(closest_dists).item()
   return reward
 
 
