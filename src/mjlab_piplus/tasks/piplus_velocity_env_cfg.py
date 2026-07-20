@@ -223,8 +223,8 @@ def piplus_velocity_env_cfg(
       interval_range_s=(2.0, 6.0),
       params={
         "velocity_range": {
-          "x": (-0.25, 0.25),
-          "y": (-0.25, 0.25),
+          "x": (-1.0, 1.0),
+          "y": (-1.0, 1.0),
           "z": (-0.15, 0.15),
           "roll": (-0.52, 0.52),
           "pitch": (-0.52, 0.52),
