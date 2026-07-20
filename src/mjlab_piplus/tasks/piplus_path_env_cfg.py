@@ -32,6 +32,7 @@ def piplus_path_env_cfg(
     entity_name="robot",
     debug_vis=True,
     resampling_time_range=(1.0e6, 1.0e6),
+    num_observations=8,
   )
   # fake a command twist command for the rewards to work
   cfg.commands["twist"] = pi_mdp.UniformVelocityCommandWithStopCfg(
@@ -75,12 +76,16 @@ def piplus_path_env_cfg(
   #     "threshold": 0.075,
   #   },
   # )
+  # Path rewards evaluate the robot's position at the base footprint (the ground
+  # midpoint between the two feet), so ``foot_asset_cfg`` carries the foot sites.
+  foot_asset_cfg = SceneEntityCfg("robot", site_names=("l_foot", "r_foot"))
   cfg.rewards["close_to_path_reward"] = RewardTermCfg(
     func=close_to_path_reward,
     weight=0.0,  # overwritten by curriculum
     params={
       "command_name": "path",
       "asset_cfg": SceneEntityCfg("robot", body_names=("base_link",)),
+      "foot_asset_cfg": foot_asset_cfg,
       "std": math.sqrt(0.25),
     },
   )
@@ -90,6 +95,7 @@ def piplus_path_env_cfg(
     params={
       "command_name": "path",
       "asset_cfg": SceneEntityCfg("robot", body_names=("base_link",)),
+      "foot_asset_cfg": foot_asset_cfg,
     },
   )
   cfg.rewards["alignment_with_path_reward"] = RewardTermCfg(
@@ -98,6 +104,7 @@ def piplus_path_env_cfg(
     params={
       "command_name": "path",
       "asset_cfg": SceneEntityCfg("robot", body_names=("base_link",)),
+      "foot_asset_cfg": foot_asset_cfg,
       "std": math.sqrt(1.0),
     },
   )

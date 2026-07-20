@@ -17,6 +17,26 @@ from mjlab_piplus.tasks.mdp.path_following.utils import (
 )
 
 _DEFAULT_ASSET_CFG = SceneEntityCfg("robot")
+_DEFAULT_FOOT_CFG = SceneEntityCfg("robot", site_names=("l_foot", "r_foot"))
+
+
+def base_footprint_xy(
+  env: ManagerBasedRlEnv, foot_asset_cfg: SceneEntityCfg = _DEFAULT_FOOT_CFG
+) -> torch.Tensor:
+  """World-frame xy of the humanoid ``base_footprint``.
+
+  Faithful to ros-sports/humanoid_base_footprint: ``base_footprint`` is the
+  ground point midway between the two foot frames. In the support-foot frame it
+  is placed at ``(non_support.x / 2, non_support.y / 2, 0)``, which in world xy
+  is simply the mean of the two feet positions (independent of which foot is the
+  support foot). z is dropped (the frame lies on the ground) and its orientation
+  is the base yaw — which the path rewards already read from the root quaternion.
+
+  Returns a ``(num_envs, 2)`` tensor.
+  """
+  asset: Entity = env.scene[foot_asset_cfg.name]
+  foot_xy = asset.data.site_pos_w[:, foot_asset_cfg.site_ids, :2]  # (B, n_feet, 2)
+  return foot_xy.mean(dim=1)  # (B, 2)
 
 
 class path_progress_reward:
@@ -36,11 +56,12 @@ class path_progress_reward:
     env: ManagerBasedRlEnv,
     command_name: str,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+    foot_asset_cfg: SceneEntityCfg = _DEFAULT_FOOT_CFG,
   ) -> torch.Tensor:
-    asset: Entity = env.scene[asset_cfg.name]
+    del asset_cfg  # Position comes from the base footprint (feet), not the root.
     command = env.command_manager.get_term(command_name)
     assert command is not None, f"Command '{command_name}' not found."
-    root_position = asset.data.root_link_pos_w[..., :2]
+    root_position = base_footprint_xy(env, foot_asset_cfg)
 
     is_new_command = command.command_counter != self.last_command_counter
     self.prev_closest_waypoint_indices[is_new_command] = 0  # reset for new paths
@@ -69,13 +90,14 @@ def close_to_path_reward(
   env: ManagerBasedRlEnv,
   command_name: str,
   asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+  foot_asset_cfg: SceneEntityCfg = _DEFAULT_FOOT_CFG,
   std: float = 0.2,
 ) -> torch.Tensor:
   """Rewards being close to the path via a Gaussian on distance to the path."""
-  asset: Entity = env.scene[asset_cfg.name]
+  del asset_cfg  # Position comes from the base footprint (feet), not the root.
   command = env.command_manager.get_term(command_name)
   assert command is not None, f"Command '{command_name}' not found."
-  root_position = asset.data.root_link_pos_w[..., :2]
+  root_position = base_footprint_xy(env, foot_asset_cfg)
   waypoints = command.paths[..., :2]  # (num_envs, num_waypoints, 2)
   dists = torch.norm(waypoints - root_position.unsqueeze(1), dim=-1)
   closest_dists = torch.min(dists, dim=-1).values  # (num_envs,)
@@ -88,13 +110,16 @@ def align_with_path_reward(
   env: ManagerBasedRlEnv,
   command_name: str,
   asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+  foot_asset_cfg: SceneEntityCfg = _DEFAULT_FOOT_CFG,
   std: float = 0.2,
 ) -> torch.Tensor:
   """Rewards aligning the heading with the path tangent."""
   asset: Entity = env.scene[asset_cfg.name]
   command = env.command_manager.get_term(command_name)
   assert command is not None, f"Command '{command_name}' not found."
-  root_position = asset.data.root_link_pos_w[..., :2]
+  # Position from the base footprint (feet midpoint); heading from the base yaw
+  # (the base_footprint orientation is the base yaw about vertical).
+  root_position = base_footprint_xy(env, foot_asset_cfg)
   root_quat = asset.data.root_link_quat_w  # (num_envs, 4)
   waypoints = command.paths[..., :2]  # (num_envs, num_waypoints, 2)
   dists = torch.norm(waypoints - root_position.unsqueeze(1), dim=-1)
@@ -125,13 +150,14 @@ def goal_reached(
   env: ManagerBasedRlEnv,
   command_name: str,
   asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+  foot_asset_cfg: SceneEntityCfg = _DEFAULT_FOOT_CFG,
   threshold: float = 0.1,
 ) -> torch.Tensor:
   """Rewards reaching the goal: distance to the final waypoint below threshold."""
-  asset: Entity = env.scene[asset_cfg.name]
+  del asset_cfg  # Position comes from the base footprint (feet), not the root.
   command = env.command_manager.get_term(command_name)
   assert command is not None, f"Command '{command_name}' not found."
-  root_position = asset.data.root_link_pos_w[..., :2]
+  root_position = base_footprint_xy(env, foot_asset_cfg)
   waypoints = command.paths[..., :2]  # (num_envs, num_waypoints, 2)
   final_waypoints = waypoints[..., -1, :]  # (num_envs, 2)
   dists = torch.norm(final_waypoints - root_position, dim=-1)  # (num_envs,)
