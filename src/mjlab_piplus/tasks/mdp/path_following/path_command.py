@@ -41,6 +41,7 @@ class PathCommand(CommandTerm):
         max_point_dxy=cfg.max_point_dxy,
         num_waypoints=cfg.num_waypoints,
         curvature_limit=cfg.curvature_limit,
+        point_spacing=cfg.point_spacing,
         device=self.device,
       )
     self.command_b = torch.zeros(
@@ -59,11 +60,12 @@ class PathCommand(CommandTerm):
     ``pathlib_size`` paths on every training run.
     """
     cache_dir = Path(cfg.cache_dir or (Path(__file__).parent / "path_cache"))
-    # resolution is not exposed on the cfg; keep it in sync with the default
+    # max_points is not exposed on the cfg; keep it in sync with the default
     # used by generate_parametric_paths so the key stays correct.
     fname = (
       f"pathlib_n{cfg.pathlib_size}_wp{cfg.num_waypoints}"
-      f"_dxy{cfg.max_point_dxy}_curv{cfg.curvature_limit}_res1000.pt"
+      f"_dxy{cfg.max_point_dxy}_curv{cfg.curvature_limit}"
+      f"_sp{cfg.point_spacing}_mp1500.pt"
     )
     cache_path = cache_dir / fname
 
@@ -77,6 +79,7 @@ class PathCommand(CommandTerm):
       max_point_dxy=cfg.max_point_dxy,
       num_waypoints=cfg.num_waypoints,
       curvature_limit=cfg.curvature_limit,
+      point_spacing=cfg.point_spacing,
       device=self.device,
       progress=True,
     )
@@ -118,6 +121,7 @@ class PathCommand(CommandTerm):
         max_point_dxy=self.cfg.max_point_dxy,
         num_waypoints=self.cfg.num_waypoints,
         curvature_limit=self.cfg.curvature_limit,
+        point_spacing=self.cfg.point_spacing,
         device=self.device,
       )
       if self.align:
@@ -252,6 +256,7 @@ class PathCommandCfg(CommandTermCfg):
   num_waypoints: int = 4  # Number of waypoints in the generated path.
   curvature_limit: float = 10.0  # Max curvature; higher allows sharper turns.
   max_point_dxy: float = 3.0  # Max change in x/y between consecutive waypoints.
+  point_spacing: float = 0.01  # Euclidean (arc-length) spacing between path samples, meters.
   num_observations: int = 20  # Number of future path points in the command obs.
   observation_spacing: int = 15  # Spacing between observed path points.
   use_pathlib: bool = True

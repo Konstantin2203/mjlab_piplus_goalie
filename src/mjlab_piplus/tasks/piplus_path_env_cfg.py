@@ -144,7 +144,7 @@ def piplus_path_env_cfg(
         "reward_name": "path_progress_reward",
         "weight_stages": [
           {"step": 0, "weight": 0.0},
-          {"step": 400 * 24, "weight": 0.5},
+          {"step": 400 * 24, "weight": 1.0},
         ],
       },
     )
@@ -174,7 +174,7 @@ def piplus_path_env_cfg(
     # weights so play shows the trained behavior.
     cfg.commands["path"].pathlib_size = 1000
     cfg.commands["path"].resampling_time_range = (30.0, 30.0)
-    cfg.rewards["path_progress_reward"].weight = 0.5
+    cfg.rewards["path_progress_reward"].weight = 1.0
     cfg.rewards["close_to_path_reward"].weight = 2.0
     cfg.rewards["alignment_with_path_reward"].weight = 2.0
 
