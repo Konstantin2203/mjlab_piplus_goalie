@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import hashlib
 import math
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 import torch
@@ -16,12 +17,60 @@ if TYPE_CHECKING:
   from mjlab.viewer.debug_visualizer import DebugVisualizer
 
 from mjlab_piplus.tasks.mdp.path_following.path_gen import generate_parametric_paths
+from mjlab_piplus.tasks.mdp.path_following.path_gen_astar import (
+  OBSTACLE_KIND_CYLINDER,
+  ObstacleWorldCfg,
+  generate_astar_paths,
+)
 from mjlab_piplus.tasks.mdp.path_following.utils import (
   angle_distance,
   heading_from_quat,
   inv_mat,
   xy_yaw_to_mat,
 )
+
+_OBSTACLE_COLOR = (0.55, 0.55, 0.6, 0.6)
+_OBSTACLE_EDGE_RADIUS = 0.02
+
+
+def _add_box_wireframe(
+  visualizer: DebugVisualizer,
+  x: float,
+  y: float,
+  yaw: float,
+  half_x: float,
+  half_y: float,
+  height: float,
+) -> None:
+  """Draw a ground-standing box as its 12 edges.
+
+  The debug visualizer has no box primitive, so each edge is a thin cylinder.
+  """
+  cos_yaw, sin_yaw = math.cos(yaw), math.sin(yaw)
+  corners = []
+  for sign_x, sign_y in ((-1, -1), (1, -1), (1, 1), (-1, 1)):
+    local_x, local_y = sign_x * half_x, sign_y * half_y
+    corners.append(
+      (
+        x + cos_yaw * local_x - sin_yaw * local_y,
+        y + sin_yaw * local_x + cos_yaw * local_y,
+      )
+    )
+  for i, (cx, cy) in enumerate(corners):
+    nx, ny = corners[(i + 1) % 4]
+    for z in (0.0, height):  # Bottom and top face edges.
+      visualizer.add_cylinder(
+        np.array([cx, cy, z]),
+        np.array([nx, ny, z]),
+        radius=_OBSTACLE_EDGE_RADIUS,
+        color=_OBSTACLE_COLOR,
+      )
+    visualizer.add_cylinder(  # Vertical edge.
+      np.array([cx, cy, 0.0]),
+      np.array([cx, cy, height]),
+      radius=_OBSTACLE_EDGE_RADIUS,
+      color=_OBSTACLE_COLOR,
+    )
 
 
 class PathCommand(CommandTerm):
@@ -31,20 +80,20 @@ class PathCommand(CommandTerm):
     self.align = False
     self.global_command_counter = 0
     if cfg.use_pathlib:
-      self.all_paths, self.all_waypoints = self._load_or_generate_pathlib(cfg)
+      (
+        self.all_paths,
+        self.all_waypoints,
+        self.all_obstacles,
+      ) = self._load_or_generate_pathlib(cfg)
       # randomly select a path for each environment
       indices = torch.randint(0, cfg.pathlib_size, (self.num_envs,), device=self.device)
       self.paths = self.all_paths[indices]
       self.waypoints = self.all_waypoints[indices]
-    else:
-      self.paths, self.waypoints = generate_parametric_paths(
-        num_paths=self.num_envs,
-        max_point_dxy=cfg.max_point_dxy,
-        num_waypoints=cfg.num_waypoints,
-        curvature_limit=cfg.curvature_limit,
-        point_spacing=cfg.point_spacing,
-        device=self.device,
+      self.obstacles = (
+        self.all_obstacles[indices] if self.all_obstacles is not None else None
       )
+    else:
+      self.paths, self.waypoints, self.obstacles = self._generate(self.num_envs)
     # Command obs = N future path points [x, y] in the base frame, followed by
     # the goal orientation encoded as (cos(yaw_err), sin(yaw_err)).
     self.command_b = torch.zeros(
@@ -58,50 +107,95 @@ class PathCommand(CommandTerm):
     self.near_goal = torch.zeros(
       self.num_envs, dtype=torch.bool, device=self.device
     )
+    self.at_goal = torch.zeros(
+      self.num_envs, dtype=torch.bool, device=self.device
+    )
     # Twist command whose stand flag we drive near the goal (resolved lazily).
     self._twist_term = None
     self._update_robot_pose()
 
+  def _generate(
+    self, num_paths: int, progress: bool = False
+  ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None]:
+    """Generate ``num_paths`` paths with the configured generator.
+
+    Returns ``(paths, waypoints, obstacles)``. ``obstacles`` is None for the
+    parametric generator, which draws its paths through empty space.
+    """
+    cfg = self.cfg
+    if cfg.generator == "astar":
+      return generate_astar_paths(
+        num_paths=num_paths,
+        cfg=cfg.obstacle_world,
+        point_spacing=cfg.point_spacing,
+        num_waypoints=cfg.num_waypoints,
+        max_points=cfg.max_points,
+        seed=cfg.generation_seed,
+        device=self.device,
+        progress=progress,
+        num_workers=cfg.num_workers,
+      )
+    paths, waypoints = generate_parametric_paths(
+      num_paths=num_paths,
+      max_point_dxy=cfg.max_point_dxy,
+      num_waypoints=cfg.num_waypoints,
+      curvature_limit=cfg.curvature_limit,
+      point_spacing=cfg.point_spacing,
+      max_points=cfg.max_points,
+      device=self.device,
+      progress=progress,
+    )
+    return paths, waypoints, None
+
   def _load_or_generate_pathlib(
     self, cfg: PathCommandCfg
-  ) -> tuple[torch.Tensor, torch.Tensor]:
+  ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None]:
     """Load the pre-generated path library from disk, or generate and cache it.
 
-    Path generation is deterministic (``generate_parametric_paths`` seeds numpy
-    with 0), so the library is fully determined by the generation parameters.
-    We key the cache file on those params; a cache hit skips regenerating all
-    ``pathlib_size`` paths on every training run.
+    Both generators are deterministically seeded, so the library is fully
+    determined by the generation parameters. We key the cache file on those
+    params; a cache hit skips regenerating all ``pathlib_size`` paths on every
+    training run.
     """
     cache_dir = Path(cfg.cache_dir or (Path(__file__).parent / "path_cache"))
-    # max_points is not exposed on the cfg; keep it in sync with the default
-    # used by generate_parametric_paths so the key stays correct.
-    fname = (
-      f"pathlib_n{cfg.pathlib_size}_wp{cfg.num_waypoints}"
-      f"_dxy{cfg.max_point_dxy}_curv{cfg.curvature_limit}"
-      f"_sp{cfg.point_spacing}_mp1500.pt"
-    )
+    if cfg.generator == "astar":
+      # The obstacle world has far too many knobs to spell out in a filename;
+      # hash them instead.
+      key = hashlib.sha1(
+        repr(
+          (
+            cfg.obstacle_world.cache_key(),
+            cfg.point_spacing,
+            cfg.num_waypoints,
+            cfg.max_points,
+            cfg.generation_seed,
+          )
+        ).encode()
+      ).hexdigest()[:12]
+      fname = f"astar_pathlib_n{cfg.pathlib_size}_{key}.pt"
+    else:
+      fname = (
+        f"pathlib_n{cfg.pathlib_size}_wp{cfg.num_waypoints}"
+        f"_dxy{cfg.max_point_dxy}_curv{cfg.curvature_limit}"
+        f"_sp{cfg.point_spacing}_mp{cfg.max_points}.pt"
+      )
     cache_path = cache_dir / fname
 
     if cache_path.exists():
       print(f"Loading cached path library from {cache_path}")
       data = torch.load(cache_path, map_location=self.device)
-      return data["paths"], data["waypoints"]
+      return data["paths"], data["waypoints"], data.get("obstacles")
 
-    all_paths, all_waypoints = generate_parametric_paths(
-      num_paths=cfg.pathlib_size,
-      max_point_dxy=cfg.max_point_dxy,
-      num_waypoints=cfg.num_waypoints,
-      curvature_limit=cfg.curvature_limit,
-      point_spacing=cfg.point_spacing,
-      device=self.device,
-      progress=True,
+    all_paths, all_waypoints, all_obstacles = self._generate(
+      cfg.pathlib_size, progress=True
     )
     cache_dir.mkdir(parents=True, exist_ok=True)
-    torch.save(
-      {"paths": all_paths.cpu(), "waypoints": all_waypoints.cpu()}, cache_path
-    )
+    payload = {"paths": all_paths.cpu(), "waypoints": all_waypoints.cpu()}
+    if all_obstacles is not None:
+      payload["obstacles"] = all_obstacles.cpu()
+    torch.save(payload, cache_path)
     print(f"Cached path library to {cache_path}")
-    return all_paths, all_waypoints
+    return all_paths, all_waypoints, all_obstacles
 
   @property
   def command(self) -> torch.Tensor:
@@ -123,33 +217,30 @@ class PathCommand(CommandTerm):
         indices = torch.randint(
           0, self.cfg.pathlib_size, (len(env_ids),), device=self.device
         )
-      if self.align:
-        self.paths[env_ids] = self.all_paths[indices]
-        self.paths[env_ids, :, :2] += self.current_pose[env_ids, :2].unsqueeze(1)
-        self.waypoints[env_ids] = (
-          self.all_waypoints[indices] + self.current_pose[env_ids, :2].unsqueeze(1)
-        )
-      else:
-        self.paths[env_ids] = self.all_paths[indices]
-        self.waypoints[env_ids] = self.all_waypoints[indices]
-    else:
-      paths, waypoints = generate_parametric_paths(
-        num_paths=len(env_ids),
-        max_point_dxy=self.cfg.max_point_dxy,
-        num_waypoints=self.cfg.num_waypoints,
-        curvature_limit=self.cfg.curvature_limit,
-        point_spacing=self.cfg.point_spacing,
-        device=self.device,
+      paths = self.all_paths[indices]
+      waypoints = self.all_waypoints[indices]
+      obstacles = (
+        self.all_obstacles[indices] if self.all_obstacles is not None else None
       )
-      if self.align:
-        self.paths[env_ids] = paths
-        self.paths[env_ids, :, :2] += self.current_pose[env_ids, :2].unsqueeze(1)
-        self.waypoints[env_ids] = (
-          waypoints + self.current_pose[env_ids, :2].unsqueeze(1)
-        )
-      else:
-        self.paths[env_ids] = paths
-        self.waypoints[env_ids] = waypoints
+    else:
+      paths, waypoints, obstacles = self._generate(len(env_ids))
+
+    self.paths[env_ids] = paths
+    self.waypoints[env_ids] = waypoints
+    if obstacles is not None:
+      assert self.obstacles is not None
+      self.obstacles[env_ids] = obstacles
+    if self.align:
+      # Paths are generated in their start frame; shift them — and the obstacle
+      # world around them — onto the robot's current position.
+      offset = self.current_pose[env_ids, :2].unsqueeze(1)
+      self.paths[env_ids, :, :2] += offset
+      self.waypoints[env_ids] += offset
+      if obstacles is not None:
+        assert self.obstacles is not None
+        # Columns 1:3 are the obstacle center. Padding slots are shifted too,
+        # which is harmless: the kind check skips them at draw time.
+        self.obstacles[env_ids, :, 1:3] += offset
 
     if self.cfg.eval_mode:
       # write waypoints to csv
@@ -231,11 +322,20 @@ class PathCommand(CommandTerm):
     )  # (num_envs, num_observations*2)
 
     # Goal state: distance to the final waypoint and orientation error to the
-    # sampled goal yaw (both used by the rewards and the stand trigger).
+    # sampled goal yaw.
     heading = self.current_pose[:, 2]
     self.dist_to_goal = torch.norm(self.waypoints[:, -1, :] - root_pos, dim=-1)
     self.yaw_err = angle_distance(heading, self.goal_yaw_w)  # wrap(goal - heading)
+    # near_goal: position only. Used by the path rewards (progress/alignment
+    # saturate to max) so the robot is not penalized while settling at the goal.
     self.near_goal = self.dist_to_goal < self.cfg.near_goal_threshold
+    # at_goal: position AND orientation within threshold. Used only to trigger
+    # the stand. Requiring the orientation too means the gait stays active while
+    # the robot turns onto the goal heading, and only freezes once it is fully
+    # on the goal pose.
+    self.at_goal = self.near_goal & (
+      self.yaw_err.abs() < self.cfg.near_goal_yaw_threshold
+    )
 
     # Append the goal orientation as (cos(yaw_err), sin(yaw_err)): continuous,
     # egocentric, and mirrors as [1, -1] like the path-point pairs.
@@ -244,9 +344,10 @@ class PathCommand(CommandTerm):
     )  # (num_envs, 2)
     self.command_b = torch.cat([path_obs, orient], dim=-1)
 
-    # Near the goal, ask the (hidden) twist command to stand: this freezes the
-    # gait phase and gates off the phase-based rewards so the robot stands still.
-    self._set_twist_stand(self.near_goal)
+    # At the goal pose (position + orientation), ask the (hidden) twist command
+    # to stand: this freezes the gait phase and gates off the phase-based rewards
+    # so the robot stands still.
+    #self._set_twist_stand(self.at_goal)
 
     if self.cfg.eval_mode:
       # hacky calculate metrics
@@ -272,10 +373,33 @@ class PathCommand(CommandTerm):
         print("Reached goal, resetting env")
         self._env.reset()
 
+  def _draw_obstacles(self, visualizer: DebugVisualizer, batch: int) -> None:
+    """Draw the (virtual) obstacle world the path was planned through.
+
+    The obstacles only ever exist in the planner — no MuJoCo geometry is created
+    for them and the robot cannot collide with them — so this is the only place
+    they become visible.
+    """
+    if self.obstacles is None:
+      return
+    for kind, x, y, yaw, a, b, half_height in self.obstacles[batch].cpu().numpy():
+      if kind < 0:  # Empty slot.
+        continue
+      if kind == OBSTACLE_KIND_CYLINDER:
+        visualizer.add_cylinder(
+          np.array([x, y, 0.0]),
+          np.array([x, y, 2.0 * half_height]),
+          radius=float(a),
+          color=_OBSTACLE_COLOR,
+        )
+      else:
+        _add_box_wireframe(visualizer, x, y, yaw, a, b, 2.0 * half_height)
+
   def _debug_vis_impl(self, visualizer: DebugVisualizer) -> None:
     self._update_robot_pose()
     env_indices = visualizer.get_env_indices(self.num_envs)
     for batch in env_indices:
+      self._draw_obstacles(visualizer, batch)
       for i in range(self.paths.shape[1]):
         path_point_with_z = np.concatenate(
           [self.paths[batch, i, :2].cpu().numpy(), [0.0]]
@@ -321,10 +445,33 @@ class PathCommandCfg(CommandTermCfg):
   """Range (radians) from which the goal orientation (world yaw) is sampled."""
   near_goal_threshold: float = 0.3
   """Distance (m) to the final waypoint under which the robot is "near the goal":
-  progress/alignment rewards saturate to their max and the twist command is set
-  to stand (freezing the gait) so the robot stands still at the goal."""
+  the progress/alignment rewards saturate to their max so the robot is not
+  penalized while settling onto the goal."""
+  near_goal_yaw_threshold: float = 0.3
+  """Additional orientation gate (radians) for the *stand* trigger. The twist
+  command is set to stand (freezing the gait) only once the robot is both within
+  ``near_goal_threshold`` and within this yaw error of the goal orientation, so
+  the gait stays active while it turns onto the goal heading."""
   twist_command_name: str = "twist"
-  """Name of the velocity command whose stand flag is driven near the goal."""
+  """Name of the velocity command whose stand flag is driven at the goal pose."""
+  max_points: int = 1500  # Samples stored per path (also the padded length).
+  generator: Literal["spline", "astar"] = "spline"
+  """How paths are generated.
+
+  - ``spline``: a random b-spline through empty space (``path_gen.py``).
+  - ``astar``: A* through a randomly generated field of cubes and cylinders
+    (``path_gen_astar.py``), so the path corners around obstacles. The obstacles
+    are *virtual*: they are drawn in the viewer but never simulated, so the robot
+    can still walk straight through them — only the reference path knows about
+    them.
+  """
+  obstacle_world: ObstacleWorldCfg = field(default_factory=ObstacleWorldCfg)
+  """Obstacle sampling and planning parameters for the ``astar`` generator."""
+  generation_seed: int = 0
+  """Master seed for the ``astar`` generator; also part of its cache key."""
+  num_workers: int | None = None
+  """Processes used to generate the ``astar`` library. None picks a default;
+  results are identical regardless of the worker count."""
   use_pathlib: bool = True
   pathlib_size: int = 50_000
   cache_dir: str | None = None  # Directory for the cached path library
@@ -340,4 +487,9 @@ class PathCommandCfg(CommandTermCfg):
     return PathCommand(self, env)
 
   def __post_init__(self):
-    pass
+    if self.generator == "astar" and not self.use_pathlib:
+      raise ValueError(
+        "generator='astar' requires use_pathlib=True: planning a fresh A* path "
+        "for every env on every reset is far too slow. Generate the library "
+        "once (it is cached to disk) and sample from it instead."
+      )

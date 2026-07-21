@@ -20,3 +20,12 @@ register_mjlab_task(
   rl_cfg=get_piplus_path_rl_cfg(),
   runner_cls=VelocityOnPolicyRunner,
 )
+# Same task, but the reference paths are planned with A* through a random
+# obstacle world (virtual obstacles: drawn in the viewer, never simulated).
+register_mjlab_task(
+  task_id="Mjlab-Path-Obstacles-PiPlus",
+  env_cfg=piplus_path_env_cfg(obstacles=True),
+  play_env_cfg=piplus_path_env_cfg(play=True, obstacles=True),
+  rl_cfg=get_piplus_path_rl_cfg(),
+  runner_cls=VelocityOnPolicyRunner,
+)

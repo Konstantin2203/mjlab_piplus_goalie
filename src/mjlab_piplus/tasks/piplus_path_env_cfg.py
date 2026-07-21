@@ -8,6 +8,7 @@ from mjlab.tasks.velocity import mdp
 
 from mjlab_piplus.tasks import mdp as pi_mdp
 from mjlab_piplus.tasks.mdp.path_following import (
+  ObstacleWorldCfg,
   PathCommandCfg,
   align_with_path_reward,
   close_to_path_reward,
@@ -18,8 +19,17 @@ from mjlab_piplus.tasks.piplus_velocity_env_cfg import piplus_velocity_env_cfg
 
 
 def piplus_path_env_cfg(
-  play: bool = False, static: bool = False
+  play: bool = False, static: bool = False, obstacles: bool = False
 ) -> ManagerBasedRlEnvCfg:
+  """Path-following env.
+
+  Args:
+    obstacles: If True, reference paths are planned with A* through a random
+      field of cubes and cylinders instead of being free-space b-splines, so the
+      robot has to walk corners and detours. The obstacles themselves are
+      virtual — drawn in the viewer, never simulated — so nothing about the
+      scene, contacts or terminations changes.
+  """
   # Start from the velocity task; change only what the path task needs.
   cfg = piplus_velocity_env_cfg(play=play, static=static)
 
@@ -34,6 +44,9 @@ def piplus_path_env_cfg(
     resampling_time_range=(1.0e6, 1.0e6),
     num_observations=8,
   )
+  if obstacles:
+    cfg.commands["path"].generator = "astar"
+    cfg.commands["path"].obstacle_world = ObstacleWorldCfg()
   # fake a command twist command for the rewards to work
   cfg.commands["twist"] = pi_mdp.UniformVelocityCommandWithStopCfg(
       entity_name="robot",
@@ -78,8 +91,12 @@ def piplus_path_env_cfg(
       "command_name": "path",
       "asset_cfg": SceneEntityCfg("robot", body_names=("base_link",)),
       "foot_asset_cfg": foot_asset_cfg,
-      "threshold": 0.05,
-      "orientation_threshold": 0.2,  # radians (~11 deg) to the goal yaw.
+      # Dense goal-pose reward: Gaussian widths on position (m) and goal-yaw (rad).
+      "pos_std": 0.25,
+      "yaw_std": 0.5,
+      # Thresholds for the logged success-rate metric only (not the reward).
+      "success_threshold": 0.05,
+      "success_yaw_threshold": 0.2,
     },
   )
   cfg.rewards["close_to_path_reward"] = RewardTermCfg(
@@ -143,5 +160,9 @@ def piplus_path_env_cfg(
     # weights so play shows the trained behavior.
     cfg.commands["path"].pathlib_size = 1000
     cfg.commands["path"].resampling_time_range = (30.0, 30.0)
+    if obstacles:
+      # Keep the play library small enough to generate in a few seconds, but
+      # not so small that every episode shows the same worlds.
+      cfg.commands["path"].pathlib_size = 200
 
   return cfg

@@ -105,12 +105,12 @@ class path_progress_reward:
     speed = progress_idx.float() * command.cfg.point_spacing / env.step_dt  # m/s
     # Cap the reward: no bonus for exceeding max_speed (still negative if moving
     # backwards, which the policy should be free to correct without a floor).
+    # Raw clamped speed (no near-goal saturation): this is telescoping, so it is
+    # not farmable (forward gives +delta, backward -delta, a back-and-forth nets
+    # ~0). Advancing the final stretch keeps earning progress, so the robot walks
+    # all the way to the goal; once stopped there, closest_index is pinned at the
+    # end and progress is simply 0 (no penalty, no reward to oscillate for).
     reward = torch.clamp(speed, max=max_speed)
-    # At the goal there is no more progress to make: saturate to the max so the
-    # robot is not penalized for stopping (it should stand still there).
-    reward = torch.where(
-      command.near_goal, torch.full_like(reward, max_speed), reward
-    )
     env.extras["log"]["Metrics/mean_path_progress_mps"] = torch.mean(speed).item()
 
     self.prev_closest_waypoint_indices = closest_waypoint_indices.clone()
@@ -172,10 +172,13 @@ def align_with_path_reward(
   headings = heading_from_quat(root_quat)  # (num_envs,)
 
   abs_angle_diff = torch.abs(angle_distance(headings, path_headings))  # (num_envs,)
-  reward = torch.exp(-abs_angle_diff / std**2)
-  # Near the goal the path tangent is ill-defined and irrelevant (the robot
-  # should hold the goal orientation and stand), so saturate the reward to max.
-  reward = torch.where(command.near_goal, torch.ones_like(reward), reward)
+  # Near the goal the path tangent is ill-defined; switch the alignment target
+  # from the path tangent to the goal orientation so there is a dense gradient to
+  # turn onto the goal heading. This is state-based (a function of yaw error), so
+  # it is not farmable and reaches its max only when actually facing the goal.
+  goal_angle_diff = command.yaw_err.abs()  # (num_envs,)
+  angle_err = torch.where(command.near_goal, goal_angle_diff, abs_angle_diff)
+  reward = torch.exp(-angle_err / std**2)
   env.extras["log"]["Metrics/mean_abs_angle_diff"] = torch.mean(abs_angle_diff).item()
   env.extras["log"]["Metrics/mean_align_with_path_reward"] = torch.mean(reward).item()
   return reward
@@ -186,21 +189,32 @@ def goal_reached(
   command_name: str,
   asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
   foot_asset_cfg: SceneEntityCfg = _DEFAULT_FOOT_CFG,
-  threshold: float = 0.1,
-  orientation_threshold: float = 0.2,
+  pos_std: float = 0.25,
+  yaw_std: float = 0.5,
+  success_threshold: float = 0.1,
+  success_yaw_threshold: float = 0.2,
 ) -> torch.Tensor:
-  """Rewards reaching the goal pose: final-waypoint distance AND goal-orientation
-  error both below their thresholds."""
+  """Dense goal-pose reward: a product of Gaussians on the distance to the final
+  waypoint and on the orientation error to the goal yaw.
+
+      exp(-dist^2 / pos_std^2) * exp(-yaw_err^2 / yaw_std^2)
+
+  The product gates orientation by proximity: far from the goal the position
+  term is ~0 (so facing the goal yaw is not rewarded and does not fight
+  path-following), while near the goal it gives a smooth gradient to both slide
+  onto the goal position and turn to the goal heading. ``success_*`` thresholds
+  only drive the logged success-rate metric, not the reward."""
   del asset_cfg  # Position comes from the base footprint (feet), not the root.
   command = env.command_manager.get_term(command_name)
   assert command is not None, f"Command '{command_name}' not found."
   root_position = base_footprint_xy(env, foot_asset_cfg)
-  waypoints = command.paths[..., :2]  # (num_envs, num_waypoints, 2)
-  final_waypoints = waypoints[..., -1, :]  # (num_envs, 2)
-  dists = torch.norm(final_waypoints - root_position, dim=-1)  # (num_envs,)
-  reached_pos = dists < threshold
+  final_waypoints = command.paths[..., -1, :2]  # (num_envs, 2)
+  dist = torch.norm(final_waypoints - root_position, dim=-1)  # (num_envs,)
   # yaw_err is wrap(goal_yaw - heading), updated by the command each step.
-  reached_orient = command.yaw_err.abs() < orientation_threshold
-  reward = (reached_pos & reached_orient).float()
-  env.extras["log"]["Metrics/goal_reached"] = torch.mean(reward).item()
+  yaw_err = command.yaw_err.abs()  # (num_envs,)
+  reward = torch.exp(-dist**2 / pos_std**2) * torch.exp(-yaw_err**2 / yaw_std**2)
+  success = (dist < success_threshold) & (yaw_err < success_yaw_threshold)
+  env.extras["log"]["Metrics/goal_reached_reward"] = torch.mean(reward).item()
+  env.extras["log"]["Metrics/goal_success_rate"] = torch.mean(success.float()).item()
+  env.extras["log"]["Metrics/mean_dist_to_goal"] = torch.mean(dist).item()
   return reward
