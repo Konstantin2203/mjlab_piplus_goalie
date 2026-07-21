@@ -12,7 +12,8 @@ from mjlab_piplus.tasks.mdp.path_following import (
   PathCommandCfg,
   align_with_path_reward,
   close_to_path_reward,
-  goal_reached,
+  goal_reached_angular,
+  goal_reached_linear,
   path_progress_reward,
 )
 from mjlab_piplus.tasks.piplus_velocity_env_cfg import piplus_velocity_env_cfg
@@ -84,19 +85,31 @@ def piplus_path_env_cfg(
   # midpoint between the two feet), so ``foot_asset_cfg`` carries the foot sites.
   foot_asset_cfg = SceneEntityCfg("robot", site_names=("l_foot", "r_foot"))
   # Path rewards are active from the start (full weight, no ramp-in curriculum).
-  cfg.rewards["goal_reached_reward"] = RewardTermCfg(
-    func=goal_reached,
-    weight=1.0,
+  # Dense goal-pose reward split into independently-weighted position and
+  # orientation terms (the combined product was too weak). Linear: exp(-dist^2).
+  # Angular: same position gate * exp(-yaw_err^2), so orientation only counts
+  # near the goal and does not fight path-following.
+  cfg.rewards["goal_reached_linear_reward"] = RewardTermCfg(
+    func=goal_reached_linear,
+    weight=3.0,
     params={
       "command_name": "path",
       "asset_cfg": SceneEntityCfg("robot", body_names=("base_link",)),
       "foot_asset_cfg": foot_asset_cfg,
-      # Dense goal-pose reward: Gaussian widths on position (m) and goal-yaw (rad).
-      "pos_std": 0.25,
-      "yaw_std": 0.5,
-      # Thresholds for the logged success-rate metric only (not the reward).
-      "success_threshold": 0.05,
-      "success_yaw_threshold": 0.2,
+      "pos_std": 0.25,  # Gaussian width on goal distance (m).
+      "success_threshold": 0.05,  # logged success-rate metric only.
+    },
+  )
+  cfg.rewards["goal_reached_angular_reward"] = RewardTermCfg(
+    func=goal_reached_angular,
+    weight=3.0,
+    params={
+      "command_name": "path",
+      "asset_cfg": SceneEntityCfg("robot", body_names=("base_link",)),
+      "foot_asset_cfg": foot_asset_cfg,
+      "pos_std": 0.25,  # position gate width (m); matches the linear term.
+      "yaw_std": 0.5,  # Gaussian width on goal-yaw error (rad).
+      "success_yaw_threshold": 0.2,  # logged success-rate metric only.
     },
   )
   cfg.rewards["close_to_path_reward"] = RewardTermCfg(

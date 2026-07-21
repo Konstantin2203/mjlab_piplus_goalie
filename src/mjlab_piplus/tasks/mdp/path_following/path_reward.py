@@ -184,37 +184,64 @@ def align_with_path_reward(
   return reward
 
 
-def goal_reached(
+def _goal_dist(env: ManagerBasedRlEnv, command, foot_asset_cfg: SceneEntityCfg):
+  """Base-footprint distance to the final waypoint (goal position)."""
+  root_position = base_footprint_xy(env, foot_asset_cfg)
+  final_waypoints = command.paths[..., -1, :2]  # (num_envs, 2)
+  return torch.norm(final_waypoints - root_position, dim=-1)  # (num_envs,)
+
+
+def goal_reached_linear(
+  env: ManagerBasedRlEnv,
+  command_name: str,
+  asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+  foot_asset_cfg: SceneEntityCfg = _DEFAULT_FOOT_CFG,
+  pos_std: float = 0.25,
+  success_threshold: float = 0.1,
+) -> torch.Tensor:
+  """Dense reward for reaching the goal position: ``exp(-dist^2 / pos_std^2)``.
+
+  Split out from the orientation term so each can be weighted independently.
+  ``success_threshold`` only drives the logged success-rate metric."""
+  del asset_cfg  # Position comes from the base footprint (feet), not the root.
+  command = env.command_manager.get_term(command_name)
+  assert command is not None, f"Command '{command_name}' not found."
+  dist = _goal_dist(env, command, foot_asset_cfg)
+  reward = torch.exp(-dist**2 / pos_std**2)
+  env.extras["log"]["Metrics/goal_reached_linear"] = torch.mean(reward).item()
+  env.extras["log"]["Metrics/goal_success_rate_linear"] = torch.mean(
+    (dist < success_threshold).float()
+  ).item()
+  env.extras["log"]["Metrics/mean_dist_to_goal"] = torch.mean(dist).item()
+  return reward
+
+
+def goal_reached_angular(
   env: ManagerBasedRlEnv,
   command_name: str,
   asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
   foot_asset_cfg: SceneEntityCfg = _DEFAULT_FOOT_CFG,
   pos_std: float = 0.25,
   yaw_std: float = 0.5,
-  success_threshold: float = 0.1,
   success_yaw_threshold: float = 0.2,
 ) -> torch.Tensor:
-  """Dense goal-pose reward: a product of Gaussians on the distance to the final
-  waypoint and on the orientation error to the goal yaw.
+  """Dense reward for reaching the goal orientation, gated by proximity so it
+  only applies near the goal:
 
       exp(-dist^2 / pos_std^2) * exp(-yaw_err^2 / yaw_std^2)
 
-  The product gates orientation by proximity: far from the goal the position
-  term is ~0 (so facing the goal yaw is not rewarded and does not fight
-  path-following), while near the goal it gives a smooth gradient to both slide
-  onto the goal position and turn to the goal heading. ``success_*`` thresholds
-  only drive the logged success-rate metric, not the reward."""
+  The position gate (same ``pos_std`` as the linear term) means facing the goal
+  yaw far away is not rewarded and does not fight path-following; near the goal
+  it gives a smooth gradient to turn onto the goal heading. ``success_yaw_*``
+  only drives the logged success-rate metric."""
   del asset_cfg  # Position comes from the base footprint (feet), not the root.
   command = env.command_manager.get_term(command_name)
   assert command is not None, f"Command '{command_name}' not found."
-  root_position = base_footprint_xy(env, foot_asset_cfg)
-  final_waypoints = command.paths[..., -1, :2]  # (num_envs, 2)
-  dist = torch.norm(final_waypoints - root_position, dim=-1)  # (num_envs,)
+  dist = _goal_dist(env, command, foot_asset_cfg)
   # yaw_err is wrap(goal_yaw - heading), updated by the command each step.
   yaw_err = command.yaw_err.abs()  # (num_envs,)
-  reward = torch.exp(-dist**2 / pos_std**2) * torch.exp(-yaw_err**2 / yaw_std**2)
-  success = (dist < success_threshold) & (yaw_err < success_yaw_threshold)
-  env.extras["log"]["Metrics/goal_reached_reward"] = torch.mean(reward).item()
-  env.extras["log"]["Metrics/goal_success_rate"] = torch.mean(success.float()).item()
-  env.extras["log"]["Metrics/mean_dist_to_goal"] = torch.mean(dist).item()
+  pos_gate = torch.exp(-dist**2 / pos_std**2)
+  reward = pos_gate * torch.exp(-yaw_err**2 / yaw_std**2)
+  env.extras["log"]["Metrics/goal_reached_angular"] = torch.mean(reward).item()
+  env.extras["log"]["Metrics/mean_yaw_err_to_goal"] = torch.mean(yaw_err).item()
   return reward
