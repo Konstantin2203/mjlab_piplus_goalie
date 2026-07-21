@@ -91,7 +91,7 @@ def piplus_path_env_cfg(
   # near the goal and does not fight path-following.
   cfg.rewards["goal_reached_linear_reward"] = RewardTermCfg(
     func=goal_reached_linear,
-    weight=3.0,
+    weight=1.0,
     params={
       "command_name": "path",
       "asset_cfg": SceneEntityCfg("robot", body_names=("base_link",)),
@@ -102,7 +102,7 @@ def piplus_path_env_cfg(
   )
   cfg.rewards["goal_reached_angular_reward"] = RewardTermCfg(
     func=goal_reached_angular,
-    weight=3.0,
+    weight=1.0,
     params={
       "command_name": "path",
       "asset_cfg": SceneEntityCfg("robot", body_names=("base_link",)),

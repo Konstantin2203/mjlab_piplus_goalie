@@ -11,9 +11,17 @@ from mjlab.utils.spec_config import CollisionCfg
 
 PIPLUS_XML: Path = Path(os.path.dirname(__file__)) / "piplus/piplus.xml"
 
+VISUAL_RGBA = (0.2, 0.2, 0.2, 1.0)
+"""Dark gray (80% gray) for the robot's visual meshes. The MJCF paints them
+light gray (0.75); they are recolored here so the vendored file stays as
+exported. Collision geoms are named ``*_collision[0-9]`` and are left alone."""
+
 
 def get_spec() -> mujoco.MjSpec:
   spec = mujoco.MjSpec.from_file(str(PIPLUS_XML))
+  for geom in spec.geoms:
+    if geom.type == mujoco.mjtGeom.mjGEOM_MESH and not geom.name:
+      geom.rgba = VISUAL_RGBA
   return spec
 
 

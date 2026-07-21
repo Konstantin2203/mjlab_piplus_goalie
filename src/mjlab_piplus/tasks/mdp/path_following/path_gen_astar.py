@@ -92,7 +92,7 @@ class ObstacleWorldCfg:
   """Full side length of a box, in meters. x and y are sampled independently."""
   cylinder_radius_range: tuple[float, float] = (0.1, 0.5)
   """Radius of a cylinder, in meters."""
-  height_range: tuple[float, float] = (0.3, 1.5)
+  height: float = 1.0
   """Obstacle height, in meters. Visualization only — nothing plans in 3D."""
 
   # Planning.
@@ -156,9 +156,9 @@ class _WorldResult:
 
 def _sample_obstacles(cfg: ObstacleWorldCfg, rng: np.random.Generator) -> np.ndarray:
   """Sample a padded ``(max_obstacles, 7)`` obstacle array for one world."""
-  width, height = cfg.world_size
+  world_x, world_y = cfg.world_size
   density = rng.uniform(*cfg.density_range)
-  num = int(min(round(density * width * height), cfg.max_obstacles))
+  num = int(min(round(density * world_x * world_y), cfg.max_obstacles))
 
   obstacles = np.zeros((cfg.max_obstacles, OBSTACLE_DIM), dtype=np.float64)
   obstacles[:, 0] = OBSTACLE_KIND_NONE
@@ -167,8 +167,8 @@ def _sample_obstacles(cfg: ObstacleWorldCfg, rng: np.random.Generator) -> np.nda
 
   is_cylinder = rng.random(num) < cfg.cylinder_fraction
   obstacles[:num, 0] = np.where(is_cylinder, OBSTACLE_KIND_CYLINDER, OBSTACLE_KIND_BOX)
-  obstacles[:num, 1] = rng.uniform(0.0, width, num)
-  obstacles[:num, 2] = rng.uniform(0.0, height, num)
+  obstacles[:num, 1] = rng.uniform(0.0, world_x, num)
+  obstacles[:num, 2] = rng.uniform(0.0, world_y, num)
   obstacles[:num, 3] = np.where(is_cylinder, 0.0, rng.uniform(-np.pi, np.pi, num))
 
   radius = rng.uniform(*cfg.cylinder_radius_range, num)
@@ -176,7 +176,7 @@ def _sample_obstacles(cfg: ObstacleWorldCfg, rng: np.random.Generator) -> np.nda
   half_y = 0.5 * rng.uniform(*cfg.box_size_range, num)
   obstacles[:num, 4] = np.where(is_cylinder, radius, half_x)
   obstacles[:num, 5] = np.where(is_cylinder, radius, half_y)
-  obstacles[:num, 6] = 0.5 * rng.uniform(*cfg.height_range, num)
+  obstacles[:num, 6] = 0.5 * cfg.height
   return obstacles
 
 

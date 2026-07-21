@@ -408,12 +408,12 @@ def piplus_velocity_env_cfg(
     ),
     "body_ang_vel": RewardTermCfg(
       func=mdp.body_angular_velocity_penalty,
-      weight=-0.05,
+      weight=-0.25,
       params={"asset_cfg": SceneEntityCfg("robot", body_names=("base_link",))},
     ),
     "angular_momentum": RewardTermCfg(
       func=mdp.angular_momentum_penalty,
-      weight=-0.025,
+      weight=-0.1,
       params={"sensor_name": "robot/root_angmom"},
     ),
     "is_terminated": RewardTermCfg(func=mdp.is_terminated, weight=-200.0),

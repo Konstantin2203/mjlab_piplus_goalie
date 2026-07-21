@@ -29,8 +29,38 @@ from mjlab_piplus.tasks.mdp.path_following.utils import (
   xy_yaw_to_mat,
 )
 
-_OBSTACLE_COLOR = (0.55, 0.55, 0.6, 0.6)
+# Dark orange, darkened a little, at half opacity: the obstacles are virtual, so
+# they should read as markers rather than as solid scenery.
+_OBSTACLE_COLOR = (0.65, 0.35, 0.02, 0.5)
 _OBSTACLE_EDGE_RADIUS = 0.02
+
+
+def _add_box(
+  visualizer: DebugVisualizer,
+  x: float,
+  y: float,
+  yaw: float,
+  half_x: float,
+  half_y: float,
+  height: float,
+) -> None:
+  """Draw a solid, ground-standing box.
+
+  Uses the visualizer's ``add_box`` (mjGEOM_BOX in the native viewer, viser's
+  box primitive in viser). ``add_box`` is not part of the ``DebugVisualizer``
+  ABC, so a visualizer without it falls back to a wireframe of thin cylinders.
+  """
+  add_box = getattr(visualizer, "add_box", None)
+  if add_box is None:
+    _add_box_wireframe(visualizer, x, y, yaw, half_x, half_y, height)
+    return
+  cos_yaw, sin_yaw = math.cos(yaw), math.sin(yaw)
+  add_box(
+    np.array([x, y, 0.5 * height]),  # A box is placed at its center.
+    np.array([half_x, half_y, 0.5 * height]),
+    np.array([[cos_yaw, -sin_yaw, 0.0], [sin_yaw, cos_yaw, 0.0], [0.0, 0.0, 1.0]]),
+    _OBSTACLE_COLOR,
+  )
 
 
 def _add_box_wireframe(
@@ -42,9 +72,9 @@ def _add_box_wireframe(
   half_y: float,
   height: float,
 ) -> None:
-  """Draw a ground-standing box as its 12 edges.
+  """Draw a ground-standing box as its 12 edges, one thin cylinder each.
 
-  The debug visualizer has no box primitive, so each edge is a thin cylinder.
+  Fallback for viewers that cannot take a solid box (see :func:`_add_box`).
   """
   cos_yaw, sin_yaw = math.cos(yaw), math.sin(yaw)
   corners = []
@@ -347,7 +377,7 @@ class PathCommand(CommandTerm):
     # At the goal pose (position + orientation), ask the (hidden) twist command
     # to stand: this freezes the gait phase and gates off the phase-based rewards
     # so the robot stands still.
-    #self._set_twist_stand(self.at_goal)
+    self._set_twist_stand(self.at_goal)
 
     if self.cfg.eval_mode:
       # hacky calculate metrics
@@ -393,7 +423,7 @@ class PathCommand(CommandTerm):
           color=_OBSTACLE_COLOR,
         )
       else:
-        _add_box_wireframe(visualizer, x, y, yaw, a, b, 2.0 * half_height)
+        _add_box(visualizer, x, y, yaw, a, b, 2.0 * half_height)
 
   def _debug_vis_impl(self, visualizer: DebugVisualizer) -> None:
     self._update_robot_pose()
