@@ -377,7 +377,8 @@ class PathCommand(CommandTerm):
     # At the goal pose (position + orientation), ask the (hidden) twist command
     # to stand: this freezes the gait phase and gates off the phase-based rewards
     # so the robot stands still.
-    self._set_twist_stand(self.at_goal)
+    # disabled for the moment
+    #self._set_twist_stand(self.at_goal)
 
     if self.cfg.eval_mode:
       # hacky calculate metrics
