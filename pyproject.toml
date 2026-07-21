@@ -27,4 +27,4 @@ ignore = ["B011"]
 
 
 [tool.uv.sources]
-mjlab = { git = "https://github.com/mujocolab/mjlab.git", rev = "12dc0db873209bd33e6e4e5d0d8a2760c468fefc" }
+mjlab = { git = "https://github.com/mujocolab/mjlab.git", tag = "v1.5.2" }
