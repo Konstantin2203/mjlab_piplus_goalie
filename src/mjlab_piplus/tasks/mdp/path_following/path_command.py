@@ -32,7 +32,6 @@ from mjlab_piplus.tasks.mdp.path_following.utils import (
 # Dark orange, darkened a little, at half opacity: the obstacles are virtual, so
 # they should read as markers rather than as solid scenery.
 _OBSTACLE_COLOR = (0.65, 0.35, 0.02, 0.5)
-_OBSTACLE_EDGE_RADIUS = 0.02
 
 
 def _add_box(
@@ -44,63 +43,18 @@ def _add_box(
   half_y: float,
   height: float,
 ) -> None:
-  """Draw a solid, ground-standing box.
+  """Draw a solid box standing on the ground, rotated about z by ``yaw``.
 
-  Uses the visualizer's ``add_box`` (mjGEOM_BOX in the native viewer, viser's
-  box primitive in viser). ``add_box`` is not part of the ``DebugVisualizer``
-  ABC, so a visualizer without it falls back to a wireframe of thin cylinders.
+  ``add_box`` takes the box center and its half extents, so the z terms carry
+  the extra factor of a half.
   """
-  add_box = getattr(visualizer, "add_box", None)
-  if add_box is None:
-    _add_box_wireframe(visualizer, x, y, yaw, half_x, half_y, height)
-    return
   cos_yaw, sin_yaw = math.cos(yaw), math.sin(yaw)
-  add_box(
-    np.array([x, y, 0.5 * height]),  # A box is placed at its center.
+  visualizer.add_box(
+    np.array([x, y, 0.5 * height]),
     np.array([half_x, half_y, 0.5 * height]),
     np.array([[cos_yaw, -sin_yaw, 0.0], [sin_yaw, cos_yaw, 0.0], [0.0, 0.0, 1.0]]),
     _OBSTACLE_COLOR,
   )
-
-
-def _add_box_wireframe(
-  visualizer: DebugVisualizer,
-  x: float,
-  y: float,
-  yaw: float,
-  half_x: float,
-  half_y: float,
-  height: float,
-) -> None:
-  """Draw a ground-standing box as its 12 edges, one thin cylinder each.
-
-  Fallback for viewers that cannot take a solid box (see :func:`_add_box`).
-  """
-  cos_yaw, sin_yaw = math.cos(yaw), math.sin(yaw)
-  corners = []
-  for sign_x, sign_y in ((-1, -1), (1, -1), (1, 1), (-1, 1)):
-    local_x, local_y = sign_x * half_x, sign_y * half_y
-    corners.append(
-      (
-        x + cos_yaw * local_x - sin_yaw * local_y,
-        y + sin_yaw * local_x + cos_yaw * local_y,
-      )
-    )
-  for i, (cx, cy) in enumerate(corners):
-    nx, ny = corners[(i + 1) % 4]
-    for z in (0.0, height):  # Bottom and top face edges.
-      visualizer.add_cylinder(
-        np.array([cx, cy, z]),
-        np.array([nx, ny, z]),
-        radius=_OBSTACLE_EDGE_RADIUS,
-        color=_OBSTACLE_COLOR,
-      )
-    visualizer.add_cylinder(  # Vertical edge.
-      np.array([cx, cy, 0.0]),
-      np.array([cx, cy, height]),
-      radius=_OBSTACLE_EDGE_RADIUS,
-      color=_OBSTACLE_COLOR,
-    )
 
 
 class PathCommand(CommandTerm):
