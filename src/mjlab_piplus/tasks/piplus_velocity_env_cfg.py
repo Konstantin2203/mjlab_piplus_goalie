@@ -559,7 +559,7 @@ def piplus_velocity_env_cfg(
     #"time_out": TerminationTermCfg(func=mdp.time_out, time_out=True),
     "fell_over": TerminationTermCfg(
       func=mdp.bad_orientation,
-      params={"limit_angle": math.radians(45.0)},
+      params={"limit_angle": math.radians(70.0)},
     ),
     # "root_height_below_minimum": TerminationTermCfg(
     #  func=mdp.root_height_below_minimum,
