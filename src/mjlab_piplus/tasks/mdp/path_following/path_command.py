@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -44,9 +45,21 @@ class PathCommand(CommandTerm):
         point_spacing=cfg.point_spacing,
         device=self.device,
       )
+    # Command obs = N future path points [x, y] in the base frame, followed by
+    # the goal orientation encoded as (cos(yaw_err), sin(yaw_err)).
     self.command_b = torch.zeros(
-      self.num_envs, cfg.num_observations * 2, device=self.device
+      self.num_envs, cfg.num_observations * 2 + 2, device=self.device
     )
+    # Goal orientation (world yaw), sampled per path, plus derived per-step state.
+    self.goal_yaw_w = torch.zeros(self.num_envs, device=self.device)
+    self.goal_yaw_w.uniform_(*cfg.goal_yaw_range)
+    self.dist_to_goal = torch.zeros(self.num_envs, device=self.device)
+    self.yaw_err = torch.zeros(self.num_envs, device=self.device)
+    self.near_goal = torch.zeros(
+      self.num_envs, dtype=torch.bool, device=self.device
+    )
+    # Twist command whose stand flag we drive near the goal (resolved lazily).
+    self._twist_term = None
     self._update_robot_pose()
 
   def _load_or_generate_pathlib(
@@ -97,6 +110,10 @@ class PathCommand(CommandTerm):
   def _resample_command(self, env_ids):
     self.starting_step = self._env.common_step_counter
     self._update_robot_pose()
+    # Sample a fresh random goal orientation (world yaw) for the new paths.
+    self.goal_yaw_w[env_ids] = torch.empty(
+      len(env_ids), device=self.device
+    ).uniform_(*self.cfg.goal_yaw_range)
     if self.cfg.use_pathlib:
       if self.cfg.eval_mode:
         indices = torch.tensor(
@@ -144,6 +161,20 @@ class PathCommand(CommandTerm):
           f.write(f"{waypoint_str},")
         f.write(f"{self.global_command_counter}\n")
     self.global_command_counter += 1
+
+  def _set_twist_stand(self, stand: torch.Tensor) -> None:
+    """Drive the twist command's stand flag from a boolean mask (near-goal).
+
+    The twist command runs before this one each step, so overwriting its
+    stand_flag here takes effect for the current step's observation and rewards.
+    """
+    if self._twist_term is None:
+      self._twist_term = self._env.command_manager.get_term(
+        self.cfg.twist_command_name
+      )
+    twist = self._twist_term
+    if twist is not None and hasattr(twist, "stand_flag"):
+      twist.stand_flag[:, 0] = stand.float()
 
   def _update_metrics(self):
     pass
@@ -195,9 +226,27 @@ class PathCommand(CommandTerm):
     future_points_relative = torch.matmul(
       robot_to_world.unsqueeze(1), future_points_in_world_hom
     ).squeeze(-1)  # (num_envs, num_observations, 4)
-    self.command_b = future_points_relative[..., :2].reshape(
+    path_obs = future_points_relative[..., :2].reshape(
       self.num_envs, -1
     )  # (num_envs, num_observations*2)
+
+    # Goal state: distance to the final waypoint and orientation error to the
+    # sampled goal yaw (both used by the rewards and the stand trigger).
+    heading = self.current_pose[:, 2]
+    self.dist_to_goal = torch.norm(self.waypoints[:, -1, :] - root_pos, dim=-1)
+    self.yaw_err = angle_distance(heading, self.goal_yaw_w)  # wrap(goal - heading)
+    self.near_goal = self.dist_to_goal < self.cfg.near_goal_threshold
+
+    # Append the goal orientation as (cos(yaw_err), sin(yaw_err)): continuous,
+    # egocentric, and mirrors as [1, -1] like the path-point pairs.
+    orient = torch.stack(
+      [torch.cos(self.yaw_err), torch.sin(self.yaw_err)], dim=-1
+    )  # (num_envs, 2)
+    self.command_b = torch.cat([path_obs, orient], dim=-1)
+
+    # Near the goal, ask the (hidden) twist command to stand: this freezes the
+    # gait phase and gates off the phase-based rewards so the robot stands still.
+    self._set_twist_stand(self.near_goal)
 
     if self.cfg.eval_mode:
       # hacky calculate metrics
@@ -238,6 +287,15 @@ class PathCommand(CommandTerm):
         )
         visualizer.add_sphere(waypoint_with_z, radius=0.05, color=(0, 1, 0, 1))
 
+      # Goal orientation arrow at the final waypoint (cyan).
+      goal_xy = self.waypoints[batch, -1].cpu().numpy()
+      gyaw = float(self.goal_yaw_w[batch].cpu())
+      goal_from = np.array([goal_xy[0], goal_xy[1], 0.05])
+      goal_to = goal_from + np.array(
+        [0.3 * math.cos(gyaw), 0.3 * math.sin(gyaw), 0.0]
+      )
+      visualizer.add_arrow(goal_from, goal_to, color=(0.0, 1.0, 1.0, 0.9), width=0.02)
+
       world_to_robot = (
         xy_yaw_to_mat(self.current_pose[batch : batch + 1]).cpu().numpy()
       )  # (1, 4, 4)
@@ -259,6 +317,14 @@ class PathCommandCfg(CommandTermCfg):
   point_spacing: float = 0.01  # Euclidean (arc-length) spacing between path samples, meters.
   num_observations: int = 20  # Number of future path points in the command obs.
   observation_spacing: int = 15  # Spacing between observed path points.
+  goal_yaw_range: tuple[float, float] = (-math.pi, math.pi)
+  """Range (radians) from which the goal orientation (world yaw) is sampled."""
+  near_goal_threshold: float = 0.3
+  """Distance (m) to the final waypoint under which the robot is "near the goal":
+  progress/alignment rewards saturate to their max and the twist command is set
+  to stand (freezing the gait) so the robot stands still at the goal."""
+  twist_command_name: str = "twist"
+  """Name of the velocity command whose stand flag is driven near the goal."""
   use_pathlib: bool = True
   pathlib_size: int = 50_000
   cache_dir: str | None = None  # Directory for the cached path library

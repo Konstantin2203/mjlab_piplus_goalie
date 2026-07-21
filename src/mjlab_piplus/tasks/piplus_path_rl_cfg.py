@@ -22,7 +22,7 @@ class PiPlusPathPpoAlgorithmCfg(RslRlPpoAlgorithmCfg):
       "data_augmentation_func": PiPlusPathSymmetry(),
       "use_data_augmentation": True,
       "use_mirror_loss": True,
-      "mirror_loss_coeff": 0.5,
+      "mirror_loss_coeff": 0.1,
     }
   )
 

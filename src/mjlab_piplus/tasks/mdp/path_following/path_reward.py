@@ -40,8 +40,13 @@ def base_footprint_xy(
 
 
 class path_progress_reward:
-  """Rewards progressing along the path by comparing the index of the closest
-  waypoint to the previous step."""
+  """Rewards progress speed along the path, in meters/second.
+
+  Each step it compares the closest fine-path index to the previous step's;
+  scaling that index delta by ``point_spacing`` gives meters advanced along the
+  path, and dividing by the policy timestep gives a speed in m/s (invariant to
+  the path sampling resolution). The reward is capped at ``max_speed`` so there
+  is no bonus for exceeding it; it stays negative when moving backwards."""
 
   def __init__(self, cfg: RewardTermCfg, env: ManagerBasedRlEnv):
     self.prev_closest_waypoint_indices = torch.zeros(
@@ -71,6 +76,7 @@ class path_progress_reward:
     command_name: str,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
     foot_asset_cfg: SceneEntityCfg = _DEFAULT_FOOT_CFG,
+    max_speed: float = 1.0,
   ) -> torch.Tensor:
     del asset_cfg  # Position comes from the base footprint (feet), not the root.
     command = env.command_manager.get_term(command_name)
@@ -92,15 +98,23 @@ class path_progress_reward:
     )  # (num_envs, num_waypoints)
     closest_waypoint_indices = torch.argmin(dists, dim=-1)  # (num_envs,)
 
-    progress = closest_waypoint_indices - self.prev_closest_waypoint_indices
-    env.extras["log"]["Metrics/mean_path_progress"] = torch.mean(
-      progress.float()
-    ).item()
+    # Index delta -> meters along the path (points are spaced by point_spacing)
+    # -> divide by the policy timestep to get progress speed in meters/second.
+    # This makes the reward invariant to the path sampling resolution.
+    progress_idx = closest_waypoint_indices - self.prev_closest_waypoint_indices
+    speed = progress_idx.float() * command.cfg.point_spacing / env.step_dt  # m/s
+    # Cap the reward: no bonus for exceeding max_speed (still negative if moving
+    # backwards, which the policy should be free to correct without a floor).
+    reward = torch.clamp(speed, max=max_speed)
+    # At the goal there is no more progress to make: saturate to the max so the
+    # robot is not penalized for stopping (it should stand still there).
+    reward = torch.where(
+      command.near_goal, torch.full_like(reward, max_speed), reward
+    )
+    env.extras["log"]["Metrics/mean_path_progress_mps"] = torch.mean(speed).item()
 
     self.prev_closest_waypoint_indices = closest_waypoint_indices.clone()
 
-    # Reward is the progress along the path (can be negative if going backwards)
-    reward = progress.float()
     return reward
 
 
@@ -159,6 +173,9 @@ def align_with_path_reward(
 
   abs_angle_diff = torch.abs(angle_distance(headings, path_headings))  # (num_envs,)
   reward = torch.exp(-abs_angle_diff / std**2)
+  # Near the goal the path tangent is ill-defined and irrelevant (the robot
+  # should hold the goal orientation and stand), so saturate the reward to max.
+  reward = torch.where(command.near_goal, torch.ones_like(reward), reward)
   env.extras["log"]["Metrics/mean_abs_angle_diff"] = torch.mean(abs_angle_diff).item()
   env.extras["log"]["Metrics/mean_align_with_path_reward"] = torch.mean(reward).item()
   return reward
@@ -170,8 +187,10 @@ def goal_reached(
   asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
   foot_asset_cfg: SceneEntityCfg = _DEFAULT_FOOT_CFG,
   threshold: float = 0.1,
+  orientation_threshold: float = 0.2,
 ) -> torch.Tensor:
-  """Rewards reaching the goal: distance to the final waypoint below threshold."""
+  """Rewards reaching the goal pose: final-waypoint distance AND goal-orientation
+  error both below their thresholds."""
   del asset_cfg  # Position comes from the base footprint (feet), not the root.
   command = env.command_manager.get_term(command_name)
   assert command is not None, f"Command '{command_name}' not found."
@@ -179,7 +198,9 @@ def goal_reached(
   waypoints = command.paths[..., :2]  # (num_envs, num_waypoints, 2)
   final_waypoints = waypoints[..., -1, :]  # (num_envs, 2)
   dists = torch.norm(final_waypoints - root_position, dim=-1)  # (num_envs,)
-  reached = dists < threshold
-  reward = reached.float()
+  reached_pos = dists < threshold
+  # yaw_err is wrap(goal_yaw - heading), updated by the command each step.
+  reached_orient = command.yaw_err.abs() < orientation_threshold
+  reward = (reached_pos & reached_orient).float()
   env.extras["log"]["Metrics/goal_reached"] = torch.mean(reward).item()
   return reward

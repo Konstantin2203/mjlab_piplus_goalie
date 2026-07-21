@@ -76,5 +76,6 @@ def check(label: str, sym, obs_dim: int) -> None:
 check("velocity", PiPlusSymmetry(), 48)
 # Goal-pose: same prefix + 4-dim [dx, dy, cos(yaw), sin(yaw)] command = 48.
 check("goal_pose", PiPlusGoalPoseSymmetry(), 48)
-# Path: same 44 prefix + N path points [x, y]; here N=8 -> 44 + 16 = 60.
-check("path", PiPlusPathSymmetry(), 60)
+# Path: 44 prefix + N path points [x, y] + goal orientation (cos, sin);
+# here N=8 -> 44 + 16 + 2 = 62. All tail dims mirror as [1, -1] pairs.
+check("path", PiPlusPathSymmetry(), 62)

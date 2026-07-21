@@ -67,21 +67,24 @@ def piplus_path_env_cfg(
   del cfg.rewards["track_linear_velocity"]
   del cfg.rewards["track_angular_velocity"]
 
-  cfg.rewards["goal_reached_reward"] = RewardTermCfg(
-    func=goal_reached,
-    weight=0.0,  # overwritten by curriculum
-    params={
-      "command_name": "path",
-      "asset_cfg": SceneEntityCfg("robot", body_names=("base_link",)),
-      "threshold": 0.075,
-    },
-  )
   # Path rewards evaluate the robot's position at the base footprint (the ground
   # midpoint between the two feet), so ``foot_asset_cfg`` carries the foot sites.
   foot_asset_cfg = SceneEntityCfg("robot", site_names=("l_foot", "r_foot"))
+  # Path rewards are active from the start (full weight, no ramp-in curriculum).
+  cfg.rewards["goal_reached_reward"] = RewardTermCfg(
+    func=goal_reached,
+    weight=1.0,
+    params={
+      "command_name": "path",
+      "asset_cfg": SceneEntityCfg("robot", body_names=("base_link",)),
+      "foot_asset_cfg": foot_asset_cfg,
+      "threshold": 0.05,
+      "orientation_threshold": 0.2,  # radians (~11 deg) to the goal yaw.
+    },
+  )
   cfg.rewards["close_to_path_reward"] = RewardTermCfg(
     func=close_to_path_reward,
-    weight=0.0,  # overwritten by curriculum
+    weight=1.0,
     params={
       "command_name": "path",
       "asset_cfg": SceneEntityCfg("robot", body_names=("base_link",)),
@@ -91,16 +94,18 @@ def piplus_path_env_cfg(
   )
   cfg.rewards["path_progress_reward"] = RewardTermCfg(
     func=path_progress_reward,
-    weight=0.0,  # overwritten by curriculum
+    weight=2.0,
     params={
       "command_name": "path",
       "asset_cfg": SceneEntityCfg("robot", body_names=("base_link",)),
       "foot_asset_cfg": foot_asset_cfg,
+      # Reward is progress speed in m/s, capped here (no bonus above this speed).
+      "max_speed": 0.8,
     },
   )
   cfg.rewards["alignment_with_path_reward"] = RewardTermCfg(
     func=align_with_path_reward,
-    weight=0.0,  # overwritten by curriculum
+    weight=1.0,
     params={
       "command_name": "path",
       "asset_cfg": SceneEntityCfg("robot", body_names=("base_link",)),
@@ -110,49 +115,25 @@ def piplus_path_env_cfg(
   )
 
   ##
-  # Curriculum: delete the velocity command curriculum and ramp the path rewards
-  # in over training. (The velocity cfg already clears the curriculum in play.)
+  # Curriculum: delete the velocity command curriculum. The path rewards are
+  # active from the start (no ramp-in), so only the push magnitude is ramped.
+  # (The velocity cfg already clears the curriculum in play.)
   ##
-  
+
   cfg.curriculum.pop("command_vel", None)
   if not play:
-    cfg.curriculum["goal_reached_weight"] = CurriculumTermCfg(
-      func=pi_mdp.reward_weight,
+    # Ramp the x/y push magnitude over training: start at +/-0.25 (the push
+    # event's default), then widen at 800 / 1200 / 1600 iterations. Only x and y
+    # are touched; z/roll/pitch/yaw are left at their defaults via deep-merge.
+    cfg.curriculum["push_velocity"] = CurriculumTermCfg(
+      func=pi_mdp.event_curriculum,
       params={
-        "reward_name": "goal_reached_reward",
-        "weight_stages": [
-          {"step": 0, "weight": 0.0},
-          {"step": 400 * 24, "weight": 1.0},
-        ],
-      },
-    )
-    cfg.curriculum["path_progress_weight"] = CurriculumTermCfg(
-      func=pi_mdp.reward_weight,
-      params={
-        "reward_name": "path_progress_reward",
-        "weight_stages": [
-          {"step": 0, "weight": 0.0},
-          {"step": 400 * 24, "weight": 1.5},
-        ],
-      },
-    )
-    cfg.curriculum["close_to_path_weight"] = CurriculumTermCfg(
-      func=pi_mdp.reward_weight,
-      params={
-        "reward_name": "close_to_path_reward",
-        "weight_stages": [
-          {"step": 0, "weight": 0.0},
-          {"step": 400 * 24, "weight": 1.0},
-        ],
-      },
-    )
-    cfg.curriculum["alignment_with_path_weight"] = CurriculumTermCfg(
-      func=pi_mdp.reward_weight,
-      params={
-        "reward_name": "alignment_with_path_reward",
-        "weight_stages": [
-          {"step": 0, "weight": 0.0},
-          {"step": 400 * 24, "weight": 1.0},
+        "event_name": "push_robot",
+        "stages": [
+          {"step": 0, "params": {"velocity_range": {"x": (-0.25, 0.25), "y": (-0.25, 0.25)}}},
+          {"step": 800 * 24, "params": {"velocity_range": {"x": (-0.5, 0.5), "y": (-0.5, 0.5)}}},
+          {"step": 1200 * 24, "params": {"velocity_range": {"x": (-0.75, 0.75), "y": (-0.75, 0.75)}}},
+          {"step": 1600 * 24, "params": {"velocity_range": {"x": (-1.0, 1.0), "y": (-1.0, 1.0)}}},
         ],
       },
     )
@@ -162,9 +143,5 @@ def piplus_path_env_cfg(
     # weights so play shows the trained behavior.
     cfg.commands["path"].pathlib_size = 1000
     cfg.commands["path"].resampling_time_range = (30.0, 30.0)
-    cfg.rewards["goal_reached_reward"].weight = 1.0
-    cfg.rewards["path_progress_reward"].weight = 2.0
-    cfg.rewards["close_to_path_reward"].weight = 1.0
-    cfg.rewards["alignment_with_path_reward"].weight = 1.0
 
   return cfg
