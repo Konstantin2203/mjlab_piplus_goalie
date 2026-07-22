@@ -216,13 +216,15 @@ def feet_phase_target(
   offset: float,
   foot_height: float,
   stance_threshold: float = 0.56,
+  rz_shape: str = "cosine",
 ) -> torch.Tensor:
   """Target swing height ``rz`` for a single foot from the ``feet_phase`` gait.
 
-  Mirrors ``pi_mdp.feet_phase``'s target: zero during stance, cubic-Bezier bump
-  centered in the swing window. ``offset`` selects the foot (e.g. 0.0 for the
-  left, 0.5 for the right). Intended as a play-mode visualization of the gait
-  target the reward is tracking.
+  Mirrors ``pi_mdp.feet_phase``'s target: zero during stance, a swing-height bump
+  centered in the swing window (shape set by ``rz_shape``; see :func:`_get_rz`).
+  ``offset`` selects the foot (e.g. 0.0 for the left, 0.5 for the right).
+  Intended as a play-mode visualization of the gait target the reward is
+  tracking, so keep ``rz_shape`` matched to the ``feet_phase`` reward.
   """
   period = 1.0 / frequency
   global_phase = (env.episode_length_buf * env.step_dt) % period / period  # [B]
@@ -231,5 +233,5 @@ def feet_phase_target(
   return torch.where(
     leg_phase < stance_threshold,
     torch.zeros_like(leg_phase),
-    _get_rz(swing_phase, swing_height=foot_height),
+    _get_rz(swing_phase, swing_height=foot_height, shape=rz_shape),
   )

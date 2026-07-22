@@ -253,19 +253,31 @@ class feet_swing_height_fixed:
     return reward
 
 
-def _get_rz(phase01: torch.Tensor, swing_height: float) -> torch.Tensor:
+def _get_rz(
+  phase01: torch.Tensor, swing_height: float, shape: str = "cosine"
+) -> torch.Tensor:
   """Target foot height over a normalized gait phase in [0, 1).
 
-  Cubic-Bezier bump rising from 0 to ``swing_height`` over the first half of the
-  cycle and back to 0 over the second half (peak at phase 0.5).
+  Both shapes rise from 0 to ``swing_height`` and back to 0 with the peak at
+  phase 0.5:
+
+  - ``"cosine"`` (default): a raised cosine-squared bump
+    ``h * cos(pi * (t - 0.5))**2`` (== ``h * sin(pi * t)**2``): 0 at both ends,
+    peak ``h`` at phase 0.5. Smooth (zero slope at both ends) and symmetric.
+  - ``"parabola"``: the original cubic-Bezier bump (two half-cycles), kept for
+    backward compatibility.
   """
+  if shape == "cosine":
+    return swing_height * torch.cos(torch.pi * (phase01 - 0.5)) ** 2
+  if shape == "parabola":
 
-  def bezier(y0: float, y1: float, t: torch.Tensor) -> torch.Tensor:
-    return y0 + (y1 - y0) * (t**3 + 3.0 * t**2 * (1.0 - t))
+    def bezier(y0: float, y1: float, t: torch.Tensor) -> torch.Tensor:
+      return y0 + (y1 - y0) * (t**3 + 3.0 * t**2 * (1.0 - t))
 
-  stance = bezier(0.0, swing_height, 2.0 * phase01)
-  swing = bezier(swing_height, 0.0, 2.0 * phase01 - 1.0)
-  return torch.where(phase01 <= 0.5, stance, swing)
+    stance = bezier(0.0, swing_height, 2.0 * phase01)
+    swing = bezier(swing_height, 0.0, 2.0 * phase01 - 1.0)
+    return torch.where(phase01 <= 0.5, stance, swing)
+  raise ValueError(f"Unknown rz shape {shape!r}; expected 'cosine' or 'parabola'.")
 
 
 class feet_phase:
@@ -275,7 +287,8 @@ class feet_phase:
   with two adaptations:
 
   - The target height (see :func:`_get_rz`) is zero during stance and a
-    cubic-Bezier bump centered in the swing window ``[stance_threshold, 1)``.
+    swing-height bump centered in the swing window ``[stance_threshold, 1)``;
+    ``rz_shape`` selects the bump shape (``"cosine"`` default, or ``"parabola"``).
   - The foot height is measured as the **minimum z over the foot's collision
     geoms** (its lowest point / ground clearance) rather than a single foot
     site. A single site can be raised just by tilting the ankle, which the
@@ -308,6 +321,7 @@ class feet_phase:
     baseline_height: float = 0.0,
     stance_threshold: float = 0.56,
     std: float = 0.1,
+    rz_shape: str = "cosine",
   ) -> torch.Tensor:
     del foot_geom_names  # resolved to geom ids in __init__.
     command = env.command_manager.get_command(command_name)
@@ -327,7 +341,7 @@ class feet_phase:
     rz = torch.where(
       leg_phase < stance_threshold,
       torch.zeros_like(leg_phase),
-      _get_rz(swing_phase, swing_height=foot_height),
+      _get_rz(swing_phase, swing_height=foot_height, shape=rz_shape),
     )  # [B, N]
 
     # Foot clearance = lowest collision geom per foot (tilt-invariant). Subtract
