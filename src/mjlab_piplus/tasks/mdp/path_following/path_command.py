@@ -332,7 +332,7 @@ class PathCommand(CommandTerm):
     # to stand: this freezes the gait phase and gates off the phase-based rewards
     # so the robot stands still.
     # disabled for the moment
-    #self._set_twist_stand(self.at_goal)
+    self._set_twist_stand(self.at_goal)
 
     if self.cfg.eval_mode:
       # hacky calculate metrics

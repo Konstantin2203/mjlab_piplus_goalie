@@ -151,9 +151,11 @@ def feet_gait(
   if command_name is not None:
     command = env.command_manager.get_command(command_name)
     if command is not None:
-      # Gate off when the robot should stand still (stand flag at index 3).
-      scale = (command[:, 3] < 0.5).float()
-      reward *= scale
+      # During stand (stand flag at index 3) the gait phase is irrelevant;
+      # reward keeping both feet on the ground instead of tracking the phase.
+      both_down = is_contact.all(dim=1).float()
+      standing = command[:, 3] >= 0.5
+      reward = torch.where(standing, both_down, reward)
   return reward
 
 
@@ -353,12 +355,21 @@ class feet_phase:
       [geom_z[:, ids].amin(dim=1) for ids in self.geom_id_groups], dim=1
     )  # [B, N]
     foot_z = foot_z - baseline_height
-    error = torch.sum(torch.square(torch.clamp(rz - foot_z, min=0.0)), dim=1)  # [B]
+    # Walking: penalize a foot only for staying below its swing target (don't
+    # punish lifting higher). Standing: both feet should sit at baseline, so
+    # penalize any deviation of foot_z from 0 (in either direction).
+    walk_error = torch.sum(torch.square(torch.clamp(rz - foot_z, min=0.0)), dim=1)  # [B]
+    stand_error = torch.sum(torch.square(foot_z), dim=1)  # [B]
+    standing = command[:, 3] >= 0.5
+    error = torch.where(standing, stand_error, walk_error)  # [B]
 
     walk_in_place = (torch.norm(command[:, :3], dim=1) < 0.05).float()
-    reward = torch.exp(-error / std**2) * (1.0 + 0.25 * walk_in_place)
-    # Gate off when the robot should stand still (stand flag at index 3).
-    reward = reward * (command[:, 3] < 0.5).float()
+    # Full reward when both feet are planted during stand; the walk-in-place
+    # bonus applies only to the walking gait.
+    bonus = torch.where(
+      standing, torch.ones_like(walk_in_place), 1.0 + 0.25 * walk_in_place
+    )
+    reward = torch.exp(-error / std**2) * bonus
     return reward
 
 
