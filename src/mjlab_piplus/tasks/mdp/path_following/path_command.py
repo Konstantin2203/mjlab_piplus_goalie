@@ -94,6 +94,9 @@ class PathCommand(CommandTerm):
     self.at_goal = torch.zeros(
       self.num_envs, dtype=torch.bool, device=self.device
     )
+    # Seconds the robot has continuously held the full goal pose (position +
+    # orientation); drives the delayed stand trigger (see ``stand_delay``).
+    self.at_goal_time = torch.zeros(self.num_envs, device=self.device)
     # Twist command whose stand flag we drive near the goal (resolved lazily).
     self._twist_term = None
     self._update_robot_pose()
@@ -188,6 +191,8 @@ class PathCommand(CommandTerm):
   def _resample_command(self, env_ids):
     self.starting_step = self._env.common_step_counter
     self._update_robot_pose()
+    # New goal: reset the dwell timer so accumulated time doesn't carry over.
+    self.at_goal_time[env_ids] = 0.0
     # Sample a fresh random goal orientation (world yaw) for the new paths.
     self.goal_yaw_w[env_ids] = torch.empty(
       len(env_ids), device=self.device
@@ -330,9 +335,17 @@ class PathCommand(CommandTerm):
 
     # At the goal pose (position + orientation), ask the (hidden) twist command
     # to stand: this freezes the gait phase and gates off the phase-based rewards
-    # so the robot stands still.
-    # disabled for the moment
-    self._set_twist_stand(self.at_goal)
+    # so the robot stands still. Delayed by a dwell timer: the robot must hold
+    # the goal pose continuously for ``stand_delay`` seconds first, so it settles
+    # onto the goal instead of freezing the instant it arrives.
+    dt = self._env.step_dt
+    self.at_goal_time = torch.where(
+      self.at_goal,
+      self.at_goal_time + dt,
+      torch.zeros_like(self.at_goal_time),
+    )
+    stand = self.at_goal & (self.at_goal_time >= self.cfg.stand_delay)
+    self._set_twist_stand(stand)
 
     if self.cfg.eval_mode:
       # hacky calculate metrics
@@ -437,6 +450,12 @@ class PathCommandCfg(CommandTermCfg):
   command is set to stand (freezing the gait) only once the robot is both within
   ``near_goal_threshold`` and within this yaw error of the goal orientation, so
   the gait stays active while it turns onto the goal heading."""
+  stand_delay: float = 1.0
+  """Seconds the robot must remain within both ``near_goal_threshold`` and
+  ``near_goal_yaw_threshold`` *continuously* before the twist command is set to
+  stand. 0 stands the instant the goal pose is reached; larger values make the
+  robot settle onto the goal before the gait freezes. The timer resets whenever
+  the robot leaves the goal pose or a new goal is sampled."""
   twist_command_name: str = "twist"
   """Name of the velocity command whose stand flag is driven at the goal pose."""
   max_points: int = 1500  # Samples stored per path (also the padded length).
