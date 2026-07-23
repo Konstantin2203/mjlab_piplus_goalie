@@ -435,7 +435,19 @@ def piplus_velocity_env_cfg(
       params={
         "asset_cfg": SceneEntityCfg("robot", joint_names=(".*",)),
         "command_name": "twist",
-        "std_standing": {r".*": 0.05},
+        # Tight tolerance holds the default pose during stand. hip_roll is
+        # tightened further (0.02) so the posture term wins over the during-stand
+        # feet rewards, which otherwise favor a wide, push-stable leg spread.
+        # Patterns must be non-overlapping (resolve_matching_names_values raises
+        # on a joint matching two keys) and cover all leg joints.
+        "std_standing": {
+          r".*_hip_pitch_joint": 0.05,
+          r".*_hip_roll_joint": 0.02,
+          r".*_thigh_joint": 0.05,
+          r".*_calf_joint": 0.05,
+          r".*_ankle_pitch_joint": 0.05,
+          r".*_ankle_roll_joint": 0.05,
+        },
         "std_walking": {
           r".*_hip_pitch_joint": 0.35,
           r".*_hip_roll_joint": 0.15,
