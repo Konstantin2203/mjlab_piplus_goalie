@@ -530,13 +530,6 @@ def piplus_velocity_env_cfg(
     #  func=pi_mdp.foot_contact_force,
     #  params={"sensor_name": "feet_ground_contact"},
     #),
-    #"phase_metric": MetricsTermCfg(
-    #  func=pi_mdp.phase_metric,
-    #  params={
-    #    "frequency": WALK_FREQUENCY,
-    #    "command_name": "twist",
-    #  },
-    #),
     "feet_swing_peak_height": MetricsTermCfg(
       func=pi_mdp.feet_swing_peak_height,
       params={
@@ -661,6 +654,13 @@ def piplus_velocity_env_cfg(
   )
   episode_length_s = 20.0
   if play:
+    metrics["phase_metric"] = MetricsTermCfg(
+      func=pi_mdp.phase_metric,
+      params={
+        "frequency": WALK_FREQUENCY,
+        "command_name": "twist",
+      },
+    )
     scene.num_envs = 1
     events = {  # remove other dr in play mode
       "reset_base": events["reset_base"],
