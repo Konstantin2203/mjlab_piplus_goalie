@@ -345,7 +345,7 @@ class PathCommand(CommandTerm):
       torch.zeros_like(self.at_goal_time),
     )
     stand = self.at_goal & (self.at_goal_time >= self.cfg.stand_delay)
-    self._set_twist_stand(stand)
+    #self._set_twist_stand(stand)
 
     if self.cfg.eval_mode:
       # hacky calculate metrics
