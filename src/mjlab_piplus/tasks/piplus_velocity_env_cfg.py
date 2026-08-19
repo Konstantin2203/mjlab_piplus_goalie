@@ -25,8 +25,8 @@ from mjlab_piplus.robot.piplus_constants import get_piplus_robot_cfg
 from mjlab_piplus.tasks import mdp as pi_mdp
 from mjlab_piplus.terrain import AstroturfTerrainCfg
 
-DELAY_MIN = 0
-DELAY_MAX = 3
+DELAY_MIN = 1
+DELAY_MAX = 1
 WALK_FREQUENCY = 1.75
 
 
@@ -34,24 +34,6 @@ def piplus_velocity_env_cfg(
   play: bool = False, static: bool = False
 ) -> ManagerBasedRlEnvCfg:
   foot_sites = ("l_foot", "r_foot")
-  # foot_geoms = ("l_foot00", "r_foot00")
-  # foot_height_scan = TerrainHeightSensorCfg(
-  #   name="foot_height_scan",
-  #   frame=(
-  #     ObjRef(type="site", name="l_foot", entity="robot"),
-  #     ObjRef(type="site", name="r_foot", entity="robot"),
-  #   ),
-  #   ray_alignment="yaw",
-  #   max_distance=1.0,
-  #   exclude_parent_body=True,
-  #   include_geom_groups=(0,),  # Terrain only.
-  #   debug_vis=False,
-  #   viz=TerrainHeightSensorCfg.VizCfg(
-  #     show_rays=True,
-  #     hit_color=(1.0, 0.0, 1.0, 0.8),  # Magenta rays.
-  #     hit_sphere_color=(1.0, 0.0, 1.0, 1.0),
-  #   ),
-  # )
   ##
   # Observations
   ##
@@ -223,8 +205,8 @@ def piplus_velocity_env_cfg(
       interval_range_s=(2.0, 6.0),
       params={
         "velocity_range": {
-          "x": (-1.0, 1.0),
-          "y": (-1.0, 1.0),
+          "x": (-0.25, 0.25),
+          "y": (-0.25, 0.25),
           "z": (-0.15, 0.15),
           "roll": (-0.52, 0.52),
           "pitch": (-0.52, 0.52),
@@ -232,18 +214,6 @@ def piplus_velocity_env_cfg(
         },
       },
     ),
-    # Turf friction DR. Applied to the astroturf top plane, not the feet: the top
-    # plane has priority 2 (> foot priority 1), so its friction governs the
-    # foot-turf contact. Scales the top plane's tangential friction (default 0.6).
-    # "turf_friction": EventTermCfg(
-    #   mode="startup",
-    #   func=dr.geom_friction,
-    #   params={
-    #     "asset_cfg": SceneEntityCfg("terrain", geom_geom_names=("terrain_top",)),
-    #     "operation": "scale",
-    #     "ranges": (0.4, 1.0),
-    #   },
-    # ),
     "foot_friction": EventTermCfg(
       mode="startup",
       func=dr.geom_friction,
@@ -253,30 +223,6 @@ def piplus_velocity_env_cfg(
         "ranges": (0.4, 1.0),
       }
     ),
-    # Ground softness. NOTE: this is applied to the FOOT collision geoms, not the
-    # terrain plane. Every robot collision geom has priority 1 while the plane has
-    # priority 0, and MuJoCo lets the higher-priority geom's solref fully override
-    # the contact, so randomizing the plane's solref has no effect. Softening the
-    # foot contact is physically equivalent to soft ground at the foot contact.
-    # Runs on "reset" (not "startup") so the `ground_softness` curriculum, which
-    # widens `ranges` over training, is re-sampled each episode. No constant
-    # recompute is needed for solref, so reset-mode cost is just a field write.
-    # Astroturf softness: set the soft top plane's solref. The top plane has
-    # priority 2 (> robot foot priority 1), so its solref governs the foot-turf
-    # contact. Runs on "reset" so the `astroturf_softness` curriculum, which
-    # widens `ranges`, is re-sampled each episode.
-    #"astroturf_softness": EventTermCfg(
-    #  mode="reset",
-    #  func=pi_mdp.geom_solref,
-    #  params={
-    #    "asset_cfg": SceneEntityCfg("terrain", geom_names=("terrain_top",)),
-    #    # solref[0] = timeconst. Default 0.02; larger = softer turf.
-    #    # Must stay >= 2 * sim.timestep (= 0.01 at 5 ms). The max end is ramped
-    #    # by the `astroturf_softness` curriculum below.
-    #    "ranges": (0.02, 0.02),
-    #    "operation": "abs",
-    #  },
-    #),
     "joint_frictionloss": EventTermCfg(
       mode="startup",
       func=dr.joint_friction,
@@ -435,19 +381,7 @@ def piplus_velocity_env_cfg(
       params={
         "asset_cfg": SceneEntityCfg("robot", joint_names=(".*",)),
         "command_name": "twist",
-        # Tight tolerance holds the default pose during stand. hip_roll is
-        # tightened further (0.02) so the posture term wins over the during-stand
-        # feet rewards, which otherwise favor a wide, push-stable leg spread.
-        # Patterns must be non-overlapping (resolve_matching_names_values raises
-        # on a joint matching two keys) and cover all leg joints.
-        "std_standing": {
-          r".*_hip_pitch_joint": 0.05,
-          r".*_hip_roll_joint": 0.02,
-          r".*_thigh_joint": 0.05,
-          r".*_calf_joint": 0.05,
-          r".*_ankle_pitch_joint": 0.05,
-          r".*_ankle_roll_joint": 0.05,
-        },
+        "std_standing": {r".*": 0.05,},
         "std_walking": {
           r".*_hip_pitch_joint": 0.35,
           r".*_hip_roll_joint": 0.15,
@@ -527,6 +461,8 @@ def piplus_velocity_env_cfg(
     #   },
     # ),
   }
+
+
   ##
   # Metrics
   ##
@@ -678,9 +614,7 @@ def piplus_velocity_env_cfg(
       "reset_base": events["reset_base"],
       "reset_robot_joints": events["reset_robot_joints"],
       # "push_robot": events["push_robot"],
-      # "astroturf_softness": events["astroturf_softness"],
     }
-    # events["astroturf_softness"].params["ranges"] = (0.155, 0.155)
     # Unbounded episodes in play: plain time_out (never fires at 1e10 s).
     terminations["time_out"] = TerminationTermCfg(func=mdp.time_out, time_out=True)
     episode_length_s = 1e10
