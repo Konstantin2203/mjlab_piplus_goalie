@@ -27,7 +27,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 import torch
 from mjlab.managers.command_manager import CommandTerm, CommandTermCfg
@@ -37,7 +37,24 @@ if TYPE_CHECKING:
   from mjlab.envs.manager_based_rl_env import ManagerBasedRlEnv
   from mjlab.viewer.debug_visualizer import DebugVisualizer
 
+
+@runtime_checkable
+class JoystickTerm(Protocol):
+  """A sub-command that offers manual control in the viewer.
+
+  ``MultiCommand`` owns the on/off decision: it points ``joystick_gate`` at a
+  predicate that is true while the viewer forces this sub-command's type, so the
+  term does not add a switch of its own, and it calls ``apply_joystick`` each
+  step (the sub-terms' own ``compute`` never runs).
+  """
+
+  joystick_gate: Callable[[], bool] | None
+
+  def apply_joystick(self) -> None: ...
+
+
 __all__ = [
+  "JoystickTerm",
   "MultiCommand",
   "MultiCommandCfg",
   "StandCommand",
@@ -200,6 +217,12 @@ class MultiCommand(CommandTerm):
       self._resample(resample_env_ids)
     self._update_command()
     self._apply_gui_override()
+    # Sub-terms are driven through ``_update_command`` above and never through
+    # their own ``compute``, so their viewer controls would otherwise never be
+    # read. Run them last: the joystick has to overwrite the sampled command.
+    for term in self.terms.values():
+      if isinstance(term, JoystickTerm):
+        term.apply_joystick()
 
   def _update_metrics(self) -> None:
     # Fraction of episode time spent in each type (mean over the episode gives
@@ -319,6 +342,10 @@ class MultiCommand(CommandTerm):
       )
     self._gui_get_env_idx = get_env_idx
     for sub_name, term in self.terms.items():
+      # The type selector above is the on/off switch for a sub-command's own
+      # viewer controls, so they must not add a second one of their own.
+      if isinstance(term, JoystickTerm):
+        term.joystick_gate = self._type_forced_gate(sub_name)
       term.create_gui(
         sub_name,
         server,
@@ -326,6 +353,19 @@ class MultiCommand(CommandTerm):
         on_change=on_change,
         request_action=request_action,
       )
+
+  def _type_forced_gate(self, name: str) -> Callable[[], bool]:
+    """A zero-arg predicate asking whether the viewer has forced type ``name``."""
+    return lambda: self._type_forced(name)
+
+  def _type_forced(self, name: str) -> bool:
+    """Is the viewer overriding the command type, and is it ``name``?"""
+    return (
+      self._gui_override is not None
+      and self._gui_override.value
+      and self._gui_type is not None
+      and self._gui_type.value == name
+    )
 
   def _apply_gui_override(self) -> None:
     if self._gui_override is None or not self._gui_override.value:

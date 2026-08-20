@@ -215,6 +215,11 @@ class UniformVelocityCommandWithStop(CommandTerm):
     self.metrics["error_vel_xy"] = torch.zeros(self.num_envs, device=self.device)
     self.metrics["error_vel_yaw"] = torch.zeros(self.num_envs, device=self.device)
 
+    # When set by an owning composite command (see MultiCommand.create_gui),
+    # this decides whether the joystick drives the command, replacing the
+    # term's own "Enable" checkbox: the command-type selector is the switch.
+    self.joystick_gate: Callable[[], bool] | None = None
+
     # Set by create_gui() when the viewer is active.
     self._joystick_enabled: viser.GuiCheckboxHandle | None = None
     self._joystick_sliders: list[viser.GuiSliderHandle] = []
@@ -235,6 +240,8 @@ class UniformVelocityCommandWithStop(CommandTerm):
     command configures this term: standing is its own command type there, so
     this term only ever produces walk / walk-in-place.
     """
+    if not self.cfg.expose_stand_flag:
+      return torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
     return self.stand_flag[:, 0] > 0.5
 
   def _update_metrics(self) -> None:
@@ -352,7 +359,11 @@ class UniformVelocityCommandWithStop(CommandTerm):
     sliders: list = []
 
     with server.gui.add_folder(name.capitalize()):
-      enabled = server.gui.add_checkbox("Enable", initial_value=False)
+      # Standalone this term owns its on/off switch. Under a composite command
+      # the command-type selector already decides when this command is live, so
+      # a second switch here would just be a way to disagree with it.
+      if self.joystick_gate is None:
+        self._joystick_enabled = server.gui.add_checkbox("Enable", initial_value=False)
 
       for label, max_val in axes:
         max_input = server.gui.add_slider(
@@ -377,8 +388,12 @@ class UniformVelocityCommandWithStop(CommandTerm):
 
         sliders.append(slider)
 
-      # Walk-in-place vs. stand-still toggle for the joystick env.
-      self._stand_checkbox = server.gui.add_checkbox("Stand still", initial_value=False)
+      # Walk-in-place vs. stand-still toggle for the joystick env. Omitted when
+      # an owner gates this term: standing is a command type there, not a flag.
+      if self.joystick_gate is None:
+        self._stand_checkbox = server.gui.add_checkbox(
+          "Stand still", initial_value=False
+        )
 
       zero_btn = server.gui.add_button("Zero", icon=Icon.SQUARE_X)
 
@@ -387,20 +402,35 @@ class UniformVelocityCommandWithStop(CommandTerm):
         for s in sliders:
           s.value = 0.0
 
-    # Store GUI state for compute() override.
-    self._joystick_enabled = enabled
+    # Store GUI state for apply_joystick().
     self._joystick_sliders = sliders
     self._joystick_get_env_idx = get_env_idx
 
+  def _joystick_active(self) -> bool:
+    if self.joystick_gate is not None:
+      return self.joystick_gate()
+    return self._joystick_enabled is not None and self._joystick_enabled.value
+
+  def apply_joystick(self) -> None:
+    """Write the viewer's sliders into the command for the viewed env.
+
+    Must run after ``_update_command``, which zeroes the velocity of standing
+    and walk-in-place envs. Called from ``compute`` when this term runs itself,
+    and by ``MultiCommand`` when it owns this term (it drives the sub-terms
+    through ``_update_command`` directly and never calls their ``compute``).
+    """
+    if not self._joystick_sliders or not self._joystick_active():
+      return
+    assert self._joystick_get_env_idx is not None
+    idx = self._joystick_get_env_idx()
+    for i, s in enumerate(self._joystick_sliders):
+      self.vel_command_b[idx, i] = s.value
+    if self._stand_checkbox is not None:
+      self.stand_flag[idx, 0] = 1.0 if self._stand_checkbox.value else 0.0
+
   def compute(self, dt: float) -> None:
     super().compute(dt)
-    if self._joystick_enabled is not None and self._joystick_enabled.value:
-      assert self._joystick_get_env_idx is not None
-      idx = self._joystick_get_env_idx()
-      for i, s in enumerate(self._joystick_sliders):
-        self.vel_command_b[idx, i] = s.value
-      if self._stand_checkbox is not None:
-        self.stand_flag[idx, 0] = 1.0 if self._stand_checkbox.value else 0.0
+    self.apply_joystick()
 
   # Visualization.
 
