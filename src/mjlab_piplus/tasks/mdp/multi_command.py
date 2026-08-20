@@ -82,7 +82,21 @@ class GoalPoseTerm(Protocol):
   command_counter: torch.Tensor
 
 
+@runtime_checkable
+class ActiveAwareTerm(Protocol):
+  """A sub-command that needs to know which envs it is currently driving.
+
+  ``MultiCommand`` writes ``active_env_mask`` before updating the sub-terms each
+  step. A term used standalone never has it set, and should read ``None`` as
+  "every env". The kick command uses this to park its ball on the envs that
+  have moved on to a different command type.
+  """
+
+  active_env_mask: torch.Tensor | None
+
+
 __all__ = [
+  "ActiveAwareTerm",
   "GoalPoseTerm",
   "JoystickTerm",
   "MultiCommand",
@@ -247,6 +261,12 @@ class MultiCommand(CommandTerm):
     resample_env_ids = (self.time_left <= 0.0).nonzero().flatten()
     if len(resample_env_ids) > 0:
       self._resample(resample_env_ids)
+    # After resampling, so a term sees the types that are live *now*, and before
+    # _update_command, so it can act on the change in the same step.
+    for i, name in enumerate(self.term_names):
+      term = self.terms[name]
+      if isinstance(term, ActiveAwareTerm):
+        term.active_env_mask = self.active_type == i
     self._update_command()
     self._apply_gui_override()
     # Sub-terms are driven through ``_update_command`` above and never through

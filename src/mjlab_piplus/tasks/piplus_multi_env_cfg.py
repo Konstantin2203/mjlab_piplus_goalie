@@ -7,7 +7,7 @@ between modes rather than being three separate policies.
 The policy sees every sub-command concatenated with the inactive blocks zeroed,
 prefixed by a one-hot naming the active type:
 
-    [one_hot(4) | velocity(3) | path(2N + 2) | goal_pose(4)]
+    [one_hot(5) | velocity(3) | path(2N + 2) | goal_pose(4) | kick(7)]
 
 Standing is its own command type here, not a flag on the velocity command, so a
 zero-velocity *velocity* command means walk-in-place. Reward terms that only
@@ -48,6 +48,7 @@ from mjlab.utils.noise import NoiseModelWithAdditiveBiasCfg
 from mjlab.utils.noise import UniformNoiseCfg as Unoise
 from mjlab.viewer import ViewerConfig
 
+from mjlab_piplus.objects import get_ball_cfg
 from mjlab_piplus.robot.piplus_constants import get_piplus_robot_cfg
 from mjlab_piplus.tasks import mdp as pi_mdp
 from mjlab_piplus.tasks.mdp.multi_rewards import MultiRewardTermCfg
@@ -70,9 +71,11 @@ WALK_FREQUENCY = 1.75
 COMMAND = "command"
 
 # Weight presets, spelled out so a reward's applicability reads at a glance.
-VELOCITY_AND_STAND = {"velocity": 1.0, "path": 0.0, "goal_pose": 0.0, "stand": 1.0}
-PATH_ONLY = {"velocity": 0.0, "path": 1.0, "goal_pose": 0.0, "stand": 0.0}
-GOAL_POSE_ONLY = {"velocity": 0.0, "path": 0.0, "goal_pose": 1.0, "stand": 0.0}
+_OFF = {"velocity": 0.0, "path": 0.0, "goal_pose": 0.0, "kick": 0.0, "stand": 0.0}
+VELOCITY_AND_STAND = {**_OFF, "velocity": 1.0, "stand": 1.0}
+PATH_ONLY = {**_OFF, "path": 1.0}
+GOAL_POSE_ONLY = {**_OFF, "goal_pose": 1.0}
+KICK_ONLY = {**_OFF, "kick": 1.0}
 
 # Number of future path points in the command observation.
 NUM_PATH_OBSERVATIONS = 8
@@ -154,7 +157,8 @@ def piplus_multi_env_cfg(
       func=pi_mdp.phase,
       params={"frequency": WALK_FREQUENCY, "command_name": COMMAND},
     ),
-    # [one_hot(4) | velocity(3) | path(2N+2) | goal_pose(4)], inactive zeroed.
+    # [one_hot(5) | velocity(3) | path(2N+2) | goal_pose(4) | kick(7)],
+    # inactive blocks zeroed.
     "command": ObservationTermCfg(
       func=mdp.generated_commands,
       params={"command_name": COMMAND},
@@ -239,7 +243,13 @@ def piplus_multi_env_cfg(
     COMMAND: pi_mdp.MultiCommandCfg(
       debug_vis=True,
       change_command_probability=0.3,
-      fractions={"velocity": 0.4, "path": 0.3, "goal_pose": 0.2, "stand": 0.1},
+      fractions={
+        "velocity": 0.35,
+        "path": 0.25,
+        "goal_pose": 0.15,
+        "kick": 0.15,
+        "stand": 0.10,
+      },
       terms={
         "velocity": pi_mdp.UniformVelocityCommandWithStopCfg(
           entity_name="robot",
@@ -271,6 +281,17 @@ def piplus_multi_env_cfg(
           radius_range=(0.5, 3.0),
           yaw_range=(-math.pi, math.pi),
           rel_standing_envs=0.0,
+        ),
+        # Owns the ball outright: places it near the robot while driving an
+        # env, parks it at park_position while not.
+        "kick": pi_mdp.KickCommandCfg(
+          entity_name="robot",
+          debug_vis=True,
+          resampling_time_range=(6.0, 12.0),
+          distance_range=(0.2, 2.0),
+          direction_range=(-math.pi, math.pi),
+          strength_range=(1.0, 5.0),
+          park_position=(100.0, 100.0),
         ),
         "stand": pi_mdp.StandCommandCfg(resampling_time_range=(2.0, 5.0)),
       },
@@ -586,6 +607,33 @@ def piplus_multi_env_cfg(
       },
       command_weights=GOAL_POSE_ONLY,
     ),
+    # -- Kick -----------------------------------------------------------------
+    # Two disjoint phases, split by the command's latched "has been kicked":
+    # walk to the ball, then send it off at the commanded velocity. The latch is
+    # what stops the robot nudging the ball away and re-earning the approach.
+    "kick_approach": MultiRewardTermCfg(
+      func=pi_mdp.kick_approach,
+      weight=2.0,
+      params={
+        "command_name": COMMAND,
+        "sub_command_name": "kick",
+        # Closing speed in m/s, capped (no bonus above this).
+        "max_speed": 0.8,
+      },
+      command_weights=KICK_ONLY,
+    ),
+    "kick_velocity_match": MultiRewardTermCfg(
+      func=pi_mdp.kick_velocity_match,
+      weight=3.0,
+      params={
+        "command_name": COMMAND,
+        "sub_command_name": "kick",
+        # Gaussian width on the ball velocity error, in m/s. Scores direction
+        # and speed together against a 1-5 m/s command.
+        "std": 1.0,
+      },
+      command_weights=KICK_ONLY,
+    ),
     # -- Stability ------------------------------------------------------------
     "upright": RewardTermCfg(
       func=mdp.upright,
@@ -799,7 +847,7 @@ def piplus_multi_env_cfg(
   scene = SceneCfg(
     num_envs=4096,
     env_spacing=0.0,
-    entities={"robot": get_piplus_robot_cfg()},
+    entities={"robot": get_piplus_robot_cfg(), "ball": get_ball_cfg()},
     sensors=(feet_contact_sensor_cfg, self_collision_cfg, foot_height_scan),
     terrain=TerrainEntityCfg(
       terrain_type="plane",
