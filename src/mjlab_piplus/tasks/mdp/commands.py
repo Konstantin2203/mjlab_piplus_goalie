@@ -50,6 +50,16 @@ class GoalPoseCommand(CommandTerm):
       self.num_envs, dtype=torch.bool, device=self.device
     )
 
+    # The goal is sampled as an offset on resample and anchored on the robot in
+    # _update_command. At an episode reset the command manager runs *before*
+    # sim.forward(), so the robot pose visible during _resample_command is still
+    # the pre-reset one; anchoring there would place the goal relative to
+    # wherever the robot used to be. _update_command runs after the forward.
+    self._pending_place = torch.zeros(
+      self.num_envs, dtype=torch.bool, device=self.device
+    )
+    self._pending_offset = torch.zeros(self.num_envs, 2, device=self.device)
+
     self.metrics["error_pos"] = torch.zeros(self.num_envs, device=self.device)
     self.metrics["error_yaw"] = torch.zeros(self.num_envs, device=self.device)
 
@@ -98,29 +108,38 @@ class GoalPoseCommand(CommandTerm):
     self.metrics["error_yaw"] += torch.abs(self.goal_command_b[:, 2]) / max_command_step
 
   def _resample_command(self, env_ids: torch.Tensor) -> None:
-    r = torch.empty(len(env_ids), device=self.device)
+    n = len(env_ids)
 
-    base_pos_w = self.robot.data.root_link_pos_w[env_ids, :2]
-
-    radius = r.uniform_(*self.cfg.radius_range)
-    bearing = torch.empty(len(env_ids), device=self.device).uniform_(-math.pi, math.pi)
-    offset = torch.stack(
+    # Only the offset from the robot is decided here; _update_command anchors it
+    # once the robot pose is current.
+    radius = torch.empty(n, device=self.device).uniform_(*self.cfg.radius_range)
+    bearing = torch.empty(n, device=self.device).uniform_(-math.pi, math.pi)
+    self._pending_offset[env_ids] = torch.stack(
       [radius * torch.cos(bearing), radius * torch.sin(bearing)], dim=1
     )
-    self.goal_pos_w[env_ids] = base_pos_w + offset
-    self.goal_yaw_w[env_ids] = torch.empty(len(env_ids), device=self.device).uniform_(
+    self.goal_yaw_w[env_ids] = torch.empty(n, device=self.device).uniform_(
       *self.cfg.yaw_range
     )
-
-    # Standing envs: goal == current pose so the robot learns to hold still.
-    is_standing = r.uniform_(0.0, 1.0) <= self.cfg.rel_standing_envs
-    self.is_standing_env[env_ids] = is_standing
-    stand_ids = env_ids[is_standing]
-    if len(stand_ids) > 0:
-      self.goal_pos_w[stand_ids] = self.robot.data.root_link_pos_w[stand_ids, :2]
-      self.goal_yaw_w[stand_ids] = self.robot.data.heading_w[stand_ids]
+    self.is_standing_env[env_ids] = (
+      torch.empty(n, device=self.device).uniform_(0.0, 1.0)
+      <= self.cfg.rel_standing_envs
+    )
+    self._pending_place[env_ids] = True
 
   def _update_command(self) -> None:
+    # Anchor any goal sampled since the last update on the current robot pose.
+    pending = self._pending_place.nonzero().flatten()
+    if len(pending) > 0:
+      self.goal_pos_w[pending] = (
+        self.robot.data.root_link_pos_w[pending, :2] + self._pending_offset[pending]
+      )
+      # Standing envs: goal == current pose so the robot learns to hold still.
+      stand_ids = pending[self.is_standing_env[pending]]
+      if len(stand_ids) > 0:
+        self.goal_pos_w[stand_ids] = self.robot.data.root_link_pos_w[stand_ids, :2]
+        self.goal_yaw_w[stand_ids] = self.robot.data.heading_w[stand_ids]
+      self._pending_place[pending] = False
+
     base_pos_w = self.robot.data.root_link_pos_w[:, :2]
     heading_w = self.robot.data.heading_w
 

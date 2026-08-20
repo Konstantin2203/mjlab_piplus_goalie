@@ -93,6 +93,14 @@ class PathCommand(CommandTerm):
     self.at_goal_time = torch.zeros(self.num_envs, device=self.device)
     # Latched "settled on the goal pose" flag, exposed as ``wants_stand``.
     self._wants_stand = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+    # Envs whose freshly sampled path still has to be shifted onto the robot.
+    # The shift is applied in _update_command, not here: at an episode reset the
+    # command manager runs *before* sim.forward(), so the robot pose visible
+    # during _resample_command is still the pre-reset one, and the path would be
+    # anchored on wherever the robot used to be.
+    self._pending_align = torch.zeros(
+      self.num_envs, dtype=torch.bool, device=self.device
+    )
     # Twist command whose stand flag we drive near the goal (resolved lazily).
     self._twist_term = None
     self._update_robot_pose()
@@ -230,17 +238,7 @@ class PathCommand(CommandTerm):
     self.waypoints[env_ids] = waypoints
     self.obstacles[env_ids] = obstacles
     if self.align:
-      # Paths are generated in their start frame; shift them — and the obstacle
-      # world around them — onto the robot's current position. Only a
-      # translation: both generators start a path at the local origin but with a
-      # uniformly random initial direction, so the path already leaves the robot
-      # on a random bearing and there is nothing for a rotation to fix.
-      offset = self.current_pose[env_ids, :2].unsqueeze(1)
-      self.paths[env_ids, :, :2] += offset
-      self.waypoints[env_ids] += offset
-      # Columns 1:3 are the obstacle center. Padding slots are shifted too,
-      # which is harmless: the kind check skips them at draw time.
-      self.obstacles[env_ids, :, 1:3] += offset
+      self._pending_align[env_ids] = True
 
     if self.cfg.eval_mode:
       # write waypoints to csv
@@ -274,9 +272,30 @@ class PathCommand(CommandTerm):
     heading = heading_from_quat(root_quat).unsqueeze(-1)
     self.current_pose = torch.cat([root_pos[..., :2], heading], dim=-1)
 
+  def _align_pending(self) -> None:
+    """Shift freshly sampled paths onto the robot's current position.
+
+    Paths are generated in their start frame; this moves them -- and the
+    obstacle world around them -- onto the robot. Only a translation: both
+    generators start a path at the local origin but with a uniformly random
+    initial direction, so the path already leaves the robot on a random bearing
+    and there is nothing for a rotation to fix.
+    """
+    pending = self._pending_align.nonzero().flatten()
+    if len(pending) == 0:
+      return
+    offset = self.current_pose[pending, :2].unsqueeze(1)
+    self.paths[pending, :, :2] += offset
+    self.waypoints[pending] += offset
+    # Columns 1:3 are the obstacle center. Padding slots are shifted too, which
+    # is harmless: the kind check skips them at draw time.
+    self.obstacles[pending, :, 1:3] += offset
+    self._pending_align[pending] = False
+
   def _update_command(self) -> None:
     # get closest point on path to robot
     self._update_robot_pose()
+    self._align_pending()
     root_pos = self.current_pose[..., :2]  # (n_envs, 2)
     dists = torch.norm(
       self.paths[..., :2] - root_pos.unsqueeze(1), dim=-1
