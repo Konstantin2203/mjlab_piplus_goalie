@@ -3,7 +3,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import torch
-
 from mjlab.entity import Entity
 from mjlab.managers.reward_manager import RewardTermCfg
 from mjlab.managers.scene_entity_config import SceneEntityCfg
@@ -11,10 +10,35 @@ from mjlab.managers.scene_entity_config import SceneEntityCfg
 if TYPE_CHECKING:
   from mjlab.envs import ManagerBasedRlEnv
 
+from mjlab_piplus.tasks.mdp.multi_command import MultiCommand
+from mjlab_piplus.tasks.mdp.path_following.path_command import PathCommand
 from mjlab_piplus.tasks.mdp.path_following.utils import (
   angle_distance,
   heading_from_quat,
 )
+
+
+def resolve_path_command(
+  env: ManagerBasedRlEnv, command_name: str
+) -> tuple[PathCommand, torch.Tensor]:
+  """Resolve the path command term and its per-env active mask.
+
+  ``command_name`` may name the path command directly (standalone path task) or
+  a ``MultiCommand`` that holds it as a sub-command. The mask is all ones in the
+  former case and the path type's active mask in the latter.
+  """
+  term = env.command_manager.get_term(command_name)
+  if isinstance(term, PathCommand):
+    return term, torch.ones(env.num_envs, device=env.device)
+  if isinstance(term, MultiCommand):
+    for name, sub in term.terms.items():
+      if isinstance(sub, PathCommand):
+        return sub, term.active_mask(name).float()
+  raise TypeError(
+    f"Command '{command_name}' does not resolve to a PathCommand "
+    f"(got {type(term).__name__})."
+  )
+
 
 _DEFAULT_ASSET_CFG = SceneEntityCfg("robot")
 _DEFAULT_FOOT_CFG = SceneEntityCfg("robot", site_names=("l_foot", "r_foot"))
@@ -79,8 +103,7 @@ class path_progress_reward:
     max_speed: float = 1.0,
   ) -> torch.Tensor:
     del asset_cfg  # Position comes from the base footprint (feet), not the root.
-    command = env.command_manager.get_term(command_name)
-    assert command is not None, f"Command '{command_name}' not found."
+    command, _ = resolve_path_command(env, command_name)
     root_position = base_footprint_xy(env, foot_asset_cfg)
 
     # New path if the command resampled OR the env was reset last step.
@@ -111,7 +134,13 @@ class path_progress_reward:
     # all the way to the goal; once stopped there, closest_index is pinned at the
     # end and progress is simply 0 (no penalty, no reward to oscillate for).
     reward = torch.clamp(speed, max=max_speed)
-    env.extras["log"]["Metrics/mean_path_progress_mps"] = torch.mean(speed).item()
+    # Average only over envs the path command is actually driving: under a
+    # MultiCommand the term still runs on every env (to keep its state fresh),
+    # so an unrestricted mean would be diluted by velocity/stand envs.
+    _, active = resolve_path_command(env, command_name)
+    env.extras["log"]["Metrics/mean_path_progress_mps"] = (
+      (speed * active).sum() / active.sum().clamp(min=1)
+    ).item()
 
     self.prev_closest_waypoint_indices = closest_waypoint_indices.clone()
 
@@ -127,14 +156,15 @@ def close_to_path_reward(
 ) -> torch.Tensor:
   """Rewards being close to the path via a Gaussian on distance to the path."""
   del asset_cfg  # Position comes from the base footprint (feet), not the root.
-  command = env.command_manager.get_term(command_name)
-  assert command is not None, f"Command '{command_name}' not found."
+  command, _ = resolve_path_command(env, command_name)
   root_position = base_footprint_xy(env, foot_asset_cfg)
   waypoints = command.paths[..., :2]  # (num_envs, num_waypoints, 2)
   dists = torch.norm(waypoints - root_position.unsqueeze(1), dim=-1)
   closest_dists = torch.min(dists, dim=-1).values  # (num_envs,)
-  reward = torch.exp(-closest_dists**2 / std**2)
-  env.extras["log"]["Metrics/mean_close_to_path_distance"] = torch.mean(closest_dists).item()
+  reward = torch.exp(-(closest_dists**2) / std**2)
+  env.extras["log"]["Metrics/mean_close_to_path_distance"] = torch.mean(
+    closest_dists
+  ).item()
   return reward
 
 
@@ -147,8 +177,7 @@ def align_with_path_reward(
 ) -> torch.Tensor:
   """Rewards aligning the heading with the path tangent."""
   asset: Entity = env.scene[asset_cfg.name]
-  command = env.command_manager.get_term(command_name)
-  assert command is not None, f"Command '{command_name}' not found."
+  command, _ = resolve_path_command(env, command_name)
   # Position from the base footprint (feet midpoint); heading from the base yaw
   # (the base_footprint orientation is the base yaw about vertical).
   root_position = base_footprint_xy(env, foot_asset_cfg)
@@ -204,10 +233,9 @@ def goal_reached_linear(
   Split out from the orientation term so each can be weighted independently.
   ``success_threshold`` only drives the logged success-rate metric."""
   del asset_cfg  # Position comes from the base footprint (feet), not the root.
-  command = env.command_manager.get_term(command_name)
-  assert command is not None, f"Command '{command_name}' not found."
+  command, _ = resolve_path_command(env, command_name)
   dist = _goal_dist(env, command, foot_asset_cfg)
-  reward = torch.exp(-dist**2 / pos_std**2)
+  reward = torch.exp(-(dist**2) / pos_std**2)
   env.extras["log"]["Metrics/goal_reached_linear"] = torch.mean(reward).item()
   env.extras["log"]["Metrics/goal_success_rate_linear"] = torch.mean(
     (dist < success_threshold).float()
@@ -235,13 +263,12 @@ def goal_reached_angular(
   it gives a smooth gradient to turn onto the goal heading. ``success_yaw_*``
   only drives the logged success-rate metric."""
   del asset_cfg  # Position comes from the base footprint (feet), not the root.
-  command = env.command_manager.get_term(command_name)
-  assert command is not None, f"Command '{command_name}' not found."
+  command, _ = resolve_path_command(env, command_name)
   dist = _goal_dist(env, command, foot_asset_cfg)
   # yaw_err is wrap(goal_yaw - heading), updated by the command each step.
   yaw_err = command.yaw_err.abs()  # (num_envs,)
-  pos_gate = torch.exp(-dist**2 / pos_std**2)
-  reward = pos_gate * torch.exp(-yaw_err**2 / yaw_std**2)
+  pos_gate = torch.exp(-(dist**2) / pos_std**2)
+  reward = pos_gate * torch.exp(-(yaw_err**2) / yaw_std**2)
   env.extras["log"]["Metrics/goal_reached_angular"] = torch.mean(reward).item()
   env.extras["log"]["Metrics/mean_yaw_err_to_goal"] = torch.mean(yaw_err).item()
   return reward

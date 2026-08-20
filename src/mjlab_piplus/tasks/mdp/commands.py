@@ -27,7 +27,6 @@ from mjlab.utils.lab_api.math import matrix_from_quat, quat_apply, wrap_to_pi
 
 if TYPE_CHECKING:
   import viser
-
   from mjlab.envs.manager_based_rl_env import ManagerBasedRlEnv
   from mjlab.viewer.debug_visualizer import DebugVisualizer
 
@@ -224,7 +223,19 @@ class UniformVelocityCommandWithStop(CommandTerm):
 
   @property
   def command(self) -> torch.Tensor:
+    if not self.cfg.expose_stand_flag:
+      return self.vel_command_b
     return torch.cat([self.vel_command_b, self.stand_flag], dim=1)
+
+  @property
+  def wants_stand(self) -> torch.Tensor:
+    """Per-env "stand still" request, read by ``MultiCommand.stand_mask``.
+
+    Always False when the stand flag is not exposed, which is how the multi
+    command configures this term: standing is its own command type there, so
+    this term only ever produces walk / walk-in-place.
+    """
+    return self.stand_flag[:, 0] > 0.5
 
   def _update_metrics(self) -> None:
     max_command_time = self.cfg.resampling_time_range[1]
@@ -466,6 +477,13 @@ class UniformVelocityCommandWithStop(CommandTerm):
 @dataclass(kw_only=True)
 class UniformVelocityCommandWithStopCfg(CommandTermCfg):
   entity_name: str
+  expose_stand_flag: bool = True
+  """Whether ``command`` carries the stand flag as a 4th element.
+
+  True (default) gives the standalone velocity task its ``[vx, vy, wz,
+  stand_flag]`` layout. Set False when this term is a sub-command of a
+  ``MultiCommand``, where standing is its own command type: the command is then
+  the bare 3-dim twist and a zero-velocity command means walk-in-place."""
   heading_command: bool = False
   heading_control_stiffness: float = 1.0
   rel_standing_envs: float = 0.0

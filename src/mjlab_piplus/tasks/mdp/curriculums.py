@@ -3,8 +3,13 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, TypedDict, cast
 
 import torch
+from mjlab.tasks.velocity.mdp.curriculums import VelocityStage
 
-from mjlab_piplus.tasks.mdp.commands import GoalPoseCommandCfg
+from mjlab_piplus.tasks.mdp.commands import (
+  GoalPoseCommandCfg,
+  UniformVelocityCommandWithStopCfg,
+)
+from mjlab_piplus.tasks.mdp.multi_command import MultiCommand
 
 if TYPE_CHECKING:
   from mjlab.envs import ManagerBasedRlEnv
@@ -16,6 +21,7 @@ __all__ = [
   "commands_goal_radius",
   "RewardWeightStage",
   "reward_weight",
+  "commands_vel_multi",
 ]
 
 
@@ -118,3 +124,40 @@ def _deep_update(target: dict[str, Any], source: dict[str, Any]) -> None:
       _deep_update(target[k], v)
     else:
       target[k] = v
+
+
+def commands_vel_multi(
+  env: ManagerBasedRlEnv,
+  env_ids: torch.Tensor,
+  command_name: str,
+  sub_command_name: str,
+  velocity_stages: list[VelocityStage],
+) -> dict[str, torch.Tensor]:
+  """Ramp the velocity ranges of a ``MultiCommand`` sub-command over training.
+
+  Same behavior as mjlab's ``commands_vel``, but the velocity command lives
+  inside a composite command term, so it cannot be reached by name through the
+  command manager.
+  """
+  del env_ids  # Unused.
+  multi = env.command_manager.get_term(command_name)
+  assert isinstance(multi, MultiCommand), (
+    f"Command '{command_name}' is not a MultiCommand."
+  )
+  cfg = cast(UniformVelocityCommandWithStopCfg, multi.terms[sub_command_name].cfg)
+  for stage in velocity_stages:
+    if env.common_step_counter >= stage["step"]:
+      if "lin_vel_x" in stage and stage["lin_vel_x"] is not None:
+        cfg.ranges.lin_vel_x = stage["lin_vel_x"]
+      if "lin_vel_y" in stage and stage["lin_vel_y"] is not None:
+        cfg.ranges.lin_vel_y = stage["lin_vel_y"]
+      if "ang_vel_z" in stage and stage["ang_vel_z"] is not None:
+        cfg.ranges.ang_vel_z = stage["ang_vel_z"]
+  return {
+    "lin_vel_x_min": torch.tensor(cfg.ranges.lin_vel_x[0]),
+    "lin_vel_x_max": torch.tensor(cfg.ranges.lin_vel_x[1]),
+    "lin_vel_y_min": torch.tensor(cfg.ranges.lin_vel_y[0]),
+    "lin_vel_y_max": torch.tensor(cfg.ranges.lin_vel_y[1]),
+    "ang_vel_z_min": torch.tensor(cfg.ranges.ang_vel_z[0]),
+    "ang_vel_z_max": torch.tensor(cfg.ranges.ang_vel_z[1]),
+  }

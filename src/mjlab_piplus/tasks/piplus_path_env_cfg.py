@@ -8,7 +8,6 @@ from mjlab.tasks.velocity import mdp
 
 from mjlab_piplus.tasks import mdp as pi_mdp
 from mjlab_piplus.tasks.mdp.path_following import (
-  ObstacleWorldCfg,
   PathCommandCfg,
   align_with_path_reward,
   close_to_path_reward,
@@ -20,16 +19,14 @@ from mjlab_piplus.tasks.piplus_velocity_env_cfg import piplus_velocity_env_cfg
 
 
 def piplus_path_env_cfg(
-  play: bool = False, static: bool = False, obstacles: bool = False
+  play: bool = False, static: bool = False
 ) -> ManagerBasedRlEnvCfg:
   """Path-following env.
 
-  Args:
-    obstacles: If True, reference paths are planned with A* through a random
-      field of cubes and cylinders instead of being free-space b-splines, so the
-      robot has to walk corners and detours. The obstacles themselves are
-      virtual — drawn in the viewer, never simulated — so nothing about the
-      scene, contacts or terminations changes.
+  Reference paths are planned with A* through a random field of cubes and
+  cylinders, so the robot has to walk corners and detours. The obstacles
+  themselves are virtual — drawn in the viewer, never simulated — so nothing
+  about the scene, contacts or terminations changes.
   """
   # Start from the velocity task; change only what the path task needs.
   cfg = piplus_velocity_env_cfg(play=play, static=static)
@@ -44,10 +41,14 @@ def piplus_path_env_cfg(
     debug_vis=True,
     resampling_time_range=(1.0e6, 1.0e6),
     num_observations=8,
+    # Anchor each newly sampled path (and its obstacle world) at the robot's
+    # current position. Without this a path is laid out from the world origin,
+    # so any resample once the robot has walked away hands it a path starting
+    # metres behind it. A no-op at an episode reset, where the robot is at the
+    # origin anyway; it matters in play, which never resets and resamples the
+    # path every 30 s.
+    align=True,
   )
-  if obstacles:
-    cfg.commands["path"].generator = "astar"
-    cfg.commands["path"].obstacle_world = ObstacleWorldCfg()
   # fake a command twist command for the rewards to work
   cfg.commands["twist"] = pi_mdp.UniformVelocityCommandWithStopCfg(
       entity_name="robot",
@@ -171,11 +172,9 @@ def piplus_path_env_cfg(
   if play:
     # No curriculum in play: set the path rewards to their final (curriculum)
     # weights so play shows the trained behavior.
-    cfg.commands["path"].pathlib_size = 1000
     cfg.commands["path"].resampling_time_range = (30.0, 30.0)
-    if obstacles:
-      # Keep the play library small enough to generate in a few seconds, but
-      # not so small that every episode shows the same worlds.
-      cfg.commands["path"].pathlib_size = 200
+    # Keep the play library small enough to generate in a few seconds, but
+    # not so small that every episode shows the same worlds.
+    cfg.commands["path"].pathlib_size = 200
 
   return cfg

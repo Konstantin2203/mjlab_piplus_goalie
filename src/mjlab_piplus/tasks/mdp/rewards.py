@@ -10,11 +10,59 @@ from mjlab.sensor import ContactSensor
 from mjlab.utils.lab_api.math import quat_apply_inverse
 from mjlab.utils.lab_api.string import resolve_matching_names_values
 
+from mjlab_piplus.tasks.mdp.multi_command import (
+  stand_mask,
+  velocity_active,
+  velocity_command,
+)
+
 if TYPE_CHECKING:
   from mjlab.envs import ManagerBasedRlEnv
 
 
 _DEFAULT_ASSET_CFG = SceneEntityCfg("robot")
+
+
+##
+# Command tracking.
+#
+# Copies of mjlab's ``track_linear_velocity`` / ``track_angular_velocity`` that
+# read the commanded twist through ``velocity_command`` instead of indexing the
+# command tensor directly. Under a ``MultiCommand`` the raw tensor starts with a
+# one-hot type prefix, so the mjlab versions would slice the wrong columns; here
+# a path-commanded env reads a zero twist and a stand-commanded env correctly
+# tracks zero velocity.
+##
+
+
+def track_linear_velocity(
+  env: ManagerBasedRlEnv,
+  std: float,
+  command_name: str,
+  asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+  """Reward for tracking the commanded base linear velocity."""
+  asset: Entity = env.scene[asset_cfg.name]
+  command = velocity_command(env, command_name)
+  actual = asset.data.root_link_lin_vel_b
+  xy_error = torch.sum(torch.square(command[:, :2] - actual[:, :2]), dim=1)
+  z_error = torch.square(actual[:, 2])
+  return torch.exp(-(xy_error + z_error) / std**2)
+
+
+def track_angular_velocity(
+  env: ManagerBasedRlEnv,
+  std: float,
+  command_name: str,
+  asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+  """Reward for tracking the commanded base yaw rate."""
+  asset: Entity = env.scene[asset_cfg.name]
+  command = velocity_command(env, command_name)
+  actual = asset.data.root_link_ang_vel_b
+  z_error = torch.square(command[:, 2] - actual[:, 2])
+  xy_error = torch.sum(torch.square(actual[:, :2]), dim=1)
+  return torch.exp(-(z_error + xy_error) / std**2)
 
 
 class track_angular_velocity_filtered:
@@ -43,8 +91,7 @@ class track_angular_velocity_filtered:
   ) -> torch.Tensor:
     del tau
     asset: Entity = env.scene[asset_cfg.name]
-    command = env.command_manager.get_command(command_name)
-    assert command is not None, f"Command '{command_name}' not found."
+    command = velocity_command(env, command_name)
     actual = asset.data.root_link_ang_vel_b
     self._yaw_ema = (1.0 - self._alpha) * self._yaw_ema + self._alpha * actual[:, 2]
     self._last_yaw_raw = actual[:, 2]
@@ -119,15 +166,11 @@ def feet_air_time_zero_vel(
   )
   env.extras["log"]["Metrics/air_time_mean"] = mean_air_time
   if command_name is not None:
-    command = env.command_manager.get_command(command_name)
-    if command is not None:
-      standing = command[:, 3] > 0.5  # stand flag
-      reward *= (~standing).float()
-      # Standing still: reward max value (zero support goal).
-      reward[standing] = 1.0
+    standing = stand_mask(env, command_name)
+    reward *= (~standing).float()
+    # Standing still: reward max value (zero support goal).
+    reward[standing] = 1.0
   return reward
-
-
 
 
 def feet_gait(
@@ -149,13 +192,11 @@ def feet_gait(
   is_stance = leg_phase < threshold
   reward = (is_stance == is_contact).float().mean(dim=1)
   if command_name is not None:
-    command = env.command_manager.get_command(command_name)
-    if command is not None:
-      # During stand (stand flag at index 3) the gait phase is irrelevant;
-      # reward keeping both feet on the ground instead of tracking the phase.
-      both_down = is_contact.all(dim=1).float()
-      standing = command[:, 3] >= 0.5
-      reward = torch.where(standing, both_down, reward)
+    # While standing the gait phase is irrelevant; reward keeping both feet on
+    # the ground instead of tracking the phase.
+    both_down = is_contact.all(dim=1).float()
+    standing = stand_mask(env, command_name)
+    reward = torch.where(standing, both_down, reward)
   return reward
 
 
@@ -180,8 +221,6 @@ class feet_swing_height:
   ) -> torch.Tensor:
     asset: Entity = env.scene[asset_cfg.name]
     contact_sensor: ContactSensor = env.scene[sensor_name]
-    command = env.command_manager.get_command(command_name)
-    assert command is not None
     foot_heights = asset.data.site_pos_w[:, asset_cfg.site_ids, 2]
     in_air = contact_sensor.data.found == 0
     self.peak_heights = torch.where(
@@ -190,8 +229,8 @@ class feet_swing_height:
       self.peak_heights,
     )
     first_contact = contact_sensor.compute_first_contact(dt=self.step_dt)
-    # Gate off when the robot should stand still (stand flag at index 3).
-    active = (command[:, 3] < 0.5).float()
+    # Gate off when the robot should stand still.
+    active = (~stand_mask(env, command_name)).float()
     error = self.peak_heights / target_height - 1.0
     cost = torch.sum(torch.square(error) * first_contact.float(), dim=1) * active
     num_landings = torch.sum(first_contact.float())
@@ -233,8 +272,6 @@ class feet_swing_height_fixed:
   ) -> torch.Tensor:
     asset: Entity = env.scene[asset_cfg.name]
     contact_sensor: ContactSensor = env.scene[sensor_name]
-    command = env.command_manager.get_command(command_name)
-    assert command is not None
     foot_heights = asset.data.site_pos_w[:, asset_cfg.site_ids, 2]
     in_air = contact_sensor.data.found == 0
     self.peak_heights = torch.where(
@@ -243,8 +280,8 @@ class feet_swing_height_fixed:
       self.peak_heights,
     )
     first_contact = contact_sensor.compute_first_contact(dt=self.step_dt)
-    # Gate off when the robot should stand still (stand flag at index 3).
-    active = (command[:, 3] < 0.5).float()
+    # Gate off when the robot should stand still.
+    active = (~stand_mask(env, command_name)).float()
     reached = (self.peak_heights >= target_height).float()
     reward = torch.sum(reached * first_contact.float(), dim=1) * active
     self.peak_heights = torch.where(
@@ -326,8 +363,6 @@ class feet_phase:
     rz_shape: str = "cosine",
   ) -> torch.Tensor:
     del foot_geom_names  # resolved to geom ids in __init__.
-    command = env.command_manager.get_command(command_name)
-    assert command is not None
     asset: Entity = env.scene[asset_cfg.name]
 
     period = 1.0 / frequency
@@ -358,12 +393,20 @@ class feet_phase:
     # Walking: penalize a foot only for staying below its swing target (don't
     # punish lifting higher). Standing: both feet should sit at baseline, so
     # penalize any deviation of foot_z from 0 (in either direction).
-    walk_error = torch.sum(torch.square(torch.clamp(rz - foot_z, min=0.0)), dim=1)  # [B]
+    walk_error = torch.sum(
+      torch.square(torch.clamp(rz - foot_z, min=0.0)), dim=1
+    )  # [B]
     stand_error = torch.sum(torch.square(foot_z), dim=1)  # [B]
-    standing = command[:, 3] >= 0.5
+    standing = stand_mask(env, command_name)
     error = torch.where(standing, stand_error, walk_error)  # [B]
 
-    walk_in_place = (torch.norm(command[:, :3], dim=1) < 0.05).float()
+    # Walk-in-place means a *velocity* command of zero. Require the velocity
+    # command to be the active type: under a path or stand command the twist
+    # reads zero too, and those envs must not collect the bonus.
+    twist = velocity_command(env, command_name)
+    walk_in_place = (
+      velocity_active(env, command_name) & (torch.norm(twist, dim=1) < 0.05)
+    ).float()
     # Full reward when both feet are planted during stand; the walk-in-place
     # bonus applies only to the walking gait.
     bonus = torch.where(
@@ -382,10 +425,8 @@ def feet_slip(
   """Penalize foot sliding (xy velocity while in contact)."""
   asset: Entity = env.scene[asset_cfg.name]
   contact_sensor: ContactSensor = env.scene[sensor_name]
-  command = env.command_manager.get_command(command_name)
-  assert command is not None
-  # Gate off when the robot should stand still (stand flag at index 3).
-  active = (command[:, 3] < 0.5).float()
+  # Gate off when the robot should stand still.
+  active = (~stand_mask(env, command_name)).float()
   assert contact_sensor.data.found is not None
   in_contact = (contact_sensor.data.found > 0).float()  # [B, N]
   foot_vel_xy = asset.data.site_lin_vel_w[:, asset_cfg.site_ids, :2]  # [B, N, 2]
@@ -418,11 +459,9 @@ def soft_landing(
   mean_landing_force = torch.sum(landing_impact) / torch.clamp(num_landings, min=1)
   env.extras["log"]["Metrics/landing_force_mean"] = mean_landing_force
   if command_name is not None:
-    command = env.command_manager.get_command(command_name)
-    if command is not None:
-      # Gate off when the robot should stand still (stand flag at index 3).
-      active = (command[:, 3] < 0.5).float()
-      cost = cost * active
+    # Gate off when the robot should stand still.
+    active = (~stand_mask(env, command_name)).float()
+    cost = cost * active
   return cost
 
 
@@ -438,12 +477,9 @@ def stand_still(
   )
   reward = torch.sum(torch.square(diff_angle), dim=1)
   if command_name is not None:
-    command = env.command_manager.get_command(command_name)
-    if command is not None:
-      # Only penalize pose deviation when the robot should stand still (stand
-      # flag at index 3). Walk-in-place envs (flag 0) are exempt so they can step.
-      scale = (command[:, 3] > 0.5).float()
-      reward *= scale
+    # Only penalize pose deviation when the robot should stand still.
+    # Walk-in-place envs are exempt so they can keep stepping.
+    reward *= stand_mask(env, command_name).float()
   return reward
 
 
@@ -451,10 +487,11 @@ class variable_posture:
   """Penalize deviation from default pose with a stand/walk/run-dependent std.
 
   Copy of mjlab's ``variable_posture``, but the standing regime is selected by
-  the command's stand flag (``command[:, 3]`` of ``UniformVelocityCommandWithStop``)
-  rather than a velocity ``walking_threshold``. This way a "walk in place" env
-  (zero velocity, stand flag 0) gets the looser ``std_walking`` tolerance so it
-  can step, while a "stand still" env (flag 1) gets the tight ``std_standing``
+  ``stand_mask`` (the stand command, or the stand flag of
+  ``UniformVelocityCommandWithStop``) rather than a velocity
+  ``walking_threshold``. This way a "walk in place" env (zero velocity, not
+  standing) gets the looser ``std_walking`` tolerance so it can step, while a
+  standing env gets the tight ``std_standing``
   tolerance to hold the default pose. The walking/running split still uses the
   command speed via ``running_threshold``.
   """
@@ -500,13 +537,12 @@ class variable_posture:
     del std_standing, std_walking, std_running  # Unused.
 
     asset: Entity = env.scene[asset_cfg.name]
-    command = env.command_manager.get_command(command_name)
-    assert command is not None
+    command = velocity_command(env, command_name)
 
     total_speed = torch.norm(command[:, :2], dim=1) + torch.abs(command[:, 2])
 
-    # Standing is driven by the command's stand flag, not the speed.
-    standing = command[:, 3] > 0.5
+    # Standing is driven by the stand command, not the speed.
+    standing = stand_mask(env, command_name)
     running = (total_speed >= running_threshold) & ~standing
     walking = ~standing & ~running
 
@@ -527,11 +563,10 @@ class variable_posture:
     return torch.exp(-torch.mean(error_squared / (std**2), dim=1))
 
 
-def feet_clearance_positive(
-  *args, **kwargs
-):
+def feet_clearance_positive(*args, **kwargs):
   r = feet_clearance(*args, **kwargs)
   return 1 - r
+
 
 def feet_clearance(
   env: ManagerBasedRlEnv,
@@ -547,11 +582,9 @@ def feet_clearance(
   delta = torch.abs(foot_z - target_height)  # [B, N]
   cost = torch.sum(delta * vel_norm, dim=1)  # [B]
   if command_name is not None:
-    command = env.command_manager.get_command(command_name)
-    if command is not None:
-      # Gate off when the robot should stand still (stand flag at index 3).
-      active = (command[:, 3] < 0.5).float()
-      cost = cost * active
+    # Gate off when the robot should stand still.
+    active = (~stand_mask(env, command_name)).float()
+    cost = cost * active
   return cost
 
 

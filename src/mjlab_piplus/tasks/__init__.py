@@ -1,6 +1,8 @@
 from mjlab.tasks.registry import register_mjlab_task
 from mjlab.tasks.velocity.rl.runner import VelocityOnPolicyRunner
 
+from .piplus_multi_env_cfg import piplus_multi_env_cfg
+from .piplus_multi_rl_cfg import get_piplus_multi_rl_cfg
 from .piplus_path_env_cfg import piplus_path_env_cfg
 from .piplus_path_rl_cfg import get_piplus_path_rl_cfg
 from .piplus_velocity_env_cfg import piplus_velocity_env_cfg
@@ -20,12 +22,12 @@ register_mjlab_task(
   rl_cfg=get_piplus_path_rl_cfg(),
   runner_cls=VelocityOnPolicyRunner,
 )
-# Same task, but the reference paths are planned with A* through a random
-# obstacle world (virtual obstacles: drawn in the viewer, never simulated).
+# One policy driven by a velocity, path, or stand command, switching between
+# them during the episode.
 register_mjlab_task(
-  task_id="Mjlab-Path-Obstacles-PiPlus",
-  env_cfg=piplus_path_env_cfg(obstacles=True),
-  play_env_cfg=piplus_path_env_cfg(play=True, obstacles=True),
-  rl_cfg=get_piplus_path_rl_cfg(),
+  task_id="Mjlab-Multi-PiPlus",
+  env_cfg=piplus_multi_env_cfg(),
+  play_env_cfg=piplus_multi_env_cfg(play=True),
+  rl_cfg=get_piplus_multi_rl_cfg(),
   runner_cls=VelocityOnPolicyRunner,
 )

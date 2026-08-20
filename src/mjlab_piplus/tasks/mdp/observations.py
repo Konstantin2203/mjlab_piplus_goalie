@@ -1,21 +1,21 @@
 import torch
 from mjlab.envs import ManagerBasedRlEnv
 
+from mjlab_piplus.tasks.mdp.multi_command import stand_mask
 
-def phase(
-  env: ManagerBasedRlEnv, frequency: float, command_name: str
-) -> torch.Tensor:
+
+def phase(env: ManagerBasedRlEnv, frequency: float, command_name: str) -> torch.Tensor:
   period = 1 / frequency
   global_phase = (env.episode_length_buf * env.step_dt) % period / period
   phase = torch.zeros(env.num_envs, 2, device=env.device)
   phase[:, 0] = torch.sin(global_phase * torch.pi * 2.0)
   phase[:, 1] = torch.cos(global_phase * torch.pi * 2.0)
   # Freeze the gait (plant feet, zero phase) when the command asks the robot to
-  # stand still. The command's stand flag (index 3) decouples "walk in place"
-  # (zero velocity, flag 0 -> keep stepping) from "stand still" (flag 1).
-  command = env.command_manager.get_command(command_name)
-  stand_mask = command[:, 3] > 0.5
-  phase = torch.where(stand_mask.unsqueeze(1), torch.zeros_like(phase), phase)
+  # stand still. This decouples "walk in place" (zero velocity, keep stepping)
+  # from "stand still" -- under a MultiCommand the latter is its own command
+  # type, otherwise it is the velocity command's stand flag.
+  standing = stand_mask(env, command_name)
+  phase = torch.where(standing.unsqueeze(1), torch.zeros_like(phase), phase)
   return phase
 
 

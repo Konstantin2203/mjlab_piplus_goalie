@@ -8,6 +8,7 @@ from mjlab.managers.scene_entity_config import SceneEntityCfg
 from mjlab.sensor.contact_sensor import ContactSensor
 from mjlab.utils.lab_api.math import quat_apply_inverse
 
+from mjlab_piplus.tasks.mdp.multi_command import stand_mask
 from mjlab_piplus.tasks.mdp.rewards import _get_rz
 
 if TYPE_CHECKING:
@@ -202,10 +203,9 @@ def phase_metric(
   """phase from 0 to 1"""
   period = 1 / frequency
   global_phase = (env.episode_length_buf * env.step_dt) % period / period
-  # Zero out phase when the command asks the robot to stand still (stand flag at
-  # index 3). Matches the ``phase`` observation.
-  command = env.command_manager.get_command(command_name)
-  stand = command[:, 3] > 0.5
+  # Zero out phase when the command asks the robot to stand still. Matches the
+  # ``phase`` observation.
+  stand = stand_mask(env, command_name)
   global_phase = torch.where(stand, torch.zeros_like(global_phase), global_phase)
   return global_phase
 
