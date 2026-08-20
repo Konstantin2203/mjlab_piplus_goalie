@@ -53,13 +53,45 @@ class JoystickTerm(Protocol):
   def apply_joystick(self) -> None: ...
 
 
+@runtime_checkable
+class GoalPoseTerm(Protocol):
+  """A command term that sends the robot to a goal pose.
+
+  Implemented by ``GoalPoseCommand`` (its sampled target) and ``PathCommand``
+  (the end of its path), so the goal-reached / progress / look-at rewards work
+  against either.
+  """
+
+  @property
+  def goal_pos_w(self) -> torch.Tensor:
+    """World xy of the goal, ``(num_envs, 2)``."""
+    ...
+
+  @property
+  def goal_command_b(self) -> torch.Tensor:
+    """Goal in the base frame, ``(num_envs, 3)`` = ``[dx_b, dy_b, yaw_err]``."""
+    ...
+
+  @property
+  def yaw_err(self) -> torch.Tensor:
+    """Wrapped yaw error to the goal orientation, ``(num_envs,)``."""
+    ...
+
+  # Every CommandTerm has this; declared so progress-style rewards can detect a
+  # goal change and drop the meaningless delta that spans two goals.
+  command_counter: torch.Tensor
+
+
 __all__ = [
+  "GoalPoseTerm",
   "JoystickTerm",
   "MultiCommand",
   "MultiCommandCfg",
   "StandCommand",
   "StandCommandCfg",
   "is_command_active",
+  "resolve_command_term",
+  "resolve_goal_term",
   "stand_mask",
   "velocity_active",
   "velocity_command",
@@ -433,6 +465,47 @@ class MultiCommandCfg(CommandTermCfg):
 ##
 # Accessors used by the reward / observation terms.
 ##
+
+
+def resolve_command_term(
+  env: ManagerBasedRlEnv, command_name: str, sub_command_name: str | None = None
+) -> tuple[CommandTerm, torch.Tensor]:
+  """Resolve a command term and its per-env active mask.
+
+  ``command_name`` may name the term directly (standalone task) or name a
+  :class:`MultiCommand` that holds it as ``sub_command_name``. The mask is all
+  True in the former case and the sub-command's active mask in the latter, so a
+  reward can tell which envs its command is actually driving.
+  """
+  term = env.command_manager.get_term(command_name)
+  if isinstance(term, MultiCommand):
+    if sub_command_name is None:
+      raise ValueError(
+        f"Command '{command_name}' is a MultiCommand; pass sub_command_name to "
+        f"say which of {list(term.term_names)} this term refers to."
+      )
+    if sub_command_name not in term.terms:
+      raise KeyError(
+        f"'{sub_command_name}' is not a sub-command of '{command_name}'. "
+        f"Configured: {list(term.term_names)}."
+      )
+    return term.terms[sub_command_name], term.active_mask(sub_command_name)
+  assert term is not None, f"Command '{command_name}' not found."
+  return term, torch.ones(env.num_envs, dtype=torch.bool, device=env.device)
+
+
+def resolve_goal_term(
+  env: ManagerBasedRlEnv, command_name: str, sub_command_name: str | None = None
+) -> tuple[GoalPoseTerm, torch.Tensor]:
+  """Like :func:`resolve_command_term`, but require a goal-bearing command."""
+  term, active = resolve_command_term(env, command_name, sub_command_name)
+  if not isinstance(term, GoalPoseTerm):
+    raise TypeError(
+      f"Command '{sub_command_name or command_name}' does not carry a goal pose "
+      f"(got {type(term).__name__}, which lacks goal_pos_w / goal_command_b / "
+      "yaw_err)."
+    )
+  return term, active
 
 
 def is_command_active(

@@ -10,7 +10,7 @@ from mjlab.managers.scene_entity_config import SceneEntityCfg
 if TYPE_CHECKING:
   from mjlab.envs import ManagerBasedRlEnv
 
-from mjlab_piplus.tasks.mdp.multi_command import MultiCommand
+from mjlab_piplus.tasks.mdp.multi_command import MultiCommand, resolve_goal_term
 from mjlab_piplus.tasks.mdp.path_following.path_command import PathCommand
 from mjlab_piplus.tasks.mdp.path_following.utils import (
   angle_distance,
@@ -214,44 +214,57 @@ def align_with_path_reward(
 
 
 def _goal_dist(env: ManagerBasedRlEnv, command, foot_asset_cfg: SceneEntityCfg):
-  """Base-footprint distance to the final waypoint (goal position)."""
+  """Base-footprint distance to the goal position.
+
+  Reads ``goal_pos_w``, which both ``PathCommand`` (its final waypoint) and
+  ``GoalPoseCommand`` (its sampled target) provide.
+  """
   root_position = base_footprint_xy(env, foot_asset_cfg)
-  final_waypoints = command.paths[..., -1, :2]  # (num_envs, 2)
-  return torch.norm(final_waypoints - root_position, dim=-1)  # (num_envs,)
+  return torch.norm(command.goal_pos_w - root_position, dim=-1)  # (num_envs,)
 
 
 def goal_reached_linear(
   env: ManagerBasedRlEnv,
   command_name: str,
+  sub_command_name: str | None = None,
   asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
   foot_asset_cfg: SceneEntityCfg = _DEFAULT_FOOT_CFG,
   pos_std: float = 0.25,
   success_threshold: float = 0.1,
+  metric_prefix: str = "goal",
 ) -> torch.Tensor:
   """Dense reward for reaching the goal position: ``exp(-dist^2 / pos_std^2)``.
 
-  Split out from the orientation term so each can be weighted independently.
-  ``success_threshold`` only drives the logged success-rate metric."""
+  Works against any command exposing ``goal_pos_w`` -- the path command (its
+  final waypoint) or the goal-pose command. Split out from the orientation term
+  so each can be weighted independently. ``success_threshold`` only drives the
+  logged success-rate metric; ``metric_prefix`` keeps the log keys distinct when
+  both commands use this term."""
   del asset_cfg  # Position comes from the base footprint (feet), not the root.
-  command, _ = resolve_path_command(env, command_name)
+  command, active = resolve_goal_term(env, command_name, sub_command_name)
   dist = _goal_dist(env, command, foot_asset_cfg)
   reward = torch.exp(-(dist**2) / pos_std**2)
-  env.extras["log"]["Metrics/goal_reached_linear"] = torch.mean(reward).item()
-  env.extras["log"]["Metrics/goal_success_rate_linear"] = torch.mean(
-    (dist < success_threshold).float()
+  # Log only over the envs this command is actually driving.
+  n = active.sum().clamp(min=1)
+  log = env.extras["log"]
+  log[f"Metrics/{metric_prefix}_reached_linear"] = ((reward * active).sum() / n).item()
+  log[f"Metrics/{metric_prefix}_success_rate_linear"] = (
+    ((dist < success_threshold).float() * active).sum() / n
   ).item()
-  env.extras["log"]["Metrics/mean_dist_to_goal"] = torch.mean(dist).item()
+  log[f"Metrics/mean_dist_to_{metric_prefix}"] = ((dist * active).sum() / n).item()
   return reward
 
 
 def goal_reached_angular(
   env: ManagerBasedRlEnv,
   command_name: str,
+  sub_command_name: str | None = None,
   asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
   foot_asset_cfg: SceneEntityCfg = _DEFAULT_FOOT_CFG,
   pos_std: float = 0.25,
   yaw_std: float = 0.5,
   success_yaw_threshold: float = 0.2,
+  metric_prefix: str = "goal",
 ) -> torch.Tensor:
   """Dense reward for reaching the goal orientation, gated by proximity so it
   only applies near the goal:
@@ -263,12 +276,16 @@ def goal_reached_angular(
   it gives a smooth gradient to turn onto the goal heading. ``success_yaw_*``
   only drives the logged success-rate metric."""
   del asset_cfg  # Position comes from the base footprint (feet), not the root.
-  command, _ = resolve_path_command(env, command_name)
+  command, active = resolve_goal_term(env, command_name, sub_command_name)
   dist = _goal_dist(env, command, foot_asset_cfg)
   # yaw_err is wrap(goal_yaw - heading), updated by the command each step.
   yaw_err = command.yaw_err.abs()  # (num_envs,)
   pos_gate = torch.exp(-(dist**2) / pos_std**2)
   reward = pos_gate * torch.exp(-(yaw_err**2) / yaw_std**2)
-  env.extras["log"]["Metrics/goal_reached_angular"] = torch.mean(reward).item()
-  env.extras["log"]["Metrics/mean_yaw_err_to_goal"] = torch.mean(yaw_err).item()
+  n = active.sum().clamp(min=1)
+  log = env.extras["log"]
+  log[f"Metrics/{metric_prefix}_reached_angular"] = ((reward * active).sum() / n).item()
+  log[f"Metrics/mean_yaw_err_to_{metric_prefix}"] = (
+    (yaw_err * active).sum() / n
+  ).item()
   return reward

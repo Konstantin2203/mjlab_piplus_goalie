@@ -11,6 +11,7 @@ from mjlab.utils.lab_api.math import quat_apply_inverse
 from mjlab.utils.lab_api.string import resolve_matching_names_values
 
 from mjlab_piplus.tasks.mdp.multi_command import (
+  resolve_goal_term,
   stand_mask,
   velocity_active,
   velocity_command,
@@ -589,45 +590,47 @@ def feet_clearance(
 
 
 class goal_progress:
-  """Reward progress toward the goal: the per-step reduction in Euclidean
-  distance to the goal position.
+  """Reward progress toward the goal position, in meters/second.
 
-  Normalized so that approaching the goal at ``max_vel`` yields a reward of 1.
-  Moving away yields a proportional negative reward (unbounded below). The
-  reward is capped at 1 so the policy is not encouraged to exceed ``max_vel``,
-  which can be unstable.
+  Each step it takes the reduction in distance to the goal since the previous
+  step and divides by the policy timestep, giving a speed in m/s capped at
+  ``max_speed`` (no bonus for going faster). It stays negative when moving away.
 
-  Within ``distance_threshold`` of the goal the reward is always 1, giving the
-  policy a reason to hold position at the goal instead of oscillating once no
-  more progress can be made.
+  Deliberately *not* floored anywhere: the reward telescopes, so walking out and
+  back nets ~0 and there is nothing to farm by oscillating. Once stopped at the
+  goal the delta is simply 0 -- holding position there is paid for by
+  ``goal_reached_linear``, which is maximal at the goal.
   """
 
   def __init__(self, cfg: RewardTermCfg, env: ManagerBasedRlEnv):
-    term = env.command_manager.get_term(cfg.params["command_name"])
-    self.last_dist = torch.linalg.norm(term.command[:, :2], dim=1)
+    term, _ = resolve_goal_term(
+      env,
+      cfg.params["command_name"],
+      cfg.params.get("sub_command_name"),
+    )
+    self.last_dist = torch.linalg.norm(term.goal_command_b[:, :2], dim=1)
     self.last_counter = term.command_counter.clone()
 
   def __call__(
     self,
     env: ManagerBasedRlEnv,
     command_name: str,
-    max_vel: float = 1.0,
-    distance_threshold: float = 0.5,
+    sub_command_name: str | None = None,
+    max_speed: float = 1.0,
   ) -> torch.Tensor:
-    term = env.command_manager.get_term(command_name)
-    assert term is not None, f"Command '{command_name}' not found."
-    dist = torch.linalg.norm(term.command[:, :2], dim=1)  # [B]
+    term, active = resolve_goal_term(env, command_name, sub_command_name)
+    dist = torch.linalg.norm(term.goal_command_b[:, :2], dim=1)  # [B]
     # Positive when the robot got closer to the goal since the previous step.
-    progress = self.last_dist - dist
-    # On a goal change (periodic resample or episode reset) the distance delta
-    # is meaningless, so zero those steps out.
+    speed = (self.last_dist - dist) / env.step_dt
+    # On a goal change (resample or episode reset) the delta spans two different
+    # goals and is meaningless, so zero those steps out.
     goal_changed = term.command_counter != self.last_counter
-    progress = torch.where(goal_changed, torch.zeros_like(progress), progress)
-    # step_dt already includes decimation (physics_dt * decimation), so the max
-    # distance reachable in one policy step is max_vel * step_dt.
-    reward = torch.clamp(progress / (max_vel * env.step_dt), max=1.0)
-    # Hold reward at the goal so the policy does not oscillate near it.
-    reward = torch.where(dist <= distance_threshold, torch.ones_like(reward), reward)
+    speed = torch.where(goal_changed, torch.zeros_like(speed), speed)
+    reward = torch.clamp(speed, max=max_speed)
+    n = active.sum().clamp(min=1)
+    env.extras["log"]["Metrics/mean_goal_progress_mps"] = (
+      (speed * active).sum() / n
+    ).item()
     self.last_dist = dist
     self.last_counter = term.command_counter.clone()
     return reward
@@ -636,6 +639,7 @@ class goal_progress:
 def close_to_goal(
   env: ManagerBasedRlEnv,
   command_name: str,
+  sub_command_name: str | None = None,
   epsilon: float = 0.5,
 ) -> torch.Tensor:
   """Reward proximity to the goal position: ``exp(-epsilon * d)``.
@@ -643,15 +647,15 @@ def close_to_goal(
   ``d`` is the Euclidean distance to the goal position, read from the base-frame
   goal command ``[dx_b, dy_b, yaw_err]``.
   """
-  command = env.command_manager.get_command(command_name)
-  assert command is not None, f"Command '{command_name}' not found."
-  d = torch.norm(command[:, :2], dim=1)
+  term, _ = resolve_goal_term(env, command_name, sub_command_name)
+  d = torch.norm(term.goal_command_b[:, :2], dim=1)
   return torch.exp(-epsilon * d)
 
 
 def align_with_goal(
   env: ManagerBasedRlEnv,
   command_name: str,
+  sub_command_name: str | None = None,
   pos_coeff: float = 5.0,
   ori_coeff: float = 1.0,
 ) -> torch.Tensor:
@@ -660,31 +664,33 @@ def align_with_goal(
   ``d`` is the Euclidean distance to the goal position and ``alpha`` is the
   angular distance to the goal orientation (wrapped yaw error).
   """
-  command = env.command_manager.get_command(command_name)
-  assert command is not None, f"Command '{command_name}' not found."
-  d = torch.norm(command[:, :2], dim=1)
-  alpha = torch.abs(command[:, 2])
+  term, _ = resolve_goal_term(env, command_name, sub_command_name)
+  d = torch.norm(term.goal_command_b[:, :2], dim=1)
+  alpha = torch.abs(term.yaw_err)
   return torch.exp(-pos_coeff * d) * torch.exp(-ori_coeff * alpha)
 
 
 def orient_towards_goal(
   env: ManagerBasedRlEnv,
   command_name: str,
+  sub_command_name: str | None = None,
   coeff: float = 1.0,
   distance_threshold: float = 0.3,
 ) -> torch.Tensor:
-  """Reward facing the goal position while far away.
+  """Reward looking at the goal position while far away.
 
-  When farther than ``distance_threshold`` from the goal, returns
-  ``exp(-coeff * |beta|)`` where ``beta`` is the angle between the robot's
-  forward (base x) axis and the vector from the base to the goal position
-  (i.e. the goal bearing in the base frame). When within
-  ``distance_threshold``, returns 1.
+  Returns ``exp(-coeff * |beta|)``, where ``beta`` is the goal bearing in the
+  base frame -- the angle between the robot's forward (base x) axis and the
+  vector to the goal. Inside ``distance_threshold`` of the goal the bearing is
+  ill-conditioned (a small sidestep swings it wildly) and turning to face a goal
+  you are standing on is not the behaviour we want, so the reward saturates to a
+  full 1 there and the goal *orientation* takes over via
+  ``goal_reached_angular``.
   """
-  command = env.command_manager.get_command(command_name)
-  assert command is not None, f"Command '{command_name}' not found."
-  d = torch.norm(command[:, :2], dim=1)
-  beta = torch.atan2(command[:, 1], command[:, 0])
+  term, _ = resolve_goal_term(env, command_name, sub_command_name)
+  goal_b = term.goal_command_b[:, :2]
+  d = torch.norm(goal_b, dim=1)
+  beta = torch.atan2(goal_b[:, 1], goal_b[:, 0])
   reward = torch.exp(-coeff * torch.abs(beta))
   return torch.where(d <= distance_threshold, torch.ones_like(reward), reward)
 

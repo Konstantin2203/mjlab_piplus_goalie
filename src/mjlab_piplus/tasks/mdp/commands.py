@@ -55,13 +55,39 @@ class GoalPoseCommand(CommandTerm):
 
   @property
   def command(self) -> torch.Tensor:
-    # 4-dim [dx_b, dy_b, yaw_err, stand_flag] so the shared gait terms
-    # (``phase``/``phase_metric``) can read the stand flag at index 3 uniformly.
-    # Standing envs (goal == current pose) freeze the gait; the flag is
-    # reflection-invariant, so ``goal_pose_command`` (which only reads indices
-    # 0-2) and the symmetry layout are unaffected.
-    stand_flag = self.is_standing_env.float().unsqueeze(1)
-    return torch.cat([self.goal_command_b, stand_flag], dim=1)
+    """Network-friendly goal pose: ``[dx_b, dy_b, cos(yaw_err), sin(yaw_err)]``.
+
+    ``yaw_err`` is a wrapping angle, discontinuous at +/-pi and awkward to learn
+    against, so the orientation is handed to the policy as a unit vector
+    instead. Rewards read ``goal_command_b`` / ``yaw_err`` off this term rather
+    than slicing here. The stand request is not part of the command: it is
+    reported through ``wants_stand``, like every other command term.
+    """
+    yaw_err = self.goal_command_b[:, 2]
+    return torch.stack(
+      [
+        self.goal_command_b[:, 0],
+        self.goal_command_b[:, 1],
+        torch.cos(yaw_err),
+        torch.sin(yaw_err),
+      ],
+      dim=1,
+    )
+
+  @property
+  def yaw_err(self) -> torch.Tensor:
+    """Wrapped yaw error to the goal orientation, ``(num_envs,)``."""
+    return self.goal_command_b[:, 2]
+
+  @property
+  def wants_stand(self) -> torch.Tensor:
+    """Per-env "stand still" request, read by ``MultiCommand.stand_mask``.
+
+    True for envs whose goal was set to their current pose. Under a
+    ``MultiCommand`` standing is its own command type, so set
+    ``rel_standing_envs=0`` there and let that type do the standing.
+    """
+    return self.is_standing_env
 
   def _update_metrics(self) -> None:
     max_command_time = self.cfg.resampling_time_range[1]
@@ -149,7 +175,9 @@ class GoalPoseCommandCfg(CommandTermCfg):
   yaw_range: tuple[float, float] = (-math.pi, math.pi)
   """Goal yaw sampling range (radians)."""
   rel_standing_envs: float = 0.0
-  """Fraction of environments whose goal is set to the current pose (stand)."""
+  """Fraction of environments whose goal is set to the current pose, so the
+  robot learns to hold still. Leave at 0 under a ``MultiCommand``, where
+  standing is its own command type."""
 
   @dataclass
   class VizCfg:

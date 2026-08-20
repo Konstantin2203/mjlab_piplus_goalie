@@ -7,7 +7,7 @@ between modes rather than being three separate policies.
 The policy sees every sub-command concatenated with the inactive blocks zeroed,
 prefixed by a one-hot naming the active type:
 
-    [one_hot(3) | velocity(3) | path(2N + 2)]
+    [one_hot(4) | velocity(3) | path(2N + 2) | goal_pose(4)]
 
 Standing is its own command type here, not a flag on the velocity command, so a
 zero-velocity *velocity* command means walk-in-place. Reward terms that only
@@ -70,8 +70,9 @@ WALK_FREQUENCY = 1.75
 COMMAND = "command"
 
 # Weight presets, spelled out so a reward's applicability reads at a glance.
-VELOCITY_AND_STAND = {"velocity": 1.0, "path": 0.0, "stand": 1.0}
-PATH_ONLY = {"velocity": 0.0, "path": 1.0, "stand": 0.0}
+VELOCITY_AND_STAND = {"velocity": 1.0, "path": 0.0, "goal_pose": 0.0, "stand": 1.0}
+PATH_ONLY = {"velocity": 0.0, "path": 1.0, "goal_pose": 0.0, "stand": 0.0}
+GOAL_POSE_ONLY = {"velocity": 0.0, "path": 0.0, "goal_pose": 1.0, "stand": 0.0}
 
 # Number of future path points in the command observation.
 NUM_PATH_OBSERVATIONS = 8
@@ -153,7 +154,7 @@ def piplus_multi_env_cfg(
       func=pi_mdp.phase,
       params={"frequency": WALK_FREQUENCY, "command_name": COMMAND},
     ),
-    # [one_hot(3) | velocity(3) | path(2N + 2)], inactive blocks zeroed.
+    # [one_hot(4) | velocity(3) | path(2N+2) | goal_pose(4)], inactive zeroed.
     "command": ObservationTermCfg(
       func=mdp.generated_commands,
       params={"command_name": COMMAND},
@@ -238,7 +239,7 @@ def piplus_multi_env_cfg(
     COMMAND: pi_mdp.MultiCommandCfg(
       debug_vis=True,
       change_command_probability=0.3,
-      fractions={"velocity": 0.5, "path": 0.4, "stand": 0.1},
+      fractions={"velocity": 0.4, "path": 0.3, "goal_pose": 0.2, "stand": 0.1},
       terms={
         "velocity": pi_mdp.UniformVelocityCommandWithStopCfg(
           entity_name="robot",
@@ -261,6 +262,16 @@ def piplus_multi_env_cfg(
           ),
         ),
         "path": path_cfg,
+        # Go to a pose sampled relative to the robot: no reference path, just
+        # the goal. Standing is its own type here, so rel_standing_envs stays 0.
+        "goal_pose": pi_mdp.GoalPoseCommandCfg(
+          entity_name="robot",
+          debug_vis=True,
+          resampling_time_range=(8.0, 15.0),
+          radius_range=(0.5, 3.0),
+          yaw_range=(-math.pi, math.pi),
+          rel_standing_envs=0.0,
+        ),
         "stand": pi_mdp.StandCommandCfg(resampling_time_range=(2.0, 5.0)),
       },
     )
@@ -460,6 +471,8 @@ def piplus_multi_env_cfg(
       weight=1.0,
       params={
         "command_name": COMMAND,
+        "sub_command_name": "path",
+        "metric_prefix": "path_goal",
         "asset_cfg": base_cfg,
         "foot_asset_cfg": foot_asset_cfg,
         "pos_std": 0.25,  # Gaussian width on goal distance (m).
@@ -472,6 +485,8 @@ def piplus_multi_env_cfg(
       weight=1.0,
       params={
         "command_name": COMMAND,
+        "sub_command_name": "path",
+        "metric_prefix": "path_goal",
         "asset_cfg": base_cfg,
         "foot_asset_cfg": foot_asset_cfg,
         "pos_std": 0.25,  # position gate width (m); matches the linear term.
@@ -513,6 +528,63 @@ def piplus_multi_env_cfg(
         "std": math.sqrt(1.0),
       },
       command_weights=PATH_ONLY,
+    ),
+    # -- Goal pose ------------------------------------------------------------
+    # Walk to a sampled pose. Progress carries the robot there, the look-at term
+    # keeps it facing where it is going, and the two goal-reached terms (shared
+    # with the path task) settle it onto the position and then the orientation.
+    "goal_pose_progress": MultiRewardTermCfg(
+      func=pi_mdp.goal_progress,
+      weight=2.0,
+      params={
+        "command_name": COMMAND,
+        "sub_command_name": "goal_pose",
+        # Progress speed in m/s, capped (no bonus above this).
+        "max_speed": 0.8,
+      },
+      command_weights=GOAL_POSE_ONLY,
+    ),
+    "goal_pose_look_at": MultiRewardTermCfg(
+      func=pi_mdp.orient_towards_goal,
+      weight=0.5,
+      params={
+        "command_name": COMMAND,
+        "sub_command_name": "goal_pose",
+        "coeff": 1.0,
+        # Inside this radius the bearing is ill-conditioned, so the look-at
+        # saturates to full reward and goal_pose_reached_angular takes over.
+        "distance_threshold": 0.3,
+      },
+      command_weights=GOAL_POSE_ONLY,
+    ),
+    "goal_pose_reached_linear": MultiRewardTermCfg(
+      func=goal_reached_linear,
+      weight=1.0,
+      params={
+        "command_name": COMMAND,
+        "sub_command_name": "goal_pose",
+        "metric_prefix": "goal_pose",
+        "asset_cfg": base_cfg,
+        "foot_asset_cfg": foot_asset_cfg,
+        "pos_std": 0.25,
+        "success_threshold": 0.05,
+      },
+      command_weights=GOAL_POSE_ONLY,
+    ),
+    "goal_pose_reached_angular": MultiRewardTermCfg(
+      func=goal_reached_angular,
+      weight=1.0,
+      params={
+        "command_name": COMMAND,
+        "sub_command_name": "goal_pose",
+        "metric_prefix": "goal_pose",
+        "asset_cfg": base_cfg,
+        "foot_asset_cfg": foot_asset_cfg,
+        "pos_std": 0.25,
+        "yaw_std": 0.5,
+        "success_yaw_threshold": 0.2,
+      },
+      command_weights=GOAL_POSE_ONLY,
     ),
     # -- Stability ------------------------------------------------------------
     "upright": RewardTermCfg(

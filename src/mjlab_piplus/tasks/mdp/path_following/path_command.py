@@ -177,6 +177,34 @@ class PathCommand(CommandTerm):
   def command(self) -> torch.Tensor:
     return self.command_b
 
+  @property
+  def goal_pos_w(self) -> torch.Tensor:
+    """World xy of the goal, i.e. the final waypoint. ``(num_envs, 2)``.
+
+    Named to match ``GoalPoseCommand`` so the shared goal-reached rewards can
+    read either term.
+    """
+    return self.waypoints[:, -1, :]
+
+  @property
+  def goal_command_b(self) -> torch.Tensor:
+    """Goal in the base frame, ``(num_envs, 3)`` = ``[dx_b, dy_b, yaw_err]``.
+
+    Completes the ``GoalPoseTerm`` contract, so the goal-pose rewards can read
+    this command too. ``current_pose`` is refreshed every ``_update_command``.
+    """
+    delta_w = self.goal_pos_w - self.current_pose[:, :2]
+    heading = self.current_pose[:, 2]
+    cos_h, sin_h = torch.cos(heading), torch.sin(heading)
+    return torch.stack(
+      [
+        cos_h * delta_w[:, 0] + sin_h * delta_w[:, 1],
+        -sin_h * delta_w[:, 0] + cos_h * delta_w[:, 1],
+        self.yaw_err,
+      ],
+      dim=1,
+    )
+
   def _resample_command(self, env_ids):
     self.starting_step = self._env.common_step_counter
     self._update_robot_pose()
