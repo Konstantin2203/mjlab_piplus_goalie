@@ -18,8 +18,9 @@ block on envs the kick command is not driving.
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import torch
 from mjlab.entity import Entity
@@ -31,6 +32,7 @@ from mjlab_piplus.objects import BALL_RADIUS
 from mjlab_piplus.tasks.mdp.multi_command import resolve_command_term
 
 if TYPE_CHECKING:
+  import viser
   from mjlab.envs.manager_based_rl_env import ManagerBasedRlEnv
   from mjlab.viewer.debug_visualizer import DebugVisualizer
 
@@ -38,7 +40,9 @@ __all__ = [
   "KickCommand",
   "KickCommandCfg",
   "kick_approach",
-  "kick_velocity_match",
+  "kick_ball_speed",
+  "kick_phase",
+  "kick_quality",
 ]
 
 

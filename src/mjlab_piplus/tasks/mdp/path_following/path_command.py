@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import hashlib
 import math
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import torch
@@ -13,6 +14,7 @@ from mjlab.envs.manager_based_rl_env import ManagerBasedRlEnv
 from mjlab.managers.command_manager import CommandTerm, CommandTermCfg
 
 if TYPE_CHECKING:
+  import viser
   from mjlab.viewer.debug_visualizer import DebugVisualizer
 
 from mjlab_piplus.tasks.mdp.path_following.path_gen_astar import (
@@ -101,6 +103,9 @@ class PathCommand(CommandTerm):
     self._pending_align = torch.zeros(
       self.num_envs, dtype=torch.bool, device=self.device
     )
+    # Set by create_gui() when the viewer is active.
+    self._gui_show_obstacles: "viser.GuiCheckboxHandle | None" = None
+    self._gui_show_path: "viser.GuiCheckboxHandle | None" = None
     # Twist command whose stand flag we drive near the goal (resolved lazily).
     self._twist_term = None
     self._update_robot_pose()
@@ -416,39 +421,69 @@ class PathCommand(CommandTerm):
       else:
         _add_box(visualizer, x, y, yaw, a, b, 2.0 * half_height)
 
+  # Visualization toggles. Handles are created by create_gui when the viewer is
+  # up; before that (and headless) the config values stand.
+
+  def _show_obstacles(self) -> bool:
+    if self._gui_show_obstacles is not None:
+      return bool(self._gui_show_obstacles.value)
+    return self.cfg.viz.show_obstacles
+
+  def _show_path(self) -> bool:
+    if self._gui_show_path is not None:
+      return bool(self._gui_show_path.value)
+    return self.cfg.viz.show_path
+
+  def create_gui(
+    self,
+    name: str,
+    server: "viser.ViserServer",
+    get_env_idx: Callable[[], int],
+    on_change: Callable[[], None] | None = None,
+    request_action: Callable[[str, Any], None] | None = None,
+  ) -> None:
+    del get_env_idx, on_change, request_action
+    with server.gui.add_folder(f"{name.capitalize()} viz"):
+      self._gui_show_obstacles = server.gui.add_checkbox(
+        "Obstacles", initial_value=self.cfg.viz.show_obstacles
+      )
+      self._gui_show_path = server.gui.add_checkbox(
+        "Path points", initial_value=self.cfg.viz.show_path
+      )
+
   def _debug_vis_impl(self, visualizer: DebugVisualizer) -> None:
     self._update_robot_pose()
     env_indices = visualizer.get_env_indices(self.num_envs)
+    show_obstacles, show_path = self._show_obstacles(), self._show_path()
+    stride = max(int(self.cfg.viz.path_point_stride), 1)
     for batch in env_indices:
-      self._draw_obstacles(visualizer, batch)
-      for i in range(self.paths.shape[1]):
-        path_point_with_z = np.concatenate(
-          [self.paths[batch, i, :2].cpu().numpy(), [0.0]]
-        )
-        visualizer.add_sphere(path_point_with_z, radius=0.02, color=(0, 0, 1, 0.5))
-      for i in range(self.waypoints[batch].shape[0]):
-        waypoint_with_z = np.concatenate(
-          [self.waypoints[batch, i].cpu().numpy(), [0.0]]
-        )
-        visualizer.add_sphere(waypoint_with_z, radius=0.05, color=(0, 1, 0, 1))
+      if show_obstacles:
+        self._draw_obstacles(visualizer, batch)
+
+      if show_path:
+        # One host transfer for the whole path. Fetching each point separately
+        # cost ~29 ms a frame at max_points=1500 -- more than the physics step.
+        xy = self.paths[batch, ::stride, :2].cpu().numpy()
+        for point in np.column_stack([xy, np.zeros(len(xy))]):
+          visualizer.add_sphere(point, radius=0.02, color=(0, 0, 1, 0.5))
+
+      waypoints = self.waypoints[batch].cpu().numpy()
+      for point in np.column_stack([waypoints, np.zeros(len(waypoints))]):
+        visualizer.add_sphere(point, radius=0.05, color=(0, 1, 0, 1))
 
       # Goal orientation arrow at the final waypoint (cyan).
-      goal_xy = self.waypoints[batch, -1].cpu().numpy()
       gyaw = float(self.goal_yaw_w[batch].cpu())
-      goal_from = np.array([goal_xy[0], goal_xy[1], 0.05])
+      goal_from = np.array([waypoints[-1, 0], waypoints[-1, 1], 0.05])
       goal_to = goal_from + np.array([0.3 * math.cos(gyaw), 0.3 * math.sin(gyaw), 0.0])
       visualizer.add_arrow(goal_from, goal_to, color=(0.0, 1.0, 1.0, 0.9), width=0.02)
 
-      world_to_robot = (
-        xy_yaw_to_mat(self.current_pose[batch : batch + 1]).cpu().numpy()
-      )  # (1, 4, 4)
-      for i in range(self.cfg.num_observations):
-        command_point_hom = np.concatenate(
-          [self.command_b[batch, i * 2 : i * 2 + 2].cpu().numpy(), [0.0, 1.0]]
-        )
-        command_point_in_world_hom = world_to_robot @ command_point_hom
-        command_point_with_z = command_point_in_world_hom[0, :3]
-        visualizer.add_sphere(command_point_with_z, radius=0.05, color=(1, 0, 0, 1))
+      # The observed path points, mapped back into the world (red).
+      world_to_robot = xy_yaw_to_mat(self.current_pose[batch : batch + 1]).cpu().numpy()
+      n_obs = self.cfg.num_observations
+      obs_xy = self.command_b[batch, : 2 * n_obs].cpu().numpy().reshape(n_obs, 2)
+      hom = np.column_stack([obs_xy, np.zeros(n_obs), np.ones(n_obs)])
+      for point in (world_to_robot[0] @ hom.T).T:
+        visualizer.add_sphere(point[:3], radius=0.05, color=(1, 0, 0, 1))
 
 
 @dataclass(kw_only=True)
@@ -510,6 +545,15 @@ class PathCommandCfg(CommandTermCfg):
   @dataclass
   class VizCfg:
     scale: float = 0.5
+    show_obstacles: bool = True
+    """Draw the virtual obstacle world. Also toggleable live in the viewer."""
+    show_path: bool = True
+    """Draw the reference path. Also toggleable live in the viewer. This is by
+    far the most expensive thing the term draws -- ``max_points`` spheres a
+    frame -- so it is the first thing to turn off if the viewer is sluggish."""
+    path_point_stride: int = 1
+    """Draw every Nth path point. Raising this thins the path out rather than
+    hiding it, trading fidelity for frame time."""
 
   viz: VizCfg = field(default_factory=VizCfg)
 

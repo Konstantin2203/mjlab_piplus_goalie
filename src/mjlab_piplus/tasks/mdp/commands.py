@@ -31,6 +31,56 @@ if TYPE_CHECKING:
   from mjlab.viewer.debug_visualizer import DebugVisualizer
 
 
+# Ground hits further than this from the camera are treated as misses: a click
+# near the horizon is almost never a deliberate goal hundreds of metres away.
+_MAX_CLICK_DISTANCE = 50.0
+
+
+def _ray_ground_hit(
+  origin, direction, z_plane: float = 0.0, max_distance: float = _MAX_CLICK_DISTANCE
+) -> np.ndarray | None:
+  """Where a click ray meets the ground plane, or None if it usefully doesn't.
+
+  viser's frontend builds this ray in the browser from the live camera -- it
+  already accounts for camera pose and field of view -- and sends it in world
+  coordinates. mjlab adds its scene nodes at top level with MuJoCo poses
+  unchanged and no up-direction override, so viser's world frame is MuJoCo's and
+  the hit is directly a world xy.
+
+  Returns None when there is no sensible hit: no ray at all, a ray parallel to
+  the ground, the ground behind the camera, or a near-horizon click whose
+  intersection runs off past ``max_distance``. That last one matters: clicking
+  a few pixels above the horizon yields a mathematically valid hit hundreds of
+  metres away, which would fling the goal off the map.
+  """
+  if origin is None or direction is None:
+    return None
+  origin = np.asarray(origin, dtype=float)
+  direction = np.asarray(direction, dtype=float)
+  norm = float(np.linalg.norm(direction))
+  if norm < 1e-9:
+    return None
+  direction = direction / norm  # viser does not promise a unit vector.
+  if abs(direction[2]) < 1e-6:
+    return None  # Looking along the horizon.
+  t = (z_plane - origin[2]) / direction[2]
+  if t <= 0.0:
+    return None  # Ground is behind the camera.
+  hit = origin + t * direction
+  if float(np.linalg.norm(hit[:2] - origin[:2])) > max_distance:
+    return None
+  return hit
+
+
+def _yaw_to_wxyz(yaw: float) -> tuple[float, float, float, float]:
+  return (math.cos(0.5 * yaw), 0.0, 0.0, math.sin(0.5 * yaw))
+
+
+def _wxyz_to_yaw(wxyz) -> float:
+  w, x, y, z = (float(v) for v in wxyz)
+  return math.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z))
+
+
 class GoalPoseCommand(CommandTerm):
   cfg: GoalPoseCommandCfg
 
@@ -59,6 +109,15 @@ class GoalPoseCommand(CommandTerm):
       self.num_envs, dtype=torch.bool, device=self.device
     )
     self._pending_offset = torch.zeros(self.num_envs, 2, device=self.device)
+
+    # Viewer control. joystick_gate is set by MultiCommand to "is goal_pose the
+    # selected type"; see the JoystickTerm protocol in multi_command.py.
+    self.joystick_gate: Callable[[], bool] | None = None
+    self._gui_get_env_idx: Callable[[], int] | None = None
+    self._manual_goal: tuple[float, float] | None = None
+    self._manual_yaw: float = 0.0
+    # True after the placing click, while a direction is still expected.
+    self._awaiting_direction = False
 
     self.metrics["error_pos"] = torch.zeros(self.num_envs, device=self.device)
     self.metrics["error_yaw"] = torch.zeros(self.num_envs, device=self.device)
@@ -150,6 +209,86 @@ class GoalPoseCommand(CommandTerm):
     self.goal_command_b[:, 0] = cos_h * delta_w[:, 0] + sin_h * delta_w[:, 1]
     self.goal_command_b[:, 1] = -sin_h * delta_w[:, 0] + cos_h * delta_w[:, 1]
     self.goal_command_b[:, 2] = wrap_to_pi(self.goal_yaw_w - heading_w)
+
+  # Viewer control: click the ground to place the goal, click again to aim it.
+  #
+  # No scene objects are created for this. An earlier version raised a large
+  # translucent plate to drag on, which is the only way viser can stream pointer
+  # motion (there is no hover event -- the protocol carries just "click" and
+  # "rect-select"). But a scene-sized transparent surface breaks the renderer's
+  # transparency sorting: the grid and the debug arrows drop out for as long as
+  # it is up. Not worth it for a live preview.
+
+  def create_gui(
+    self,
+    name: str,
+    server: "viser.ViserServer",
+    get_env_idx: Callable[[], int],
+    on_change: Callable[[], None] | None = None,
+    request_action: Callable[[str, Any], None] | None = None,
+  ) -> None:
+    del name, on_change, request_action
+    self._gui_get_env_idx = get_env_idx
+
+    @server.scene.on_click()
+    def _(event) -> None:
+      # Ignore scene clicks unless this command is the one being driven, so
+      # clicking around while another command runs cannot move a hidden goal.
+      if not self._joystick_active():
+        return
+      hit = _ray_ground_hit(
+        getattr(event, "ray_origin", None), getattr(event, "ray_direction", None)
+      )
+      if hit is None:
+        return
+      if self._awaiting_direction:
+        self._aim_at(float(hit[0]), float(hit[1]))
+        self._awaiting_direction = False
+      else:
+        self._manual_goal = (float(hit[0]), float(hit[1]))
+        self._awaiting_direction = True
+
+  def _aim_at(self, x: float, y: float) -> None:
+    """Point the goal from itself toward ``(x, y)``, ignoring degenerate aims."""
+    if self._manual_goal is None:
+      return
+    dx = x - self._manual_goal[0]
+    dy = y - self._manual_goal[1]
+    if math.hypot(dx, dy) > 1e-3:
+      self._manual_yaw = math.atan2(dy, dx)
+
+  @property
+  def awaiting_direction(self) -> bool:
+    """True between the placing click and the aiming click."""
+    return self._awaiting_direction
+
+  def _joystick_active(self) -> bool:
+    # Only meaningful under a MultiCommand: the command-type selector is the
+    # on/off switch, as it is for the velocity and kick controls.
+    return self.joystick_gate is not None and self.joystick_gate()
+
+  def apply_joystick(self) -> None:
+    """Override the sampled goal with the one placed in the viewer."""
+    if not self._joystick_active():
+      self._awaiting_direction = False
+      return
+    if self._manual_goal is None:
+      return
+    assert self._gui_get_env_idx is not None
+    idx = self._gui_get_env_idx()
+
+    goal = torch.tensor(self._manual_goal, device=self.device)
+    yaw = torch.tensor(self._manual_yaw, device=self.device)
+    self.goal_pos_w[idx] = goal
+    self.goal_yaw_w[idx] = yaw
+    # _update_command already derived goal_command_b from the sampled goal, so
+    # redo it here or the observation would trail the click by a step.
+    delta = goal - self.robot.data.root_link_pos_w[idx, :2]
+    heading = self.robot.data.heading_w[idx]
+    cos_h, sin_h = torch.cos(heading), torch.sin(heading)
+    self.goal_command_b[idx, 0] = cos_h * delta[0] + sin_h * delta[1]
+    self.goal_command_b[idx, 1] = -sin_h * delta[0] + cos_h * delta[1]
+    self.goal_command_b[idx, 2] = wrap_to_pi(yaw - heading)
 
   # Visualization.
 

@@ -277,8 +277,8 @@ def piplus_multi_env_cfg(
         "goal_pose": pi_mdp.GoalPoseCommandCfg(
           entity_name="robot",
           debug_vis=True,
-          resampling_time_range=(8.0, 15.0),
-          radius_range=(0.5, 3.0),
+          resampling_time_range=(1.0, 5.0),
+          radius_range=(0.5, 8.0),
           yaw_range=(-math.pi, math.pi),
           rel_standing_envs=0.0,
         ),
@@ -622,15 +622,25 @@ def piplus_multi_env_cfg(
       },
       command_weights=KICK_ONLY,
     ),
-    "kick_velocity_match": MultiRewardTermCfg(
-      func=pi_mdp.kick_velocity_match,
-      weight=3.0,
+    "kick_quality": MultiRewardTermCfg(
+      func=pi_mdp.kick_quality,
+      # Paid once per kick rather than every step, so this is the whole value of
+      # a good kick, not a rate. Watch Episode_Reward/kick_quality against the
+      # approach term when tuning.
+      weight=5.0,
       params={
         "command_name": COMMAND,
         "sub_command_name": "kick",
-        # Gaussian width on the ball velocity error, in m/s. Scores direction
-        # and speed together against a 1-5 m/s command.
-        "std": 1.0,
+        # Peak ball velocity over this window after first contact: the latch
+        # can fire mid-contact while the ball is still accelerating.
+        "window_s": 0.3,
+        "direction_std": 0.35,  # rad, ~20 deg
+        # Relative to the commanded strength, so 5 m/s is not held to the same
+        # absolute precision as 1 m/s.
+        "speed_rel_std": 0.35,
+        # Aim is weighted above pace, and pace only counts once the aim is good.
+        "direction_weight": 3.0,
+        "speed_weight": 2.0,
       },
       command_weights=KICK_ONLY,
     ),
@@ -904,6 +914,20 @@ def piplus_multi_env_cfg(
     metrics["phase_metric"] = MetricsTermCfg(
       func=pi_mdp.phase_metric,
       params={"frequency": WALK_FREQUENCY, "command_name": COMMAND},
+    )
+    # Kick diagnostics: how fast the ball is actually going, and which half of
+    # the task the robot is in. Play only -- in training these would just be
+    # averaged over thousands of envs in different phases.
+    metrics["kick_ball_speed"] = MetricsTermCfg(
+      func=pi_mdp.kick_ball_speed,
+      params={"command_name": COMMAND, "sub_command_name": "kick"},
+    )
+    metrics["kick_phase"] = MetricsTermCfg(
+      func=pi_mdp.kick_phase,
+      params={"command_name": COMMAND, "sub_command_name": "kick"},
+      # 0/1/2 is a state, not a quantity: averaging it over an episode says
+      # nothing, so report where the episode ended up.
+      reduce="last",
     )
     metrics["foot_air_time"] = MetricsTermCfg(
       func=pi_mdp.current_air_time,

@@ -269,6 +269,10 @@ class MultiCommand(CommandTerm):
     resample_env_ids = (self.time_left <= 0.0).nonzero().flatten()
     if len(resample_env_ids) > 0:
       self._resample(resample_env_ids)
+    # Before the masks and _update_command: pinning a type in the viewer is a
+    # command change like any other, and the sub-command has to get its content
+    # sampled and applied in this same step.
+    self._apply_gui_override()
     # After resampling, so a term sees the types that are live *now*, and before
     # _update_command, so it can act on the change in the same step.
     for i, name in enumerate(self.term_names):
@@ -276,7 +280,6 @@ class MultiCommand(CommandTerm):
       if isinstance(term, ActiveAwareTerm):
         term.active_env_mask = self.active_type == i
     self._update_command()
-    self._apply_gui_override()
     # Sub-terms are driven through ``_update_command`` above and never through
     # their own ``compute``, so their viewer controls would otherwise never be
     # read. Run them last: the joystick has to overwrite the sampled command.
@@ -454,11 +457,26 @@ class MultiCommand(CommandTerm):
     return bool(self._gui_type_boxes) and self._gui_selected_type == name
 
   def _apply_gui_override(self) -> None:
+    """Pin the viewed env to the type selected in the viewer.
+
+    Switching type here resamples the newly selected sub-command, exactly as a
+    timer-driven switch would. Without that the env is merely relabelled while
+    the sub-command keeps whatever state it was left in -- most visibly, picking
+    "kick" would hand the policy a ball still parked 100 m away.
+    """
     if not self._gui_type_boxes or self._gui_selected_type == GUI_AUTO:
       return
     assert self._gui_get_env_idx is not None
     idx = self._gui_get_env_idx()
-    self.active_type[idx] = self._type_index[self._gui_selected_type]
+    target = self._type_index[self._gui_selected_type]
+    if int(self.active_type[idx]) == target:
+      return  # Already pinned; do not resample it out from under itself.
+    env_ids = torch.tensor([idx], device=self.device)
+    self.active_type[env_ids] = target
+    self.command_counter[env_ids] += 1
+    self.terms[self._gui_selected_type]._resample(env_ids)
+    low, high = self.cfg.terms[self._gui_selected_type].resampling_time_range
+    self.time_left[env_ids] = torch.empty(1, device=self.device).uniform_(low, high)
 
   def on_viewer_pause(self, paused: bool) -> None:
     for term in self.terms.values():
