@@ -82,6 +82,10 @@ class GoalPoseTerm(Protocol):
   command_counter: torch.Tensor
 
 
+# The "leave it to the sampler" entry in the viewer's command-type selector.
+GUI_AUTO = "auto"
+
+
 @runtime_checkable
 class ActiveAwareTerm(Protocol):
   """A sub-command that needs to know which envs it is currently driving.
@@ -96,6 +100,7 @@ class ActiveAwareTerm(Protocol):
 
 
 __all__ = [
+  "GUI_AUTO",
   "ActiveAwareTerm",
   "GoalPoseTerm",
   "JoystickTerm",
@@ -197,8 +202,11 @@ class MultiCommand(CommandTerm):
       self.metrics[f"active_{name}"] = torch.zeros(self.num_envs, device=self.device)
 
     # Set by create_gui() when the viewer is active.
-    self._gui_override: viser.GuiCheckboxHandle | None = None
-    self._gui_type: viser.GuiDropdownHandle | None = None
+    # One checkbox per command type, stacked; kept mutually exclusive by
+    # _on_type_toggled so the set behaves as a radio group.
+    self._gui_type_boxes: dict[str, viser.GuiCheckboxHandle] = {}
+    self._gui_selected_type: str = GUI_AUTO
+    self._gui_syncing = False
     self._gui_get_env_idx: Callable[[], int] | None = None
 
   # Properties.
@@ -388,10 +396,16 @@ class MultiCommand(CommandTerm):
     request_action: Callable[[str, Any], None] | None = None,
   ) -> None:
     with server.gui.add_folder(f"{name.capitalize()} type"):
-      self._gui_override = server.gui.add_checkbox("Override", initial_value=False)
-      self._gui_type = server.gui.add_dropdown(
-        "Active", options=self.term_names, initial_value=self.term_names[0]
-      )
+      # A checkbox per command type, one per row so they stack, plus "auto" to
+      # hand the choice back to the sampler. Kept mutually exclusive below, so
+      # the set reads as a radio group and doubles as the on/off switch the
+      # sub-commands gate their own viewer controls on.
+      for option in (GUI_AUTO, *self.term_names):
+        self._gui_type_boxes[option] = server.gui.add_checkbox(
+          option, initial_value=option == self._gui_selected_type
+        )
+      for option, box in self._gui_type_boxes.items():
+        box.on_update(self._type_toggle_handler(option))
     self._gui_get_env_idx = get_env_idx
     for sub_name, term in self.terms.items():
       # The type selector above is the on/off switch for a sub-command's own
@@ -406,25 +420,45 @@ class MultiCommand(CommandTerm):
         request_action=request_action,
       )
 
+  def _type_toggle_handler(self, option: str) -> Callable[[Any], None]:
+    """Keep the type checkboxes mutually exclusive, radio-button style."""
+
+    def _on_update(_event: Any) -> None:
+      # Writing a checkbox below re-enters this callback, so ignore our own
+      # writes rather than recursing through the whole group.
+      if self._gui_syncing:
+        return
+      if self._gui_type_boxes[option].value:
+        self._gui_selected_type = option
+      elif self._gui_selected_type == option:
+        # Unticking the live entry leaves nothing selected; fall back to auto
+        # instead, so there is always exactly one.
+        self._gui_selected_type = GUI_AUTO
+      self._gui_syncing = True
+      try:
+        for other, box in self._gui_type_boxes.items():
+          want = other == self._gui_selected_type
+          if box.value != want:
+            box.value = want
+      finally:
+        self._gui_syncing = False
+
+    return _on_update
+
   def _type_forced_gate(self, name: str) -> Callable[[], bool]:
     """A zero-arg predicate asking whether the viewer has forced type ``name``."""
     return lambda: self._type_forced(name)
 
   def _type_forced(self, name: str) -> bool:
-    """Is the viewer overriding the command type, and is it ``name``?"""
-    return (
-      self._gui_override is not None
-      and self._gui_override.value
-      and self._gui_type is not None
-      and self._gui_type.value == name
-    )
+    """Has the viewer pinned the command type to ``name``?"""
+    return bool(self._gui_type_boxes) and self._gui_selected_type == name
 
   def _apply_gui_override(self) -> None:
-    if self._gui_override is None or not self._gui_override.value:
+    if not self._gui_type_boxes or self._gui_selected_type == GUI_AUTO:
       return
-    assert self._gui_type is not None and self._gui_get_env_idx is not None
+    assert self._gui_get_env_idx is not None
     idx = self._gui_get_env_idx()
-    self.active_type[idx] = self._type_index[self._gui_type.value]
+    self.active_type[idx] = self._type_index[self._gui_selected_type]
 
   def on_viewer_pause(self, paused: bool) -> None:
     for term in self.terms.values():
@@ -470,6 +504,11 @@ class MultiCommandCfg(CommandTermCfg):
       raise ValueError(
         "MultiCommandCfg.fractions keys must match terms keys: "
         f"{sorted(self.fractions)} != {sorted(self.terms)}."
+      )
+    if GUI_AUTO in self.terms:
+      raise ValueError(
+        f"'{GUI_AUTO}' is reserved: it is the viewer's command-type selector "
+        "entry for letting the sampler choose. Rename the sub-command."
       )
     if any(v < 0.0 for v in self.fractions.values()):
       raise ValueError("MultiCommandCfg.fractions must be non-negative.")
