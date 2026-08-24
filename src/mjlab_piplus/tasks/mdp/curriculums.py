@@ -21,6 +21,7 @@ __all__ = [
   "commands_goal_radius",
   "RewardWeightStage",
   "reward_weight",
+  "reward_param_linear",
   "commands_vel_multi",
 ]
 
@@ -48,6 +49,42 @@ def reward_weight(
     if env.common_step_counter > stage["step"]:
       reward_term_cfg.weight = stage["weight"]
   return torch.tensor([reward_term_cfg.weight])
+
+
+def reward_param_linear(
+  env: ManagerBasedRlEnv,
+  env_ids: torch.Tensor,
+  reward_names: list[str],
+  param_name: str,
+  start_step: int,
+  end_step: int,
+  start_value: float,
+  end_value: float,
+) -> torch.Tensor:
+  """Ramp one param of one or more reward terms linearly over training steps.
+
+  Holds ``start_value`` until ``start_step``, interpolates to ``end_value`` by
+  ``end_step``, then holds. Several terms share one schedule because a tolerance
+  is usually split across terms that have to agree on it -- the kick's aim
+  tolerance lives on both ``kick_impact`` and ``kick_direction``, and letting
+  them drift apart would score the same kick two different ways.
+
+  Tightening a tolerance faster than the policy can follow is a known way to
+  break a signed reward: once the term goes reliably negative, the behavior it
+  was meant to shape stops being worth attempting at all. Give it a long runway.
+  """
+  del env_ids  # Unused.
+  step = env.common_step_counter
+  if step <= start_step:
+    value = start_value
+  elif step >= end_step:
+    value = end_value
+  else:
+    frac = (step - start_step) / max(end_step - start_step, 1)
+    value = start_value + frac * (end_value - start_value)
+  for name in reward_names:
+    env.reward_manager.get_term_cfg(name).params[param_name] = value
+  return torch.tensor(value)
 
 
 class GoalRadiusStage(TypedDict):

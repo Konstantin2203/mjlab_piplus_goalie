@@ -65,6 +65,14 @@ DELAY_MIN = 1
 DELAY_MAX = 1
 WALK_FREQUENCY = 1.75
 
+# Angular tolerance (Gaussian sigma, radians) of the kick's signed aim reward,
+# narrowed over training by the ``narrow_kick_aim`` curriculum. Both kick aim
+# terms are signed: outside the tolerance they pay *negative*, so a tolerance
+# that tightens faster than the policy can follow turns kicking into a net loss
+# and the robot stops attempting it. Hence a wide start and a long runway.
+KICK_DIR_SIGMA_START = math.radians(60.0)
+KICK_DIR_SIGMA_END = math.radians(20.0)
+
 # Name of the composite command term. Every command-consuming reward,
 # observation and metric points at this one name; the accessors in
 # ``mdp/multi_command.py`` resolve the active sub-command behind it.
@@ -287,11 +295,23 @@ def piplus_multi_env_cfg(
         "kick": pi_mdp.KickCommandCfg(
           entity_name="robot",
           debug_vis=True,
-          resampling_time_range=(6.0, 12.0),
-          distance_range=(0.2, 2.0),
-          direction_range=(-math.pi, math.pi),
+          # Long enough for several ball lives: the ball comes back after every
+          # kick, so this only bounds how long the kick task is handed out for.
+          resampling_time_range=(8.0, 16.0),
+          # Placed within a 60 degree fan either side of where the robot is
+          # facing, at most 1.2 m away whatever the bearing.
+          distance_range=(0.3, 1.2),
+          placement_cone_deg=60.0,
+          # Target direction within this cone of the robot's heading at
+          # placement -- a direction it can plausibly hit from where it stands.
+          # Widen towards 180 once kicking works to demand turning the ball.
+          direction_cone_deg=80.0,
           strength_range=(1.0, 5.0),
           park_position=(100.0, 100.0),
+          # Ball speed that counts as a strike, and how long the kick is scored
+          # for afterwards before the ball is re-placed.
+          contact_speed=0.5,
+          window_s=1.0,
         ),
         "stand": pi_mdp.StandCommandCfg(resampling_time_range=(2.0, 5.0)),
       },
@@ -608,39 +628,104 @@ def piplus_multi_env_cfg(
       command_weights=GOAL_POSE_ONLY,
     ),
     # -- Kick -----------------------------------------------------------------
-    # Two disjoint phases, split by the command's latched "has been kicked":
-    # walk to the ball, then send it off at the commanded velocity. The latch is
-    # what stops the robot nudging the ball away and re-earning the approach.
+    # One repeating cycle per ball: approach, strike, then a short window over
+    # which the kick is scored densely before the ball is re-placed and the next
+    # approach begins (see ``mdp/kick.py``). The window and the respawn are what
+    # make kicking worth more than loitering next to the ball -- the previous
+    # design paid a single lump at contact and then nothing, so the approach was
+    # worth more than the kick it was supposed to set up.
+    #
+    # Rough budget for one good kick, at these weights: contact +2.5 (until the
+    # curriculum drops it), impact +6.0 over the 1 s window, direction +2.0 --
+    # against roughly 1.5/s of approach reward on the way in. Keep that ordering
+    # when retuning: Episode_Reward/kick_impact should dominate
+    # Episode_Reward/kick_approach once the policy is kicking at all.
     "kick_approach": MultiRewardTermCfg(
       func=pi_mdp.kick_approach,
+      weight=3.0,
+      params={
+        "command_name": COMMAND,
+        "sub_command_name": "kick",
+        # Speed toward the ball in m/s, capped: no bonus for charging it.
+        "max_speed": 1.0,
+        # Cubed cosine, so only a well-aimed approach gets most of the credit.
+        "alignment_power": 3.0,
+      },
+      command_weights=KICK_ONLY,
+    ),
+    "kick_face_ball": MultiRewardTermCfg(
+      func=pi_mdp.kick_face_ball,
+      weight=0.5,
+      params={"command_name": COMMAND, "sub_command_name": "kick"},
+      command_weights=KICK_ONLY,
+    ),
+    "kick_idle": MultiRewardTermCfg(
+      func=pi_mdp.kick_idle,
+      # Kills the do-nothing optimum: standing still with a ball to fetch has to
+      # cost something, or refusing to engage is free.
+      weight=-1.0,
+      params={
+        "command_name": COMMAND,
+        "sub_command_name": "kick",
+        "vel_threshold": 0.1,
+        # Inside this radius the robot is planting to swing, not loitering.
+        "near_dist": 0.35,
+      },
+      command_weights=KICK_ONLY,
+    ),
+    "kick_foot_alignment": MultiRewardTermCfg(
+      func=pi_mdp.kick_foot_alignment,
+      weight=-0.25,
+      params={
+        "command_name": COMMAND,
+        "sub_command_name": "kick",
+        # Start turning the foot to line up well before the last half metre.
+        "close_dist": 0.9,
+      },
+      command_weights=KICK_ONLY,
+    ),
+    "kick_contact": MultiRewardTermCfg(
+      func=pi_mdp.kick_contact,
+      # Bootstrap only -- dropped to 0 by ``drop_kick_contact`` below. Left on,
+      # a flat payout per touch makes a stream of weak taps competitive with
+      # real kicks, since every touch buys a fresh ball.
+      weight=2.5,
+      params={
+        "command_name": COMMAND,
+        "sub_command_name": "kick",
+        "wrong_foot_penalty": 0.5,
+      },
+      command_weights=KICK_ONLY,
+    ),
+    "kick_impact": MultiRewardTermCfg(
+      func=pi_mdp.kick_impact,
+      # The payload: paid every step of the window, so this is ~weight x
+      # window_s for a perfect kick and as negative for a well-struck one sent
+      # the wrong way.
+      weight=6.0,
+      params={
+        "command_name": COMMAND,
+        "sub_command_name": "kick",
+        # Aim tolerance in radians, narrowed by ``narrow_kick_aim`` below.
+        "dir_sigma": KICK_DIR_SIGMA_START,
+        # Speed tolerance relative to the commanded strength, so 5 m/s is not
+        # held to the same absolute precision as 1 m/s.
+        "speed_rel_std": 0.35,
+        "min_ball_speed": 0.2,
+        # A toe-poke still pays a quarter of a clean side-foot contact: it has
+        # to be discoverable before it can be refined away.
+        "style_floor": 0.25,
+      },
+      command_weights=KICK_ONLY,
+    ),
+    "kick_direction": MultiRewardTermCfg(
+      func=pi_mdp.kick_direction,
       weight=2.0,
       params={
         "command_name": COMMAND,
         "sub_command_name": "kick",
-        # Closing speed in m/s, capped (no bonus above this).
-        "max_speed": 0.8,
-      },
-      command_weights=KICK_ONLY,
-    ),
-    "kick_quality": MultiRewardTermCfg(
-      func=pi_mdp.kick_quality,
-      # Paid once per kick rather than every step, so this is the whole value of
-      # a good kick, not a rate. Watch Episode_Reward/kick_quality against the
-      # approach term when tuning.
-      weight=5.0,
-      params={
-        "command_name": COMMAND,
-        "sub_command_name": "kick",
-        # Peak ball velocity over this window after first contact: the latch
-        # can fire mid-contact while the ball is still accelerating.
-        "window_s": 0.3,
-        "direction_std": 0.35,  # rad, ~20 deg
-        # Relative to the commanded strength, so 5 m/s is not held to the same
-        # absolute precision as 1 m/s.
-        "speed_rel_std": 0.35,
-        # Aim is weighted above pace, and pace only counts once the aim is good.
-        "direction_weight": 3.0,
-        "speed_weight": 2.0,
+        "dir_sigma": KICK_DIR_SIGMA_START,
+        "min_ball_speed": 0.2,
       },
       command_weights=KICK_ONLY,
     ),
@@ -825,6 +910,29 @@ def piplus_multi_env_cfg(
         ],
       },
     ),
+    # Kick bootstrap off: the flat payout per contact exists only to get the
+    # policy to touch the ball at all. Once it does, the quality terms should
+    # drive the rest, or weak taps stay competitive with real kicks.
+    "drop_kick_contact": CurriculumTermCfg(
+      func=pi_mdp.reward_weight,
+      params={
+        "reward_name": "kick_contact",
+        "weight_stages": [{"step": 1500 * 24, "weight": 0.0}],
+      },
+    ),
+    # Then tighten the aim tolerance, on both aim terms at once so they keep
+    # scoring the same kick the same way.
+    "narrow_kick_aim": CurriculumTermCfg(
+      func=pi_mdp.reward_param_linear,
+      params={
+        "reward_names": ["kick_impact", "kick_direction"],
+        "param_name": "dir_sigma",
+        "start_step": 1500 * 24,
+        "end_step": 8000 * 24,
+        "start_value": KICK_DIR_SIGMA_START,
+        "end_value": KICK_DIR_SIGMA_END,
+      },
+    ),
   }
 
   ##
@@ -915,9 +1023,12 @@ def piplus_multi_env_cfg(
       func=pi_mdp.phase_metric,
       params={"frequency": WALK_FREQUENCY, "command_name": COMMAND},
     )
-    # Kick diagnostics: how fast the ball is actually going, and which half of
-    # the task the robot is in. Play only -- in training these would just be
-    # averaged over thousands of envs in different phases.
+    # Kick diagnostics: how fast the ball is actually going, and where in the
+    # ball cycle the robot is (0 = not kicking, 1 = approaching, 2 = inside the
+    # post-kick scoring window). Play only -- in training these would just be
+    # averaged over thousands of envs in different phases. The per-kick numbers
+    # (peak speed, aim error, style) are logged by the command itself and show
+    # up in training under Metrics/kick_*.
     metrics["kick_ball_speed"] = MetricsTermCfg(
       func=pi_mdp.kick_ball_speed,
       params={"command_name": COMMAND, "sub_command_name": "kick"},
