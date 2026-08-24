@@ -90,6 +90,16 @@ class KickCommand(CommandTerm):
     )
     self._pending_offset = torch.zeros(self.num_envs, 2, device=self.device)
 
+    # Seconds since the ball was set moving; drives the delayed post-kick stand.
+    self.time_since_kick = torch.zeros(self.num_envs, device=self.device)
+
+    # Viewer control. joystick_gate is set by MultiCommand to "is the kick type
+    # selected"; see the JoystickTerm protocol in multi_command.py.
+    self.joystick_gate: Callable[[], bool] | None = None
+    self._gui_direction: viser.GuiSliderHandle | None = None
+    self._gui_strength: viser.GuiSliderHandle | None = None
+    self._gui_get_env_idx: Callable[[], int] | None = None
+
     self.metrics["kick_speed_error"] = torch.zeros(self.num_envs, device=self.device)
     self.metrics["kick_dir_error"] = torch.zeros(self.num_envs, device=self.device)
 
@@ -113,6 +123,22 @@ class KickCommand(CommandTerm):
     """Commanded ball velocity in world xy, ``(num_envs, 2)``."""
     return self.strength.unsqueeze(1) * torch.stack(
       [torch.cos(self.kick_dir_w), torch.sin(self.kick_dir_w)], dim=1
+    )
+
+  @property
+  def wants_stand(self) -> torch.Tensor:
+    """Per-env "stand still" request, read by ``MultiCommand.stand_mask``.
+
+    True once the ball has been kicked and ``stand_after_kick_delay`` has
+    passed. The delay matters: straight after a kick the robot is on one leg and
+    off balance, and the standing posture reward is tight, so demanding it
+    instantly would punish a good kick. Freezing the gait here is also what
+    stops the robot trotting after the ball it just kicked.
+    """
+    if not self.cfg.stand_after_kick:
+      return torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+    return self.has_been_kicked & (
+      self.time_since_kick >= self.cfg.stand_after_kick_delay
     )
 
   # The GoalPoseTerm contract, with the ball as the "goal": lets the shared
@@ -158,6 +184,7 @@ class KickCommand(CommandTerm):
       *self.cfg.strength_range
     )
     self.has_been_kicked[env_ids] = False
+    self.time_since_kick[env_ids] = 0.0
 
     # Offset from the robot at a random bearing, distance_range metres away.
     # Only the offset is decided here; _update_command anchors it on the robot.
@@ -227,7 +254,15 @@ class KickCommand(CommandTerm):
     # approach reward cannot be re-earned by walking back to a ball the robot
     # itself nudged away.
     speed = torch.norm(vel_w, dim=1)
-    self.has_been_kicked |= active & (speed > self.cfg.kicked_speed_threshold)
+    newly_kicked = (
+      active & ~self.has_been_kicked & (speed > self.cfg.kicked_speed_threshold)
+    )
+    self.has_been_kicked |= newly_kicked
+    self.time_since_kick = torch.where(
+      newly_kicked,
+      torch.zeros_like(self.time_since_kick),
+      self.time_since_kick + self._env.step_dt * self.has_been_kicked.float(),
+    )
 
   def _update_metrics(self) -> None:
     # Only meaningful once the ball is moving; averaged over the episode.
@@ -239,6 +274,53 @@ class KickCommand(CommandTerm):
     dir_err = wrap_to_pi(ball_dir - self.kick_dir_w).abs()
     self.metrics["kick_speed_error"] += speed_err * counted * scale
     self.metrics["kick_dir_error"] += dir_err * counted * scale
+
+  # Viewer control.
+
+  def create_gui(
+    self,
+    name: str,
+    server: viser.ViserServer,
+    get_env_idx: Callable[[], int],
+    on_change: Callable[[], None] | None = None,
+    request_action: Callable[[str, Any], None] | None = None,
+  ) -> None:
+    del on_change, request_action
+    lo_dir, hi_dir = self.cfg.direction_range
+    lo_str, hi_str = self.cfg.strength_range
+    with server.gui.add_folder(name.capitalize()):
+      self._gui_direction = server.gui.add_slider(
+        "direction [rad]", min=lo_dir, max=hi_dir, step=0.05, initial_value=0.0
+      )
+      self._gui_strength = server.gui.add_slider(
+        "strength [m/s]",
+        min=lo_str,
+        max=hi_str,
+        step=0.1,
+        initial_value=0.5 * (lo_str + hi_str),
+      )
+    self._gui_get_env_idx = get_env_idx
+
+  def _joystick_active(self) -> bool:
+    # Only meaningful under a MultiCommand, which is the only place this term is
+    # used: the command-type selector is the on/off switch.
+    return self.joystick_gate is not None and self.joystick_gate()
+
+  def apply_joystick(self) -> None:
+    """Drive the commanded kick from the viewer sliders for the viewed env."""
+    if self._gui_direction is None or self._gui_strength is None:
+      return
+    if not self._joystick_active():
+      return
+    assert self._gui_get_env_idx is not None
+    idx = self._gui_get_env_idx()
+    self.kick_dir_w[idx] = self._gui_direction.value
+    self.strength[idx] = self._gui_strength.value
+    # dir_err was derived in _update_command from the previous direction; redo
+    # it so this step's observation already reflects the slider.
+    self.dir_err[idx] = wrap_to_pi(
+      self.kick_dir_w[idx] - self.robot.data.heading_w[idx]
+    )
 
   # Visualization.
 
@@ -285,6 +367,13 @@ class KickCommandCfg(CommandTermCfg):
   """Ball speed (m/s) above which the ball counts as kicked. Latches for the
   rest of the command period."""
 
+  stand_after_kick: bool = True
+  """After the kick, ask the shared gait/pose rewards to hold the robot still
+  rather than leaving it with nothing to do -- and stop it chasing the ball."""
+  stand_after_kick_delay: float = 0.5
+  """Seconds to let the robot recover its footing before the stand is asked
+  for. 0 demands the standing posture while it is still on one leg."""
+
   resampling_time_range: tuple[float, float] = (6.0, 12.0)
 
   @dataclass
@@ -295,6 +384,39 @@ class KickCommandCfg(CommandTermCfg):
 
   def build(self, env: ManagerBasedRlEnv) -> KickCommand:
     return KickCommand(self, env)
+
+
+##
+# Metrics.
+##
+
+
+def kick_ball_speed(
+  env: ManagerBasedRlEnv,
+  command_name: str,
+  sub_command_name: str | None = None,
+) -> torch.Tensor:
+  """Ball speed in m/s (world xy). Reads 0 while the ball sits parked."""
+  term, _ = resolve_command_term(env, command_name, sub_command_name)
+  assert isinstance(term, KickCommand)
+  return torch.norm(term.ball.data.root_link_lin_vel_w[:, :2], dim=1)
+
+
+def kick_phase(
+  env: ManagerBasedRlEnv,
+  command_name: str,
+  sub_command_name: str | None = None,
+) -> torch.Tensor:
+  """Which half of the kick task an env is in.
+
+  0 = the kick command is not driving this env, 1 = approaching the ball
+  (``kick_approach`` is live), 2 = the ball has been kicked.
+  """
+  term, active = resolve_command_term(env, command_name, sub_command_name)
+  assert isinstance(term, KickCommand)
+  ones = torch.ones(env.num_envs, device=env.device)
+  phase = torch.where(term.has_been_kicked, 2.0 * ones, ones)
+  return torch.where(active, phase, torch.zeros_like(phase))
 
 
 ##
@@ -336,21 +458,107 @@ class kick_approach:
     return reward
 
 
-def kick_velocity_match(
-  env: ManagerBasedRlEnv,
-  command_name: str,
-  sub_command_name: str | None = None,
-  std: float = 1.0,
-) -> torch.Tensor:
-  """Reward the ball moving at the commanded velocity, once it has been kicked.
+class kick_quality:
+  """Score the kick once, on the ball velocity it actually produced.
 
-  ``exp(-|v_ball - v_target|^2 / std^2)`` on the world-frame xy velocity, so
-  direction and speed are scored together. Zero until the ball is actually
-  moving, which is what ``kick_approach`` is there to bridge.
+  Paid a single time per command, when a short measurement window after first
+  contact closes -- not every step. A per-step reward for the ball moving at the
+  commanded velocity makes dribbling optimal: holding the ball on target for 8 s
+  outscores one clean kick roughly two to one, because a kicked ball decays
+  under rolling friction while a dribbled one can be topped back up. With
+  nothing left to earn after the window, the only way to score is to kick well
+  once.
+
+  The window matters too. ``has_been_kicked`` latches at 0.5 m/s, which can be
+  mid-contact with the ball still accelerating, so the velocity at that instant
+  understates a hard kick. Taking the peak over the next ``window_s`` measures
+  what the kick actually did -- which also means a weak nudge latches but scores
+  badly, so the scoring does the work rather than the latch threshold.
+
+  Direction and speed are scored separately, with the speed tolerance relative
+  to the commanded strength. One absolute tolerance across a 1-5 m/s command
+  range makes direction nearly free at low speeds and leaves no usable gradient
+  at all at high ones. ``w_dir * dir + w_speed * dir * speed`` gives aim its own
+  gradient and lets pace count only once the aim is decent.
+
+  Returns the quality in [0, 1] divided by the timestep: the reward manager
+  scales every term by dt, so the one-off payout lands as the quality value
+  itself, independent of the control rate.
   """
-  term, _ = resolve_command_term(env, command_name, sub_command_name)
-  assert isinstance(term, KickCommand)
-  vel_w = term.ball.data.root_link_lin_vel_w[:, :2]
-  error = torch.sum(torch.square(vel_w - term.target_vel_w), dim=1)
-  reward = torch.exp(-error / std**2)
-  return torch.where(term.has_been_kicked, reward, torch.zeros_like(reward))
+
+  def __init__(self, cfg: RewardTermCfg, env: ManagerBasedRlEnv):
+    n, dev = env.num_envs, env.device
+    self._was_kicked = torch.zeros(n, dtype=torch.bool, device=dev)
+    self._measuring = torch.zeros(n, dtype=torch.bool, device=dev)
+    self._steps_left = torch.zeros(n, dtype=torch.long, device=dev)
+    self._peak_speed = torch.zeros(n, device=dev)
+    self._peak_vel = torch.zeros(n, 2, device=dev)
+    self._last_counter = torch.zeros(n, dtype=torch.long, device=dev)
+
+  def __call__(
+    self,
+    env: ManagerBasedRlEnv,
+    command_name: str,
+    sub_command_name: str | None = None,
+    window_s: float = 0.3,
+    direction_std: float = 0.35,
+    speed_rel_std: float = 0.35,
+    direction_weight: float = 3.0,
+    speed_weight: float = 2.0,
+  ) -> torch.Tensor:
+    term, _ = resolve_command_term(env, command_name, sub_command_name)
+    assert isinstance(term, KickCommand)
+    zeros = torch.zeros(env.num_envs, device=env.device)
+
+    # A new command means a new ball and a new kick to score.
+    changed = term.command_counter != self._last_counter
+    self._measuring &= ~changed
+    self._was_kicked &= ~changed
+    self._last_counter = term.command_counter.clone()
+
+    # Open the window on the step the latch flips.
+    just_latched = term.has_been_kicked & ~self._was_kicked
+    self._was_kicked = term.has_been_kicked.clone()
+    if bool(just_latched.any()):
+      steps = max(int(round(window_s / env.step_dt)), 1)
+      self._measuring |= just_latched
+      self._steps_left = torch.where(
+        just_latched, torch.full_like(self._steps_left, steps), self._steps_left
+      )
+      self._peak_speed = torch.where(just_latched, zeros, self._peak_speed)
+
+    vel_w = term.ball.data.root_link_lin_vel_w[:, :2]
+    speed = torch.norm(vel_w, dim=1)
+
+    # Track the fastest the ball got while the window is open.
+    better = self._measuring & (speed > self._peak_speed)
+    self._peak_speed = torch.where(better, speed, self._peak_speed)
+    self._peak_vel = torch.where(better.unsqueeze(1), vel_w, self._peak_vel)
+
+    self._steps_left = torch.where(
+      self._measuring, self._steps_left - 1, self._steps_left
+    )
+    done = self._measuring & (self._steps_left <= 0)
+    if not bool(done.any()):
+      return zeros
+
+    ball_dir = torch.atan2(self._peak_vel[:, 1], self._peak_vel[:, 0])
+    dir_err = wrap_to_pi(ball_dir - term.kick_dir_w)
+    direction = torch.exp(-(dir_err**2) / direction_std**2)
+    speed_err = (self._peak_speed - term.strength) / (
+      speed_rel_std * term.strength.clamp(min=1e-3)
+    )
+    speed_score = torch.exp(-(speed_err**2))
+    quality = (
+      direction_weight * direction + speed_weight * direction * speed_score
+    ) / (direction_weight + speed_weight)
+
+    log = env.extras["log"]
+    n = done.sum().clamp(min=1)
+    log["Metrics/kick_quality"] = ((quality * done).sum() / n).item()
+    log["Metrics/kick_peak_speed"] = ((self._peak_speed * done).sum() / n).item()
+    log["Metrics/kick_aim_error"] = ((dir_err.abs() * done).sum() / n).item()
+
+    self._measuring &= ~done
+    # Divided by dt so the manager's dt scaling leaves the payout as `quality`.
+    return torch.where(done, quality, zeros) / env.step_dt

@@ -277,7 +277,7 @@ def piplus_multi_env_cfg(
         "goal_pose": pi_mdp.GoalPoseCommandCfg(
           entity_name="robot",
           debug_vis=True,
-          resampling_time_range=(1.0, 5.0),
+          resampling_time_range=(1.0, 15.0),
           radius_range=(0.5, 8.0),
           yaw_range=(-math.pi, math.pi),
           rel_standing_envs=0.0,
