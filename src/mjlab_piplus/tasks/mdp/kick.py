@@ -304,17 +304,16 @@ class KickCommand(CommandTerm):
     if len(env_ids) == 0:
       return
     n = len(env_ids)
+    # Polar around the robot's heading: a radius and a bearing inside the
+    # placement cone. Sampling a forward distance and a sideways offset instead
+    # would leave the widest bearing an implicit function of both, and bound the
+    # ball's actual distance only at the cone's centre line.
     distance = torch.empty(n, device=self.device).uniform_(*self.cfg.distance_range)
-    # Lateral spread widens with distance: the ball sits nearly straight ahead
-    # when it is placed close in, and can be well off to the side further out.
-    lo, hi = self.cfg.distance_range
-    frac = (distance - lo) / (hi - lo) if hi > lo else torch.zeros_like(distance)
-    near, far = self.cfg.lateral_range
-    width = near + frac * (far - near)
-    side = torch.empty(n, device=self.device).uniform_(-1.0, 1.0) * width
+    cone = math.radians(self.cfg.placement_cone_deg)
+    bearing = torch.empty(n, device=self.device).uniform_(-cone, cone)
 
-    self._pending_forward[env_ids] = distance
-    self._pending_side[env_ids] = side
+    self._pending_forward[env_ids] = distance * torch.cos(bearing)
+    self._pending_side[env_ids] = distance * torch.sin(bearing)
     self._pending_place[env_ids] = True
 
     self.touched[env_ids] = False
@@ -587,11 +586,14 @@ class KickCommandCfg(CommandTermCfg):
   :func:`foot_medial_alignment`. Order matches ``foot_body_names``."""
 
   distance_range: tuple[float, float] = (0.3, 1.2)
-  """How far in front of the robot the ball is placed, in metres."""
-  lateral_range: tuple[float, float] = (0.2, 0.7)
-  """Lateral half-width of the placement, at the near and far end of
-  ``distance_range``: the ball is nearly straight ahead when placed close and
-  can be well off to the side when placed far."""
+  """How far from the robot the ball is placed, in metres. A true radius: the
+  ball is this far away whatever bearing it is placed at."""
+  placement_cone_deg: float = 60.0
+  """Half-width of the fan the ball is placed in, either side of the robot's
+  heading. Straight ahead is the middle of the range, not an edge case, and the
+  ball is never placed beside or behind the robot -- it has no way to know a
+  ball is there beyond what the command block tells it. Widen once the approach
+  is reliable to make the robot turn and find the ball."""
   direction_cone_deg: float = 80.0
   """Commanded kick heading is drawn within this cone of the robot's heading at
   placement -- a direction it has some chance of hitting from where it stands.

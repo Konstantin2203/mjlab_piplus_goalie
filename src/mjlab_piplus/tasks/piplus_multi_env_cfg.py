@@ -305,7 +305,7 @@ def piplus_multi_env_cfg(
           # Target direction within this cone of the robot's heading at
           # placement -- a direction it can plausibly hit from where it stands.
           # Widen towards 180 once kicking works to demand turning the ball.
-          direction_cone_deg=80.0,
+          direction_cone_deg=135.0,
           strength_range=(1.0, 5.0),
           park_position=(100.0, 100.0),
           # Ball speed that counts as a strike, and how long the kick is scored
