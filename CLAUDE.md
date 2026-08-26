@@ -69,13 +69,24 @@ Each actuator series uses `BuiltinPositionActuatorCfg` with built-in action lag 
 > arm joints and their actuators from the spec, so the arms stay welded to the
 > torso exactly as before.
 
-`get_spec(collision_inflate=...)` scales named collision geoms — see
-`GETUP_COLLISION_INFLATE`, the "bigger collision model" hack the getup task uses.
-Adding a link to that map can create *permanent* self-collisions (the thighs do,
-against the trunk); re-run the pose sweep described in its docstring before
-changing it.
+The `*_selfpad` geoms are declared in `piplus.xml` under the
+`self_collision_pad` class, the way the reference declares its own — they are
+always in the spec. `get_piplus_robot_cfg(self_pads=True)` is what makes them
+live, by adding `SELF_PAD_COLLISION` to put them on contype/conaffinity **bit
+2**, so they can only ever touch each other: never the terrain, never the ball,
+never the real (bit 1) collision geoms. They are what the multi task's
+`self_collision` sensor scores. Because a pad cannot reach the ground, its size
+is free — which is the point. Without `self_pads`, `FULL_COLLISION`'s
+`disable_other_geoms` leaves them at contype 0 and they cost nothing, which is
+how velocity and path see them.
 
-Collision configs (`FULL_COLLISION`, `LEG_ONLY_COLLISION`, `FEET_ONLY_COLLISION`) use regex matching on geom names ending in `_collision[0-9]`.
+> ⚠️ **A pad the same size as its collision geom is not a bug.** The pad set's
+> first job is to *select* which link pairs count as a self-collision; only where
+> near-misses matter is the copy enlarged — torso 1.2×, hands 2×, feet 1.3×, the
+> rest 1:1, and the upper arms not padded at all. The MJCF says the same next to
+> the class definition.
+
+Collision configs (`FULL_COLLISION`, `LEG_ONLY_COLLISION`, `FEET_ONLY_COLLISION`) use regex matching on geom names ending in `_collision[0-9]`. `SELF_PAD_COLLISION` must be applied **after** `FULL_COLLISION`, whose `disable_other_geoms` default would otherwise zero the pads out again.
 
 ### Environment config (`piplus_velocity_env_cfg.py`)
 
@@ -107,27 +118,91 @@ Terms live in `src/mjlab_piplus/tasks/mdp/getup.py` and are wired into
 
 - **No getup command.** The terms are unconditional, so recovery is available
   under every command type rather than being something the operator requests.
-- **No `fell_over` termination.** It is commented out with a warning — with it
-  on, the robot never experiences the state it is meant to recover from and
-  getup is unlearnable. The pressure not to fall is now the `on_ground` reward
-  (a rate charged while tilted past `FALLEN_ANGLE`) instead of ending the
-  episode. `is_terminated` is consequently a dead term (only `time_out` remains,
-  and that is flagged `time_out=True`).
+- **No `fell_over` termination, but a deadline.** `fell_over` stays commented
+  out with a warning — firing on the *instant* of a fall means the robot never
+  experiences the state it is meant to recover from, and getup is unlearnable.
+  The pressure not to fall is the `on_ground` reward (a rate charged while
+  tilted past `FALLEN_ANGLE` or below `STANDING_MIN_HEIGHT`, weight `-1.0`, a
+  flat -1 per step while down), plus `fallen_too_long`: a real termination that
+  fires once the robot has been *continuously* down for `GETUP_TIMEOUT_S`
+  (6 s). Falling is survivable, staying down is not. The timer counts
+  consecutive down-steps by the same test `on_ground` uses and resets the moment
+  the robot is standing, so each fall gets a fresh window; envs that spawn
+  fallen get the full one. `is_terminated` is live again at `-200.0` — with
+  `time_out` flagged `time_out=True` and excluded by mjlab's `is_terminated`,
+  it fires on failed getups and nothing else. It costs `200 × dt = 4.0` once,
+  about a second of standing; the forfeited rest of the episode (up to ~75) is
+  the real cost, so the term mainly puts a discontinuity at the deadline.
+- **"Not fallen" needs height as well as angle.** Upright-only is a hole a
+  policy will find: sitting on the floor with a vertical trunk passes the angle
+  test, so nothing charges it and it never has to do the hard part. `on_ground`
+  therefore also requires the base above `STANDING_MIN_HEIGHT` (0.25 m), and the
+  reward gates below multiply in `HEIGHT_GATE` (0.29 → 0.23 m). All of these
+  derive from `STANDING_HEIGHT` and must move together.
+  **`STANDING_HEIGHT` is 0.34, not the keyframe's 0.39.** 0.39 is
+  `default_root_state` z, measured by FK with the feet flat, and the actuators do
+  not hold it: from a keyframe spawn under a zero action the base sags to 0.333
+  within ten steps (mean joint error 0.05 rad, calf off by 0.14) and the robot
+  topples within about three seconds — zero action is not a standing controller,
+  so 0.333 is a floor on the standing height, not a measurement of it. Held
+  actively upright it reaches ~0.357. With 0.39 as the target a visibly standing
+  robot failed `getup_success` and collected ~85% of the height gate; at 0.34
+  both height terms saturate at 1.000 there. Reference points, base link above
+  its own env's ground: ~0.357 held upright, 0.333 settled, ~0.17 sitting with
+  the legs folded, 0.10 flat. If a policy that is visibly walking starts showing
+  a high `Metrics/fallen`, `STANDING_MIN_HEIGHT` is too high for its gait.
 - **No end pose.** `variable_posture` already owns the standing pose; getup
   stops at "upright and off the floor" and hands over.
+- **Height is paid twice: base and head.** `head_height` is `getup_height`
+  again with `head_yaw_link` and `STANDING_HEAD_HEIGHT` (0.53 = `STANDING_HEIGHT`
+  + the rigid 0.198 m head-over-base offset). Ported from the reference, which
+  pays pelvis *and* head and deletes its orientation term outright on the
+  grounds that both being high already implies an upright trunk. Here it is an
+  addition, not a replacement — `getup_orientation` and `upright` stay. It buys
+  about +0.42/step of standing-vs-sitting gap, and it is what prices a *folded*
+  posture (tall at the base, short at the head); against pure sitting the base
+  term is still the stronger discriminator, since a sitting robot's trunk is
+  vertical and its head is already 0.37 of the 0.53. The reference runs the
+  pelvis at 2:1 over the head; here both are 1.0.
 - **The penalty is gated, the shaping is not.** `getup_orientation` and
   `getup_height` are ungated on purpose: gating them on "is fallen" would make
   the reward step *down* the instant the robot stands up.
+- **Walking terms are gated the other way.** `GatedRewardTermCfg` (in
+  `getup.py`) wraps a term and fades it out with tilt, linearly in `cos(tilt)`
+  between its two angles — a hard cutoff would be a cliff in the return, which a
+  policy will go and sit on. `pose` uses the tight `POSTURE_GATE` (20°→40°): the
+  standing pose is the wrong target for a robot on the floor, which has to bend
+  where posture says not to. `foot_gait`, `feet_phase` and `foot_slip` use
+  `GAIT_GATE` (30°→`FALLEN_ANGLE`), so they are off exactly where `on_ground`
+  starts charging; both are multiplied by the `HEIGHT_GATE` ramp above — face down the gait clock means nothing, and the slip penalty
+  would charge for the ground contact the arms need to push off with. The inner
+  term is still *evaluated* while gated (`feet_phase` and `feet_slip` are
+  stateful), just multiplied by zero. It does not compose with
+  `MultiRewardTermCfg`: a term is gated or command-weighted, not both.
+- **Penalties ramp in.** Following the reference's curriculum: `action_rate_l2`,
+  `joint_acc_l2`, `body_ang_vel`, `angular_momentum`, `self_collisions` and
+  `foot_slip` all start reduced (or at zero) and reach their configured values
+  by ~1500 iterations, via `reward_weight` terms in the curriculum. Standing up
+  from flat is violent, whippy and self-touching; charged full price from step 0
+  these make lying still the cheaper option. Each reward carries a `# -> value`
+  comment naming its endpoint. `joint_pos_limits` is deliberately not ramped.
 - **Spawns.** `reset_fallen_or_standing` replaces the old `reset_base` +
   `reset_robot_joints` pair. `FALL_PROBABILITY` of envs start on the floor at a
   uniformly random orientation with the default pose plus Gaussian joint noise
   (not uniform over the joint range — that samples mostly unreachable tangles).
 - **Camera.** `camera_link_collision0` sits ~5 mm proud of the head shell, so a
   faceplant hits it first; `camera_ground_impact` charges force-graded contact
-  heavily. Do not add the head to `GETUP_COLLISION_INFLATE` — that buries the
-  camera geom inside the head shell and the penalty stops firing.
-- **`nconmax` is 120, not 45.** A robot lying flat peaks at ~50 contacts;
-  overflow is silent and looks like sinking through the floor.
+  heavily. Never grow `head_pitch_link_collision0` — burying
+  `camera_link_collision0` inside the head shell stops the penalty firing.
+- **Self-collision is scored on the pads, with no `secondary`.** A secondary
+  *pattern* silently collapses to one geom — `ContactSensorCfg.secondary_policy`
+  defaults to `"first"` — so matching `.*_selfpad` on both sides scores every pad
+  against the base pad alone and reads ~0 however folded the robot is. Dropping
+  the secondary is correct here, not a shortcut: bit-2 isolation already means a
+  pad's only possible contact partner is another pad.
+- **`nconmax` is 120, not 45.** Overflow is silent and looks like sinking through
+  the floor. 256 fallen envs peak at ~1.6k contacts total against a 120×256
+  allocation, so there is ample headroom.
 
 Watch `Metrics/getup_success` (latched, should stay near 1.0) against
 `Metrics/fallen` (episode fraction spent down, starts around 0.2).

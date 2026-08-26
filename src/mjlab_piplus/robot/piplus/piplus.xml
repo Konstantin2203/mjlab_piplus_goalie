@@ -26,6 +26,20 @@
     <default class="collision">
       <geom group="3" contype="1" conaffinity="1"/>
     </default>
+    <!--
+      Self-collision-only padding geoms. SELF_PAD_COLLISION in
+      piplus_constants.py puts them on contype/conaffinity bit 2, so they only
+      ever contact each other -- never the terrain, and never ground dynamics.
+      The "_selfpad" suffix keeps them out of FULL_COLLISION's
+      ".*_collision[0-9]" regex; group=4 keeps them out of the collision (3) and
+      visual (2) render groups.
+      Most pads are the same size as the geom they shadow: the set exists to
+      SELECT which link pairs count as a self-collision. Only torso (1.2x),
+      hands (2x) and feet (1.3x) are enlarged, to charge near misses too.
+    -->
+    <default class="self_collision_pad">
+      <geom group="4" contype="2" conaffinity="2" rgba="1 0 0 0.3"/>
+    </default>
     <default class="visual">
       <geom contype="0" conaffinity="0" group="2" density="0"/>
     </default>
@@ -79,10 +93,12 @@
       <inertial pos="-0.00041617 7.079e-05 -0.0392999" quat="0.707016 0.706374 -0.0255218 0.0226693" mass="1.4947" diaginertia="0.00182015 0.00167434 0.00111607"/>
       <geom type="mesh" class="visual" rgba="0.752941 0.752941 0.752941 1" mesh="base_link"/>
       <geom name="base_link_collision0" class="collision" pos="0 0 -0.045" type="box" size="0.025 0.035 0.025"/>
+      <geom name="base_link_selfpad" class="self_collision_pad" pos="0 0 -0.045" type="box" size="0.025 0.035 0.025"/>
       <body name="torso_link">
         <inertial pos="0.00153764 -3.179e-05 0.0959554" quat="0.705415 0.708147 0.0225102 -0.0202894" mass="2.82494" diaginertia="0.0159234 0.0140664 0.0134032"/>
         <geom type="mesh" class="visual" rgba="0.752941 0.752941 0.752941 1" mesh="torso_link"/>
         <geom name="torso_link_collision0" class="collision" pos="0 0 0.09" type="box" size="0.0775 0.0775 0.0775"/>
+        <geom name="torso_link_selfpad" class="self_collision_pad" pos="0 0 0.09" type="box" size="0.093 0.093 0.093"/>
         <body name="r_shoulder_pitch_link" pos="0 -0.1084 0.117">
           <inertial pos="-0.0023165 -0.0172048 0.00020825" quat="-0.034283 0.706989 0.0142854 0.706249" mass="0.139352" diaginertia="0.000145208 0.000122162 7.54598e-05"/>
           <joint name="r_shoulder_pitch_joint" class="pi_joint_arm" pos="0 0 0" axis="0 -1 0" ref="1.5708" range="-2.55 2.55"/>
@@ -105,6 +121,7 @@
                   <geom type="mesh" class="visual" rgba="0.752941 0.752941 0.752941 1" mesh="r_wrist_link"/>
                   <geom name="r_wrist_link_collision0" class="collision" pos="0 0 -0.035" type="cylinder" size="0.008 0.015"/>
                   <geom name="r_wrist_link_collision1" class="collision" pos="0 0 -0.095" type="sphere" size="0.0175"/>
+                  <geom name="r_wrist_link_selfpad" class="self_collision_pad" pos="0 0 -0.095" type="sphere" size="0.035"/>
                 </body>
               </body>
             </body>
@@ -132,6 +149,7 @@
                   <geom type="mesh" class="visual" rgba="0.752941 0.752941 0.752941 1" mesh="l_wrist_link"/>
                   <geom name="l_wrist_link_collision0" class="collision" pos="0 0 -0.035" type="cylinder" size="0.008 0.015"/>
                   <geom name="l_wrist_link_collision1" class="collision" pos="0 0 -0.095" type="sphere" size="0.0175"/>
+                  <geom name="l_wrist_link_selfpad" class="self_collision_pad" pos="0 0 -0.095" type="sphere" size="0.035"/>
                 </body>
               </body>
             </body>
@@ -169,12 +187,14 @@
             <joint name="r_thigh_joint" class="pi_joint_leg" pos="0 0 0" axis="0 0 -1" range="-2.77 2.45"/>
             <geom type="mesh" class="visual" rgba="0.752941 0.752941 0.752941 1" mesh="r_thigh_link"/>
             <geom name="r_thigh_link_collision0" class="collision" pos="0 0 0.065" type="cylinder" size="0.035 0.0275"/>
+            <geom name="r_thigh_link_selfpad" class="self_collision_pad" pos="0 0 0.065" type="cylinder" size="0.035 0.0275"/>
             <body name="r_calf_link" pos="0 0 -0.045">
               <inertial pos="-1.001e-05 -0.00237049 -0.0666124" quat="0.999998 -0.000800274 0.00132271 -0.000965395" mass="0.858523" diaginertia="0.00416944 0.00414653 0.000429274"/>
               <joint name="r_calf_joint" class="pi_joint_leg" pos="0 0 0" axis="0 1 0" range="-1.97 2.21"/>
               <geom type="mesh" class="visual" rgba="0.752941 0.752941 0.752941 1" mesh="r_calf_link"/>
               <geom name="r_calf_link_collision0" class="collision" pos="0 0 0" type="box" size="0.0275 0.0275 0.0275"/>
               <geom name="r_calf_link_collision1" class="collision" pos="0 0 -0.065" type="box" size="0.005 0.01 0.0275"/>
+              <geom name="r_calf_link_selfpad" class="self_collision_pad" pos="0 0 0" type="box" size="0.0275 0.0275 0.0275"/>
               <body name="r_ankle_pitch_link" pos="0 0 -0.14">
                 <inertial pos="0.00503044 0.00051345 -0.00016685" quat="-0.00108772 0.710445 -0.00435661 0.703738" mass="0.163526" diaginertia="0.00028931 0.000208237 0.000115362"/>
                 <joint name="r_ankle_pitch_joint" class="pi_joint_leg" pos="0 0 0" axis="0 -1 0" range="-0.95 0.85"/>
@@ -190,6 +210,7 @@
                   <geom name="r_ankle_roll_link_collision2" class="collision" pos="-0.0272 -0.009 -0.04" quat="0.7071 0 -0.7071 0" type="capsule" size="0.01 0.082"/>
                   <geom name="r_ankle_roll_link_collision3" class="collision" pos="-0.0272 0.009 -0.04" quat="0.7071 0 -0.7071 0" type="capsule" size="0.01 0.082"/>
                   <geom name="r_ankle_roll_link_collision4" class="collision" pos="-0.017 0.025 -0.04" quat="0.7071 0 0.7071 0" type="capsule" size="0.01 0.065"/>
+                  <geom name="r_ankle_roll_link_selfpad" class="self_collision_pad" pos="-0.0272 0.0 -0.02" type="box" size="0.1066 0.0455 0.039"/>
                 </body>
               </body>
             </body>
@@ -209,12 +230,14 @@
             <joint name="l_thigh_joint" class="pi_joint_leg" pos="0 0 0" axis="0 0 -1" range="-2.77 2.45"/>
             <geom type="mesh" class="visual" rgba="0.752941 0.752941 0.752941 1" mesh="l_thigh_link"/>
             <geom name="l_thigh_link_collision0" class="collision" pos="0 0 0.065" type="cylinder" size="0.035 0.0275"/>
+            <geom name="l_thigh_link_selfpad" class="self_collision_pad" pos="0 0 0.065" type="cylinder" size="0.035 0.0275"/>
             <body name="l_calf_link" pos="0 0 -0.045">
               <inertial pos="-1.001e-05 0.00237048 -0.0666125" quat="0.999997 0.000796813 -0.00130207 0.00164731" mass="0.858523" diaginertia="0.00416944 0.00414652 0.000429275"/>
               <joint name="l_calf_joint" class="pi_joint_leg" pos="0 0 0" axis="0 -1 0" range="-2.21 1.97"/>
               <geom type="mesh" class="visual" rgba="0.752941 0.752941 0.752941 1" mesh="l_calf_link"/>
               <geom name="l_calf_link_collision0" class="collision" pos="0 0 0" type="box" size="0.0275 0.0275 0.0275"/>
               <geom name="l_calf_link_collision1" class="collision" pos="0 0 -0.065" type="box" size="0.005 0.01 0.0275"/>
+              <geom name="l_calf_link_selfpad" class="self_collision_pad" pos="0 0 0" type="box" size="0.0275 0.0275 0.0275"/>
               <body name="l_ankle_pitch_link" pos="0 0 -0.14">
                 <inertial pos="0.00503044 -0.00051345 -0.00016685" quat="0.00108772 0.710445 0.00435661 0.703738" mass="0.163526" diaginertia="0.00028931 0.000208237 0.000115362"/>
                 <joint name="l_ankle_pitch_joint" class="pi_joint_leg" pos="0 0 0" axis="0 1 0" range="-0.85 0.95"/>
@@ -230,6 +253,7 @@
                   <geom name="l_ankle_roll_link_collision2" class="collision" pos="-0.0272 -0.009 -0.04" quat="0.7071 0 -0.7071 0" type="capsule" size="0.01 0.082"/>
                   <geom name="l_ankle_roll_link_collision3" class="collision" pos="-0.0272 0.009 -0.04" quat="0.7071 0 -0.7071 0" type="capsule" size="0.01 0.082"/>
                   <geom name="l_ankle_roll_link_collision4" class="collision" pos="-0.017 0.025 -0.04" quat="0.7071 0 0.7071 0" type="capsule" size="0.01 0.065"/>
+                  <geom name="l_ankle_roll_link_selfpad" class="self_collision_pad" pos="-0.0272 0.0 -0.02" type="box" size="0.1066 0.0455 0.039"/>
                 </body>
               </body>
             </body>

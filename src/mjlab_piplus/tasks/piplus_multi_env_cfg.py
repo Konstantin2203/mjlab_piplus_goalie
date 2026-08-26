@@ -56,7 +56,6 @@ from mjlab.viewer import ViewerConfig
 
 from mjlab_piplus.objects import get_ball_cfg
 from mjlab_piplus.robot.piplus_constants import (
-  GETUP_COLLISION_INFLATE,
   get_piplus_robot_cfg,
 )
 from mjlab_piplus.tasks import mdp as pi_mdp
@@ -93,14 +92,82 @@ KICK_ONLY = {**_OFF, "kick": 1.0}
 ##
 # Getup.
 ##
-# Base height (m) of the robot standing in the home keyframe. The getup height
-# reward saturates here and the success metric is measured against it.
-STANDING_HEIGHT = 0.39
+# Base height (m) the robot actually stands at. The getup height reward saturates
+# here and the success metric is measured against it, so it has to be a height
+# the robot reaches, not the one the model says it should.
+#
+# The home keyframe is 0.39 (that is ``default_root_state`` z), but the keyframe
+# pose is not a pose the actuators hold: spawned there and given a zero action,
+# the robot sags to 0.333 within ten steps and stays, with a mean joint error of
+# 0.05 rad and the calf off by 0.14. Held actively upright it reaches ~0.357.
+# 0.39 was measured by forward kinematics with the feet flat, and it overstates
+# the achievable height by the whole of that sag -- with it as the target, a
+# visibly standing robot failed ``getup_success`` and collected only ~85% of the
+# height gate. 0.34 is the settled height rounded up, i.e. the top of the range
+# the robot occupies rather than the top of the range the model allows.
+#
+# Everything below is derived from it; move them together.
+STANDING_HEIGHT = 0.34
+
+# Head height (m) with the base at STANDING_HEIGHT. The head sits a rigid 0.198 m
+# above the base link (measured at spawn, and the same offset the reference gets:
+# its walkready pelvis 0.327 + 0.198 = the 0.525 it uses), so this is just
+# STANDING_HEIGHT + 0.198, rounded down so the term can actually saturate.
+# Sanity check: the settled zero-action head height measures 0.531.
+#
+# Ported from the reference, which pays pelvis *and* head height and drops the
+# orientation term entirely, on the grounds that both being high already implies
+# an upright trunk. Here it is the term that specifically prices sitting: a robot
+# parked on its backside keeps its base low but its trunk vertical, so base
+# height alone under-charges it, and a robot folded forward over its knees is
+# tall at the base and short at the head.
+STANDING_HEAD_HEIGHT = 0.53
 
 # Tilt from vertical past which the robot counts as "on the ground". This is the
 # angle the removed ``fell_over`` termination used, so the penalty takes over
 # exactly where the termination left off.
 FALLEN_ANGLE = math.radians(45.0)
+
+# How long (s) the robot may stay continuously down before the episode is ended.
+# Not the old ``fell_over`` termination: that fired the instant the robot tipped,
+# so it never spent a step in the state it had to recover from. This is a window
+# to do something about it -- long enough for a real standup (the reference
+# trains getup in 6 s episodes end to end), short enough that lying there is not
+# a way to sit out the rest of a 20 s episode.
+GETUP_TIMEOUT_S = 6.0
+
+# Base height (m) below which the robot does not count as standing, whatever the
+# trunk angle says: sitting on the floor is upright, and an angle-only test hands
+# it every reward standing earns for none of the work.
+#
+# Measured in sim, base link above its own env's ground: 0.333 standing (settled,
+# zero action), ~0.17 sitting with the legs folded under, 0.10 lying flat. This
+# sits roughly midway between standing and sitting, so a deep crouch has ~8 cm of
+# room before it reads as a fall and sitting has ~8 cm before it reads as
+# standing. If a policy that is visibly walking shows a high ``Metrics/fallen``,
+# this is the number that is too high for its gait.
+STANDING_MIN_HEIGHT = 0.25
+
+# Height band for the gates below, (paid in full at or above, off at or below).
+# The upper end matches the height ``getup_success`` calls standing, i.e.
+# STANDING_HEIGHT less the metric's 0.05 tolerance. The lower end sits 2 cm below
+# STANDING_MIN_HEIGHT, so by the time on_ground starts charging the gates are
+# already two thirds shut and they close completely just after -- the walking
+# terms fade out across the fall rather than switching off at a line.
+HEIGHT_GATE = (0.29, 0.23)
+
+# Gate bands for the terms that only mean something while the robot is on its
+# feet, as (paid in full up to, switched off past) tilt from vertical. See
+# ``GatedRewardTermCfg``: between the two the term fades out linearly.
+#
+# The gait terms fade out exactly where ``on_ground`` starts charging, so there
+# is no band in which the robot is both "down" and still being scored against a
+# walking clock. The posture gate is tighter -- posture describes *standing*,
+# and a robot leaning 40 degrees is not standing, it is on its way to the floor.
+# Both are multiplied by HEIGHT_GATE, so sitting up does not reopen them.
+GAIT_GATE = (math.radians(30.0), FALLEN_ANGLE)
+POSTURE_GATE = (math.radians(20.0), math.radians(40.0))
+
 
 def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
   foot_sites = ("l_foot", "r_foot")
@@ -302,7 +369,7 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
           # placement -- a direction it can plausibly hit from where it stands.
           # Widen towards 180 once kicking works to demand turning the ball.
           direction_cone_deg=135.0,
-          strength_range=(1.0, 5.0),
+          strength_range=(0.5, 5.0),
           park_position=(100.0, 100.0),
           # Ball speed that counts as a strike, and how long the kick is scored
           # for afterwards before the ball is re-placed.
@@ -319,11 +386,6 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
   ##
 
   events = {
-    # Replaces the old reset_base + reset_robot_joints pair. The standing branch
-    # is byte-for-byte what those two did; the fallen branch drops the robot in
-    # from fall_height at a uniformly random orientation with the default pose
-    # plus Gaussian joint noise. Getting up is therefore never commanded -- it is
-    # simply the situation a third of the envs wake up in.
     "reset_fallen_or_standing": EventTermCfg(
       func=pi_mdp.reset_fallen_or_standing,
       mode="reset",
@@ -357,6 +419,7 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
         },
       },
     ),
+    # DR on startup, enough variance over 4096 envs, much better performance than per-step.
     "foot_friction": EventTermCfg(
       mode="startup",
       func=dr.geom_friction,
@@ -381,7 +444,6 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
         "operation": "scale",
       },
     ),
-    # DR on startup, enough variance over 4096 envs, much better performance than per-step.
     "joint_armature": EventTermCfg(
       mode="startup",
       func=dr.joint_armature,
@@ -644,7 +706,7 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
         "command_name": "command",
         "sub_command_name": "kick",
         # Speed toward the ball in m/s, capped: no bonus for charging it.
-        "max_speed": 1.0,
+        "max_speed": 2.0,
         # Cubed cosine, so only a well-aimed approach gets most of the credit.
         "alignment_power": 3.0,
       },
@@ -731,15 +793,22 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     # floor is wrong and standing back up is right. See ``mdp/getup.py`` for why
     # only the penalty is gated and the two shaping terms are not.
     #
-    # Budget per second on the floor, at these weights: -2.0 for lying there,
+    # Budget per step on the floor, at these weights: -1.0 flat for lying there,
     # against up to +0.5 orientation and +1.0 height earned back on the way up,
-    # plus everything the walking terms start paying again once upright. Lying
-    # still must stay a clear loss, and it does -- but only by about 0.5/s, so
-    # the climb is worth attempting rather than something to be endured.
+    # plus everything the walking and posture terms start paying again once the
+    # gates open. Lying still stays a clear loss, but only by about 0.5, so the
+    # climb is worth attempting rather than something to be endured.
+    #
+    # (Every weight in this file is a per-step value: the reward manager scales
+    # the lot by ``dt``, so the ratios between terms are what these numbers say.)
     "on_ground": RewardTermCfg(
       func=pi_mdp.on_ground,
-      weight=-2.0,
-      params={"limit_angle": FALLEN_ANGLE, "asset_cfg": base_cfg},
+      weight=-1.0,
+      params={
+        "limit_angle": FALLEN_ANGLE,
+        "min_height": STANDING_MIN_HEIGHT,
+        "asset_cfg": base_cfg,
+      },
     ),
     "getup_orientation": RewardTermCfg(
       func=pi_mdp.getup_orientation,
@@ -750,6 +819,19 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
       func=pi_mdp.getup_height,
       weight=1.0,
       params={"desired_height": STANDING_HEIGHT, "asset_cfg": base_cfg},
+    ),
+    # Same term, measured at the head. Base height and head height together say
+    # "tall *and* unfolded" in a way neither says alone -- see
+    # STANDING_HEAD_HEIGHT. Weight 1.0 against getup_height's 1.0; the reference
+    # runs 2:1 in favour of the pelvis, which is worth trying if the policy
+    # starts standing with a stooped trunk to farm head height.
+    "head_height": RewardTermCfg(
+      func=pi_mdp.getup_height,
+      weight=1.0,
+      params={
+        "desired_height": STANDING_HEAD_HEIGHT,
+        "asset_cfg": SceneEntityCfg("robot", body_names=("head_yaw_link",)),
+      },
     ),
     # The camera bar sits ~5 mm proud of the head's collision shell, so this only
     # fires when the lens itself reaches the floor. Graded by force: resting on
@@ -770,37 +852,61 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
       },
     ),
     # -- Stability ------------------------------------------------------------
+    # Terminal penalty, paid once on the step "fallen_too_long" fires (mjlab's
+    # is_terminated excludes time-outs, and time_out is the only other
+    # termination, so this term fires on failed getups and nothing else).
+    # Scaled by dt like every other weight, it costs 200 * 0.02 = 4.0, i.e.
+    # about one second of standing. The real cost of failing is the forfeited
+    # rest of the episode -- up to 14 s * ~5.4 = ~75 -- so this is a ~5% top-up
+    # that mainly serves to put a discontinuity at the deadline rather than to
+    # dominate the return.
+    "is_terminated": RewardTermCfg(func=mdp.is_terminated, weight=-200.0),
     "upright": RewardTermCfg(
       func=mdp.upright,
       weight=1.0,
       params={"std": math.sqrt(0.2), "asset_cfg": base_cfg},
     ),
+    # NOTE: the smoothness and effort penalties below all start reduced and are
+    # ramped to the values named in their comments by the curriculum (see the
+    # "-- Getup ramps" block there). Standing up from flat is necessarily a
+    # violent, whippy, self-touching motion; charged full price from step 0
+    # these terms make lying still the cheaper option and getup never starts.
+    # This is the reference implementation's curriculum, which ramps exactly
+    # this family of penalties over the first ~1500 iterations.
     "body_ang_vel": RewardTermCfg(
       func=mdp.body_angular_velocity_penalty,
-      weight=-0.25,
+      weight=-0.05,  # -> -0.25
       params={"asset_cfg": base_cfg},
     ),
     "angular_momentum": RewardTermCfg(
       func=mdp.angular_momentum_penalty,
-      weight=-0.1,
+      weight=-0.02,  # -> -0.1
       params={"sensor_name": "robot/root_angmom"},
     ),
-    "is_terminated": RewardTermCfg(func=mdp.is_terminated, weight=-200.0),
     # -- Safety ---------------------------------------------------------------
-    "joint_acc_l2": RewardTermCfg(func=mdp.joint_acc_l2, weight=-2.5e-7),
+    "joint_acc_l2": RewardTermCfg(func=mdp.joint_acc_l2, weight=0.0),  # -> -2.5e-7
+    # Not ramped: a joint driven into its hard stop is damage, not style.
     "joint_pos_limits": RewardTermCfg(func=mdp.joint_pos_limits, weight=-10.0),
-    "action_rate_l2": RewardTermCfg(func=mdp.action_rate_l2, weight=-0.05),
+    "action_rate_l2": RewardTermCfg(func=mdp.action_rate_l2, weight=-0.01),  # -> -0.05
     "self_collisions": RewardTermCfg(
       func=mdp.self_collision_cost,
-      weight=-1.0,
+      weight=-0.25,  # -> -1.0
       params={
         "sensor_name": "self_collision",
         "force_threshold": 2.0,
       },  # we dont want even soft collisions
     ),
-    "pose": RewardTermCfg(
+    # Gated: the standing pose is the wrong target for a robot on the floor. It
+    # has to bend where the posture term says not to -- tuck a knee under itself,
+    # swing an arm out to plant a hand -- so ungated this term is a bribe to stay
+    # down in a tidy shape. Off past POSTURE_GATE, it is a walking term again.
+    "pose": pi_mdp.GatedRewardTermCfg(
       func=pi_mdp.variable_posture,
       weight=1.0,
+      gate_full_angle=POSTURE_GATE[0],
+      gate_zero_angle=POSTURE_GATE[1],
+      gate_full_height=HEIGHT_GATE[0],
+      gate_zero_height=HEIGHT_GATE[1],
       params={
         "asset_cfg": SceneEntityCfg("robot", joint_names=(".*",)),
         "command_name": "command",
@@ -845,9 +951,17 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     # -- Gait shaping ---------------------------------------------------------
     # Encourage feet to be at target height when the foot velocity is high
     # (i.e. during swing).
-    "foot_gait": RewardTermCfg(
+    # The three gait terms are gated on being upright as well: face down, the
+    # gait clock keeps running and would pay for kicking the floor on the beat,
+    # and the slip penalty would charge for exactly the ground contact the arms
+    # and feet need to push off with. All three come back as the robot rises.
+    "foot_gait": pi_mdp.GatedRewardTermCfg(
       func=pi_mdp.feet_gait,
       weight=1.0,
+      gate_full_angle=GAIT_GATE[0],
+      gate_zero_angle=GAIT_GATE[1],
+      gate_full_height=HEIGHT_GATE[0],
+      gate_zero_height=HEIGHT_GATE[1],
       params={
         "frequency": WALK_FREQUENCY,
         "offset": [0.0, 0.5],
@@ -856,9 +970,13 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
         "sensor_name": "feet_ground_contact",
       },
     ),
-    "feet_phase": RewardTermCfg(
+    "feet_phase": pi_mdp.GatedRewardTermCfg(
       func=pi_mdp.feet_phase,
       weight=1.0,
+      gate_full_angle=GAIT_GATE[0],
+      gate_zero_angle=GAIT_GATE[1],
+      gate_full_height=HEIGHT_GATE[0],
+      gate_zero_height=HEIGHT_GATE[1],
       params={
         "frequency": WALK_FREQUENCY,
         "offset": [0.0, 0.5],
@@ -878,9 +996,14 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
         "baseline_height": 0.019,
       },
     ),
-    "foot_slip": RewardTermCfg(
+    "foot_slip": pi_mdp.GatedRewardTermCfg(
       func=pi_mdp.feet_slip,
-      weight=-0.25,
+      # Ramped in by the curriculum; see "slip_weight".
+      weight=0.0,
+      gate_full_angle=GAIT_GATE[0],
+      gate_zero_angle=GAIT_GATE[1],
+      gate_full_height=HEIGHT_GATE[0],
+      gate_zero_height=HEIGHT_GATE[1],
       params={
         "sensor_name": "feet_ground_contact",
         "command_name": "command",
@@ -917,7 +1040,11 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     ),
     "fallen": MetricsTermCfg(
       func=pi_mdp.on_ground,
-      params={"limit_angle": FALLEN_ANGLE, "asset_cfg": base_cfg},
+      params={
+        "limit_angle": FALLEN_ANGLE,
+        "min_height": STANDING_MIN_HEIGHT,
+        "asset_cfg": base_cfg,
+      },
     ),
     # Latched: did this env ever end up standing? Read against "fallen" -- this
     # is the number that says whether getup actually works.
@@ -943,22 +1070,22 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
       time_out=True,
       params={"min_fraction": 0.5},
     ),
-    # "time_out": TerminationTermCfg(func=mdp.time_out, time_out=True),
-    # NOTE: no "fell_over" termination. Ending the episode on a fall makes getup
-    # unlearnable -- the robot never experiences the state it is supposed to
-    # recover from, and the -200 is_terminated penalty teaches it that being
-    # horizontal is the end of the world rather than a situation with a way out.
-    # The pressure not to fall now comes from the "on_ground" reward instead,
-    # which charges a rate for lying there and stops charging the moment the
-    # robot is upright again. Re-enabling this line disables getup training:
-    # "fell_over": TerminationTermCfg(
-    #   func=mdp.bad_orientation,
-    #   params={"limit_angle": FALLEN_ANGLE},
-    # ),
-    # "root_height_below_minimum": TerminationTermCfg(
-    #   func=mdp.root_height_below_minimum,
-    #   params={"minimum_height": 0.25},
-    # ),
+    # NOTE: still no "fell_over" termination -- ending the episode *on* a fall
+    # makes getup unlearnable, because the robot never spends a step in the
+    # state it is supposed to recover from. This one ends the episode only if
+    # the robot is still down GETUP_TIMEOUT_S later, so falling stays
+    # survivable and lying there does not. Uses the same "fallen" test as the
+    # on_ground reward, so the rate charge and the deadline agree on what down
+    # means, and the timer resets whenever the robot is standing again.
+    "fallen_too_long": TerminationTermCfg(
+      func=pi_mdp.fallen_too_long,
+      params={
+        "timeout_s": GETUP_TIMEOUT_S,
+        "limit_angle": FALLEN_ANGLE,
+        "min_height": STANDING_MIN_HEIGHT,
+        "asset_cfg": base_cfg,
+      },
+    ),
   }
 
   ##
@@ -996,6 +1123,81 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
             "lin_vel_y": (-0.4, 0.4),
             "ang_vel_z": (-1.5, 1.5),
           },
+        ],
+      },
+    ),
+    # -- Getup ramps ---------------------------------------------------------
+    # The reference getup task ramps its smoothness and effort penalties in over
+    # the first ~1500 iterations rather than paying them from the start, on the
+    # grounds that a policy which cannot yet stand up should not be graded on how
+    # gracefully it fails. Same idea here, on the terms this task has, and on the
+    # same horizon as the velocity ranges above: cheap and violent first, then
+    # tightened once standing up is reliable.
+    "action_rate_weight": CurriculumTermCfg(
+      func=pi_mdp.reward_weight,
+      params={
+        "reward_name": "action_rate_l2",
+        "weight_stages": [
+          {"step": 400 * 24, "weight": -0.03},
+          {"step": 900 * 24, "weight": -0.05},
+        ],
+      },
+    ),
+    "joint_acc_weight": CurriculumTermCfg(
+      func=pi_mdp.reward_weight,
+      params={
+        "reward_name": "joint_acc_l2",
+        "weight_stages": [
+          {"step": 900 * 24, "weight": -1e-7},
+          {"step": 1500 * 24, "weight": -2.5e-7},
+        ],
+      },
+    ),
+    # Rolling upright is a large body rotation by definition, so these two are
+    # the penalties most directly opposed to getting up at all.
+    "body_ang_vel_weight": CurriculumTermCfg(
+      func=pi_mdp.reward_weight,
+      params={
+        "reward_name": "body_ang_vel",
+        "weight_stages": [
+          {"step": 900 * 24, "weight": -0.15},
+          {"step": 1500 * 24, "weight": -0.25},
+        ],
+      },
+    ),
+    "angular_momentum_weight": CurriculumTermCfg(
+      func=pi_mdp.reward_weight,
+      params={
+        "reward_name": "angular_momentum",
+        "weight_stages": [
+          {"step": 900 * 24, "weight": -0.05},
+          {"step": 1500 * 24, "weight": -0.1},
+        ],
+      },
+    ),
+    # The arms are the main tool for getting off the floor and they touch the
+    # torso doing it. At the full -1.0 from step 0 the cheapest way to avoid the
+    # charge is to never use them.
+    "self_collision_weight": CurriculumTermCfg(
+      func=pi_mdp.reward_weight,
+      params={
+        "reward_name": "self_collisions",
+        "weight_stages": [
+          {"step": 900 * 24, "weight": -0.5},
+          {"step": 1500 * 24, "weight": -1.0},
+        ],
+      },
+    ),
+    # Off entirely at first: pushing off the floor scrapes the feet, and while
+    # the gate above already suppresses that below GAIT_GATE, the moments right
+    # after standing up are still all slip.
+    "slip_weight": CurriculumTermCfg(
+      func=pi_mdp.reward_weight,
+      params={
+        "reward_name": "foot_slip",
+        "weight_stages": [
+          {"step": 600 * 24, "weight": -0.1},
+          {"step": 1200 * 24, "weight": -0.25},
         ],
       },
     ),
@@ -1056,10 +1258,20 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     num_slots=1,
     history_length=4,
   )
+  # Matches the *_selfpad geoms, not the real collision geoms: the pads sit on
+  # their own contype/conaffinity bit, so they only ever touch each other --
+  # never the terrain, never the ball. Parent-child pairs are dropped by MuJoCo's
+  # filterparent, so adjacent pads (thigh<->calf, base<->torso) never fire.
+  #
+  # NOTE: no ``secondary``. A secondary *pattern* would silently collapse to a
+  # single geom -- ``secondary_policy`` defaults to "first" -- so matching
+  # ".*_selfpad" on both sides scores every pad against the base pad alone and
+  # reads ~0 no matter how folded the robot is. It is not needed: the bit-2
+  # isolation already guarantees a pad's only possible contact partner is
+  # another pad, so "any contact involving this pad" *is* pad-vs-pad.
   self_collision_cfg = ContactSensorCfg(
     name="self_collision",
-    primary=ContactMatch(mode="subtree", pattern="base_link", entity="robot"),
-    secondary=ContactMatch(mode="subtree", pattern="base_link", entity="robot"),
+    primary=ContactMatch(mode="geom", pattern=r".*_selfpad", entity="robot"),
     fields=("found", "force"),
     reduce="none",
     num_slots=1,
@@ -1072,11 +1284,9 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
       # 20 DoF: the arms are actuated here, unlike in the velocity and path
       # tasks. A robot that cannot use its arms cannot roll over and push
       # itself up, and they are worth having for balance while walking anyway.
-      # The inflated upper-body collision shell is the getup hack -- see
-      # GETUP_COLLISION_INFLATE.
-      "robot": get_piplus_robot_cfg(
-        with_arms=True, collision_inflate=GETUP_COLLISION_INFLATE
-      ),
+      # self_pads activates the *_selfpad geoms that the self_collision sensor
+      # scores -- see SELF_PAD_COLLISION.
+      "robot": get_piplus_robot_cfg(with_arms=True, self_pads=True),
       "ball": get_ball_cfg(),
     },
     sensors=(
@@ -1111,11 +1321,10 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
   sim = SimulationCfg(
     # Raised from 45: a walker touches the ground with two feet, a robot lying
     # on its back touches it with the whole trunk, both arms and both legs at
-    # once. Settling the robot flat from 400 random falls peaks at 50 contacts
-    # with the inflated shell (43 without), so 45 was already clipping. Contacts
-    # past nconmax are dropped silently, which shows up as the robot sinking
-    # through the floor exactly when it is trying to push off it -- the rest is
-    # headroom for the ball and for terrain that is not a plane.
+    # once, which peaks around 43 -- so 45 was already clipping. Contacts past
+    # nconmax are dropped silently, which shows up as the robot sinking through
+    # the floor exactly when it is trying to push off it -- the rest is headroom
+    # for the ball and for terrain that is not a plane.
     nconmax=120,
     njmax=1500,
     contact_sensor_maxmatch=500,
