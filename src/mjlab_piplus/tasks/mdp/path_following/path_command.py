@@ -57,6 +57,91 @@ def _add_box(
   )
 
 
+# A path library is expensive twice over: minutes to plan and hundreds of
+# megabytes on the GPU (50k paths x 1500 points). It is also fully determined by
+# its generation parameters, so a library that has already been loaded is handed
+# straight back to the next term that asks for the same one -- notably the
+# footstep command, which places its footsteps along these same paths and would
+# otherwise double the memory bill.
+_PATHLIB_MEMO: dict[
+  tuple[str, str], tuple[torch.Tensor, torch.Tensor, torch.Tensor]
+] = {}
+
+
+def load_or_generate_pathlib(
+  *,
+  pathlib_size: int,
+  obstacle_world: ObstacleWorldCfg,
+  point_spacing: float,
+  num_waypoints: int,
+  max_points: int,
+  generation_seed: int,
+  num_workers: int | None = None,
+  cache_dir: str | None = None,
+  device,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+  """Load the pre-generated path library from disk, or generate and cache it.
+
+  The generator is deterministically seeded, so the library is fully determined
+  by the generation parameters. We key the cache file on those params; a cache
+  hit skips regenerating all ``pathlib_size`` paths on every training run, and
+  an in-process hit skips the load (and the second copy in device memory).
+
+  Returns ``(paths, waypoints, obstacles)``.
+  """
+  directory = Path(cache_dir or (Path(__file__).parent / "path_cache"))
+  # The obstacle world has far too many knobs to spell out in a filename; hash
+  # them instead.
+  key = hashlib.sha1(
+    repr(
+      (
+        obstacle_world.cache_key(),
+        point_spacing,
+        num_waypoints,
+        max_points,
+        generation_seed,
+      )
+    ).encode()
+  ).hexdigest()[:12]
+  cache_path = directory / f"astar_pathlib_n{pathlib_size}_{key}.pt"
+
+  memo_key = (str(cache_path), str(device))
+  memoized = _PATHLIB_MEMO.get(memo_key)
+  if memoized is not None:
+    return memoized
+
+  if cache_path.exists():
+    print(f"Loading cached path library from {cache_path}")
+    data = torch.load(cache_path, map_location=device)
+    result = (data["paths"], data["waypoints"], data["obstacles"])
+    _PATHLIB_MEMO[memo_key] = result
+    return result
+
+  result = generate_astar_paths(
+    num_paths=pathlib_size,
+    cfg=obstacle_world,
+    point_spacing=point_spacing,
+    num_waypoints=num_waypoints,
+    max_points=max_points,
+    seed=generation_seed,
+    device=device,
+    progress=True,
+    num_workers=num_workers,
+  )
+  directory.mkdir(parents=True, exist_ok=True)
+  torch.save(
+    {
+      "paths": result[0].cpu(),
+      "waypoints": result[1].cpu(),
+      "obstacles": result[2].cpu(),
+    },
+    cache_path,
+  )
+  print(f"Cached path library to {cache_path}")
+  _PATHLIB_MEMO[memo_key] = result
+  return result
+
+
 class PathCommand(CommandTerm):
   # Narrow the base class's ``cfg: CommandTermCfg`` so the config fields read
   # throughout this class resolve to PathCommandCfg (same pattern as
@@ -122,69 +207,20 @@ class PathCommand(CommandTerm):
       return torch.zeros_like(self._wants_stand)
     return self._wants_stand
 
-  def _generate(
-    self, num_paths: int, progress: bool = False
-  ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    """Plan ``num_paths`` A* paths through random obstacle worlds.
-
-    Returns ``(paths, waypoints, obstacles)``.
-    """
-    cfg = self.cfg
-    return generate_astar_paths(
-      num_paths=num_paths,
-      cfg=cfg.obstacle_world,
-      point_spacing=cfg.point_spacing,
-      num_waypoints=cfg.num_waypoints,
-      max_points=cfg.max_points,
-      seed=cfg.generation_seed,
-      device=self.device,
-      progress=progress,
-      num_workers=cfg.num_workers,
-    )
-
   def _load_or_generate_pathlib(
     self, cfg: PathCommandCfg
   ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    """Load the pre-generated path library from disk, or generate and cache it.
-
-    The generator is deterministically seeded, so the library is fully
-    determined by the generation parameters. We key the cache file on those
-    params; a cache hit skips regenerating all ``pathlib_size`` paths on every
-    training run.
-    """
-    cache_dir = Path(cfg.cache_dir or (Path(__file__).parent / "path_cache"))
-    # The obstacle world has far too many knobs to spell out in a filename;
-    # hash them instead.
-    key = hashlib.sha1(
-      repr(
-        (
-          cfg.obstacle_world.cache_key(),
-          cfg.point_spacing,
-          cfg.num_waypoints,
-          cfg.max_points,
-          cfg.generation_seed,
-        )
-      ).encode()
-    ).hexdigest()[:12]
-    cache_path = cache_dir / f"astar_pathlib_n{cfg.pathlib_size}_{key}.pt"
-
-    if cache_path.exists():
-      print(f"Loading cached path library from {cache_path}")
-      data = torch.load(cache_path, map_location=self.device)
-      return data["paths"], data["waypoints"], data["obstacles"]
-
-    all_paths, all_waypoints, all_obstacles = self._generate(
-      cfg.pathlib_size, progress=True
+    return load_or_generate_pathlib(
+      pathlib_size=cfg.pathlib_size,
+      obstacle_world=cfg.obstacle_world,
+      point_spacing=cfg.point_spacing,
+      num_waypoints=cfg.num_waypoints,
+      max_points=cfg.max_points,
+      generation_seed=cfg.generation_seed,
+      num_workers=cfg.num_workers,
+      cache_dir=cfg.cache_dir,
+      device=self.device,
     )
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    payload = {
-      "paths": all_paths.cpu(),
-      "waypoints": all_waypoints.cpu(),
-      "obstacles": all_obstacles.cpu(),
-    }
-    torch.save(payload, cache_path)
-    print(f"Cached path library to {cache_path}")
-    return all_paths, all_waypoints, all_obstacles
 
   @property
   def command(self) -> torch.Tensor:
