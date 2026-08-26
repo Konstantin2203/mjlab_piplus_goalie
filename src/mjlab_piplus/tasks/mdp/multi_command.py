@@ -32,6 +32,8 @@ from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 import torch
 from mjlab.managers.command_manager import CommandTerm, CommandTermCfg
 
+from mjlab_piplus.tasks.mdp.push_gui import PushGui
+
 if TYPE_CHECKING:
   import viser
   from mjlab.envs.manager_based_rl_env import ManagerBasedRlEnv
@@ -208,6 +210,10 @@ class MultiCommand(CommandTerm):
     self._gui_selected_type: str = GUI_AUTO
     self._gui_syncing = False
     self._gui_get_env_idx: Callable[[], int] | None = None
+    # Pushing is not a command, but a command term is the only thing the viser
+    # viewer hands a GUI hook to. This term owns the viewer panel in the multi
+    # task, so it builds the push controls; its sub-terms must not.
+    self._push_gui = PushGui()
 
   # Properties.
 
@@ -286,6 +292,7 @@ class MultiCommand(CommandTerm):
     for term in self.terms.values():
       if isinstance(term, JoystickTerm):
         term.apply_joystick()
+    self._push_gui.apply(self._env)
 
   def _update_metrics(self) -> None:
     # Fraction of episode time spent in each type (mean over the episode gives
@@ -410,6 +417,7 @@ class MultiCommand(CommandTerm):
       for option, box in self._gui_type_boxes.items():
         box.on_update(self._type_toggle_handler(option))
     self._gui_get_env_idx = get_env_idx
+    self._push_gui.create_gui(server, get_env_idx)
     for sub_name, term in self.terms.items():
       # The type selector above is the on/off switch for a sub-command's own
       # viewer controls, so they must not add a second one of their own.

@@ -56,11 +56,24 @@ Tasks are registered in `src/mjlab_piplus/tasks/__init__.py` via `register_mjlab
 ### Robot definition (`piplus_constants.py`)
 
 Three motor series are used:
-- **3536** — head joints (currently disabled in `PIPLUS_ARTICULATION`)
-- **4438** — arm joints
+- **3536** — head joints (still commented out in the MJCF and in the actuator list)
+- **4438** — arm joints, enabled via `get_piplus_robot_cfg(with_arms=True)`
 - **5036** — leg joints (hip pitch/roll, thigh, calf, ankle pitch/roll), with per-joint tuned PD gains
 
 Each actuator series uses `BuiltinPositionActuatorCfg` with built-in action lag controlled by `ACTUATOR_LAG_MIN` and `ACTUATOR_LAG_MAX` constants (same lag applied to all actuators). The `get_piplus_robot_cfg()` function assembles the full `EntityCfg` with the MuJoCo spec, collision model, and actuator list.
+
+> ⚠️ **`with_arms` changes the DoF count (12 → 20)** and therefore the action
+> dim and the joint blocks of the observation. Only the **multi** task uses it.
+> The velocity and path tasks must stay at 12 because `mdp/symmetry.py` mirrors
+> their observations by hard-coded index. `get_spec(with_arms=False)` deletes the
+> arm joints and their actuators from the spec, so the arms stay welded to the
+> torso exactly as before.
+
+`get_spec(collision_inflate=...)` scales named collision geoms — see
+`GETUP_COLLISION_INFLATE`, the "bigger collision model" hack the getup task uses.
+Adding a link to that map can create *permanent* self-collisions (the thighs do,
+against the trunk); re-run the pose sweep described in its docstring before
+changing it.
 
 Collision configs (`FULL_COLLISION`, `LEG_ONLY_COLLISION`, `FEET_ONLY_COLLISION`) use regex matching on geom names ending in `_collision[0-9]`.
 
@@ -86,6 +99,56 @@ The function `piplus_velocity_env_cfg(play=False)` builds a `ManagerBasedRlEnvCf
 - **Terminations**: time out (20 s episodes), orientation > 45° (`bad_orientation`). The root-height termination is currently commented out.
 - **Simulation**: 5 ms timestep, decimation 4 (→ 50 Hz policy), MuJoCo Warp with 10 solver iterations.
 - In `play` mode: curriculum disabled, episode length unbounded, extra air-time metrics added. Push events stay active.
+
+### Getup (fall recovery), in the multi task only
+
+Terms live in `src/mjlab_piplus/tasks/mdp/getup.py` and are wired into
+`piplus_multi_env_cfg.py`. Design, and why each piece is the way it is:
+
+- **No getup command.** The terms are unconditional, so recovery is available
+  under every command type rather than being something the operator requests.
+- **No `fell_over` termination.** It is commented out with a warning — with it
+  on, the robot never experiences the state it is meant to recover from and
+  getup is unlearnable. The pressure not to fall is now the `on_ground` reward
+  (a rate charged while tilted past `FALLEN_ANGLE`) instead of ending the
+  episode. `is_terminated` is consequently a dead term (only `time_out` remains,
+  and that is flagged `time_out=True`).
+- **No end pose.** `variable_posture` already owns the standing pose; getup
+  stops at "upright and off the floor" and hands over.
+- **The penalty is gated, the shaping is not.** `getup_orientation` and
+  `getup_height` are ungated on purpose: gating them on "is fallen" would make
+  the reward step *down* the instant the robot stands up.
+- **Spawns.** `reset_fallen_or_standing` replaces the old `reset_base` +
+  `reset_robot_joints` pair. `FALL_PROBABILITY` of envs start on the floor at a
+  uniformly random orientation with the default pose plus Gaussian joint noise
+  (not uniform over the joint range — that samples mostly unreachable tangles).
+- **Camera.** `camera_link_collision0` sits ~5 mm proud of the head shell, so a
+  faceplant hits it first; `camera_ground_impact` charges force-graded contact
+  heavily. Do not add the head to `GETUP_COLLISION_INFLATE` — that buries the
+  camera geom inside the head shell and the penalty stops firing.
+- **`nconmax` is 120, not 45.** A robot lying flat peaks at ~50 contacts;
+  overflow is silent and looks like sinking through the floor.
+
+Watch `Metrics/getup_success` (latched, should stay near 1.0) against
+`Metrics/fallen` (episode fraction spent down, starts around 0.2).
+
+### Viewer GUI (`mdp/push_gui.py`)
+
+mjlab's viser viewer only hands *command terms* a GUI hook
+(`CommandTerm.create_gui`), so anything the project wants in the panel has to
+ride along on one. `PushGui` (a "Push" folder: six velocity-delta sliders,
+±3 m/s linear / ±6 rad/s angular, a heading-frame toggle, and a *Push robot*
+button) is built by whichever term owns the panel — `MultiCommand` in the multi
+task, `UniformVelocityCommandWithStop` when it runs standalone (velocity and
+path). A sub-term under a composite command must skip it (`if
+self.joystick_gate is None:`), or the folder appears twice.
+
+The button click arrives on viser's thread, so it only sets a flag; the write
+happens in `PushGui.apply`, called from the owning term's `compute`. The push is
+the same mass-independent root-velocity delta as the training-time
+`push_by_setting_velocity` event. It shows up in `asset.data` only after the
+next forward, which is what makes it look like a no-op if you assert on the same
+step.
 
 ### RL config (`piplus_velocity_rl_cfg.py`)
 

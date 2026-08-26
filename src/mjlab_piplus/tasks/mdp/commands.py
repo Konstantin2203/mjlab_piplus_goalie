@@ -25,6 +25,8 @@ from mjlab.entity import Entity
 from mjlab.managers.command_manager import CommandTerm, CommandTermCfg
 from mjlab.utils.lab_api.math import matrix_from_quat, quat_apply, wrap_to_pi
 
+from mjlab_piplus.tasks.mdp.push_gui import PushGui
+
 if TYPE_CHECKING:
   import viser
   from mjlab.envs.manager_based_rl_env import ManagerBasedRlEnv
@@ -411,6 +413,9 @@ class UniformVelocityCommandWithStop(CommandTerm):
     self._joystick_sliders: list[viser.GuiSliderHandle] = []
     self._joystick_get_env_idx: Callable[[], int] | None = None
     self._stand_checkbox: viser.GuiCheckboxHandle | None = None
+    # Only built when this term runs standalone; under a composite command the
+    # owner builds the push controls, the same rule the joystick switch follows.
+    self._push_gui = PushGui()
 
   @property
   def command(self) -> torch.Tensor:
@@ -588,6 +593,9 @@ class UniformVelocityCommandWithStop(CommandTerm):
         for s in sliders:
           s.value = 0.0
 
+    if self.joystick_gate is None:
+      self._push_gui.create_gui(server, get_env_idx)
+
     # Store GUI state for apply_joystick().
     self._joystick_sliders = sliders
     self._joystick_get_env_idx = get_env_idx
@@ -617,6 +625,8 @@ class UniformVelocityCommandWithStop(CommandTerm):
   def compute(self, dt: float) -> None:
     super().compute(dt)
     self.apply_joystick()
+    if self.joystick_gate is None:
+      self._push_gui.apply(self._env)
 
   # Visualization.
 
