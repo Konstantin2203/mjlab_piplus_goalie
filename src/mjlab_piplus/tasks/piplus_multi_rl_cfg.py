@@ -13,7 +13,7 @@ def get_piplus_multi_rl_cfg() -> RslRlOnPolicyRunnerCfg:
       obs_normalization=True,
       distribution_cfg={
         "class_name": "GaussianDistribution",
-        "init_std": 2.0,
+        "init_std": 1.0,
         "std_type": "scalar",
       },
     ),

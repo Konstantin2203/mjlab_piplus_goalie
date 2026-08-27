@@ -385,40 +385,7 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
   # Events
   ##
 
-  events = {
-    "reset_fallen_or_standing": EventTermCfg(
-      func=pi_mdp.reset_fallen_or_standing,
-      mode="reset",
-      params={
-        "fall_probability": 0.3,
-        "fall_height": 0.4,
-        "fall_velocity_range": 0.5,
-        "joint_pos_std": 0.3,
-        "stand_pose_range": {
-          "x": (-0.0, 0.0),
-          "y": (-0.0, 0.0),
-          "z": (0.01, 0.01),
-          "yaw": (-3.14, 3.14),
-        },
-        "stand_joint_pos_range": (-0.1, 0.1),
-        "stand_joint_vel_range": (-0.5, 0.5),
-      },
-    ),
-    "push_robot": EventTermCfg(
-      func=mdp.push_by_setting_velocity,
-      mode="interval",
-      interval_range_s=(2.0, 6.0),
-      params={
-        "velocity_range": {
-          "x": (-0.25, 0.25),
-          "y": (-0.25, 0.25),
-          "z": (-0.15, 0.15),
-          "roll": (-0.52, 0.52),
-          "pitch": (-0.52, 0.52),
-          "yaw": (-0.78, 0.78),
-        },
-      },
-    ),
+  domand_rands = {
     # DR on startup, enough variance over 4096 envs, much better performance than per-step.
     "foot_friction": EventTermCfg(
       mode="startup",
@@ -533,6 +500,41 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
       },
     ),
   }
+  events = {
+    "reset_fallen_or_standing": EventTermCfg(
+      func=pi_mdp.reset_fallen_or_standing,
+      mode="reset",
+      params={
+        "fall_probability": 0.3,
+        "fall_height": 0.4,
+        "fall_velocity_range": 0.5,
+        "joint_pos_std": 0.3,
+        "stand_pose_range": {
+          "x": (-0.0, 0.0),
+          "y": (-0.0, 0.0),
+          "z": (0.01, 0.01),
+          "yaw": (-3.14, 3.14),
+        },
+        "stand_joint_pos_range": (-0.1, 0.1),
+        "stand_joint_vel_range": (-0.5, 0.5),
+      },
+    ),
+    "push_robot": EventTermCfg(
+      func=mdp.push_by_setting_velocity,
+      mode="interval",
+      interval_range_s=(2.0, 6.0),
+      params={
+        "velocity_range": {
+          "x": (-0.25, 0.25),
+          "y": (-0.25, 0.25),
+          "z": (-0.15, 0.15),
+          "roll": (-0.52, 0.52),
+          "pitch": (-0.52, 0.52),
+          "yaw": (-0.78, 0.78),
+        },
+      },
+    ),
+  } | domand_rands
 
   ##
   # Rewards
@@ -548,8 +550,8 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     "robot", body_names=("r_ankle_roll_link", "l_ankle_roll_link")
   )
 
-  rewards = {
-    # -- Command tracking (velocity + stand) ----------------------------------
+  # -- Command tracking (velocity + stand) ----------------------------------
+  velocity_rewards = {
     # These are the pi_mdp copies, not mjlab's: mjlab's index the command tensor
     # directly, which under a MultiCommand would slice into the one-hot prefix.
     # They stay active under a stand command, where the commanded twist is zero
@@ -566,7 +568,10 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
       params={"command_name": "command", "std": math.sqrt(0.5)},
       command_weights=VELOCITY_AND_STAND,
     ),
-    # -- Path following -------------------------------------------------------
+  }
+
+  # -- Path following -------------------------------------------------------
+  path_rewards = {
     # Dense goal-pose reward split into independently-weighted position and
     # orientation terms (the combined product was too weak). Linear:
     # exp(-dist^2). Angular: same position gate * exp(-yaw_err^2), so
@@ -634,7 +639,10 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
       },
       command_weights=PATH_ONLY,
     ),
-    # -- Goal pose ------------------------------------------------------------
+  }
+
+  # -- Goal pose ------------------------------------------------------------
+  goal_pose_rewards = {
     # Walk to a sampled pose. Progress carries the robot there, the look-at term
     # keeps it facing where it is going, and the two goal-reached terms (shared
     # with the path task) settle it onto the position and then the orientation.
@@ -691,7 +699,10 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
       },
       command_weights=GOAL_POSE_ONLY,
     ),
-    # -- Kick -----------------------------------------------------------------
+  }
+
+  # -- Kick -----------------------------------------------------------------
+  kick_rewards = {
     # One repeating cycle per ball: approach, strike, then a short window over
     # which the kick is scored densely before the ball is re-placed and the next
     # approach begins (see ``mdp/kick.py``). The window and the respawn are what
@@ -793,7 +804,10 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
       },
       command_weights=KICK_ONLY,
     ),
-    # -- Getup ----------------------------------------------------------------
+  }
+
+  # -- Getup ----------------------------------------------------------------
+  getup_rewards = {
     # Not gated on a command: whatever the robot was asked to do, being on the
     # floor is wrong and standing back up is right. See ``mdp/getup.py`` for why
     # only the penalty is gated and the two shaping terms are not.
@@ -858,61 +872,6 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
         "force_threshold": 1.0,
       },
     ),
-    # -- Stability ------------------------------------------------------------
-    # Terminal penalty, paid once on the step "fallen_too_long" fires (mjlab's
-    # is_terminated excludes time-outs, and time_out is the only other
-    # termination, so this term fires on failed getups and nothing else).
-    # Scaled by dt like every other weight, it costs 200 * 0.02 = 4.0, i.e.
-    # about one second of standing. The real cost of failing is the forfeited
-    # rest of the episode -- up to 14 s * ~5.4 = ~75 -- so this is a ~5% top-up
-    # that mainly serves to put a discontinuity at the deadline rather than to
-    # dominate the return.
-    "is_terminated": RewardTermCfg(func=mdp.is_terminated, weight=-200.0),
-    "upright": RewardTermCfg(
-      func=mdp.upright,
-      weight=1.0,
-      params={"std": math.sqrt(0.2), "asset_cfg": base_cfg},
-    ),
-    # NOTE: the smoothness and effort penalties below all start reduced and are
-    # ramped to the values named in their comments by the curriculum (see the
-    # "-- Getup ramps" block there). Standing up from flat is necessarily a
-    # violent, whippy, self-touching motion; charged full price from step 0
-    # these terms make lying still the cheaper option and getup never starts.
-    # This is the reference implementation's curriculum, which ramps exactly
-    # this family of penalties over the first ~1500 iterations.
-    "body_ang_vel": RewardTermCfg(
-      func=mdp.body_angular_velocity_penalty,
-      weight=-0.05,  # -> -0.25
-      params={"asset_cfg": base_cfg},
-    ),
-    "angular_momentum": RewardTermCfg(
-      func=mdp.angular_momentum_penalty,
-      weight=-0.02,  # -> -0.1
-      params={"sensor_name": "robot/root_angmom"},
-    ),
-    # -- Safety ---------------------------------------------------------------
-    "joint_acc_l2": RewardTermCfg(func=mdp.joint_acc_l2, weight=0.0),  # -> -2.5e-7
-    # Not ramped: a joint driven into its hard stop is damage, not style.
-    "joint_pos_limits": RewardTermCfg(func=mdp.joint_pos_limits, weight=-1.0),
-    "action_rate_l2": RewardTermCfg(func=mdp.action_rate_l2, weight=-0.01),  # -> -0.05
-    # Flat -0.1, the reference's weight, and deliberately not ramped: the pads
-    # read ~0 while standing, so there is no early-training tax to curriculum
-    # away, and a getup that has to plant a hand on a thigh should pay a small
-    # constant price rather than a growing one.
-    "self_collisions": RewardTermCfg(
-      func=mdp.self_collision_cost,
-      weight=-0.1,
-      params={
-        "sensor_name": "self_collision",
-        "force_threshold": 2.0,
-      },  # we dont want even soft collisions
-    ),
-    # Two flat geometric fences on the standing shape, both from the reference.
-    # A straddle wider than 0.40 m is stable without ever extending the legs, so
-    # it is a way to pass the height terms cheaply; a foot inside 0.15 m of the
-    # base means the robot is squatting on its own ankle while reading as tall.
-    # Ungated: neither shape is something a fallen robot needs to pass through,
-    # and foot_too_close is ramped in by the curriculum instead.
     "foot_distance": RewardTermCfg(
       func=pi_mdp.foot_distance,
       weight=-1.0,
@@ -927,11 +886,51 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
         "base_cfg": base_cfg,
       },
     ),
-    # Gated: the standing pose is the wrong target for a robot on the floor. It
-    # has to bend where the posture term says not to -- tuck a knee under itself,
-    # swing an arm out to plant a hand -- so ungated this term is a bribe to stay
-    # down in a tidy shape. Off past POSTURE_GATE, it is a walking term again.
-    "pose": pi_mdp.GatedRewardTermCfg(
+  }
+
+  # -- Stability ------------------------------------------------------------
+  stability_rewards = {
+    # Terminal penalty, paid once on the step "fallen_too_long" fires (mjlab's
+    # is_terminated excludes time-outs, and time_out is the only other
+    # termination, so this term fires on failed getups and nothing else).
+    # Scaled by dt like every other weight, it costs 200 * 0.02 = 4.0, i.e.
+    # about one second of standing. The real cost of failing is the forfeited
+    # rest of the episode -- up to 14 s * ~5.4 = ~75 -- so this is a ~5% top-up
+    # that mainly serves to put a discontinuity at the deadline rather than to
+    # dominate the return.
+    "is_terminated": RewardTermCfg(func=mdp.is_terminated, weight=-200.0),
+    "upright": RewardTermCfg(
+      func=mdp.upright,
+      weight=1.0,
+      params={"std": math.sqrt(0.2), "asset_cfg": base_cfg},
+    ),
+    "body_ang_vel": RewardTermCfg( #TODO gated for getup
+      func=mdp.body_angular_velocity_penalty,
+      weight=-0.25,
+      params={"asset_cfg": base_cfg},
+    ),
+    "angular_momentum": RewardTermCfg( #TODO Gated for getup
+      func=mdp.angular_momentum_penalty,
+      weight=-0.1,
+      params={"sensor_name": "robot/root_angmom"},
+    ),
+  }
+
+  # -- Safety ---------------------------------------------------------------
+  safety_rewards = {
+    "joint_acc_l2": RewardTermCfg(func=mdp.joint_acc_l2, weight=-2.5e-7),
+    "joint_pos_limits": RewardTermCfg(func=mdp.joint_pos_limits, weight=-10.0),
+    "action_rate_l2": RewardTermCfg(func=mdp.action_rate_l2, weight=-0.05),
+    "self_collisions": RewardTermCfg(
+      func=mdp.self_collision_cost,
+      weight=-1.0,
+      params={
+        "sensor_name": "self_collision",
+        "force_threshold": 2.0,
+      },  # we dont want even soft collisions
+    ),
+    # Gated for getup
+    "posture": pi_mdp.GatedRewardTermCfg(
       func=pi_mdp.variable_posture,
       weight=1.0,
       gate_full_angle=POSTURE_GATE[0],
@@ -979,7 +978,10 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
         "running_threshold": 0.5,
       },
     ),
-    # -- Gait shaping ---------------------------------------------------------
+  }
+
+  # -- Gait shaping ---------------------------------------------------------
+  gait_rewards = {
     # Encourage feet to be at target height when the foot velocity is high
     # (i.e. during swing).
     # The three gait terms are gated on being upright as well: face down, the
@@ -1041,22 +1043,9 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
         "asset_cfg": foot_asset_cfg,
       },
     ),
-    # "soft_landing": RewardTermCfg(
-    #   func=pi_mdp.soft_landing,
-    #   weight=-1e-3,
-    #   params={
-    #     "sensor_name": "feet_ground_contact",
-    #     "command_name": "command",
-    #   },
-    # ),
-    # "flat_foot": RewardTermCfg(
-    #   func=pi_mdp.flat_foot_l2,
-    #   weight=-0.0,
-    #   params={
-    #     "asset_cfg": foot_asset_cfg,
-    #   },
-    # ),
   }
+
+  rewards =  velocity_rewards | path_rewards | goal_pose_rewards | kick_rewards | getup_rewards | stability_rewards |  safety_rewards |  gait_rewards
 
   ##
   # Metrics
@@ -1154,82 +1143,6 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
             "lin_vel_y": (-0.4, 0.4),
             "ang_vel_z": (-1.5, 1.5),
           },
-        ],
-      },
-    ),
-    # -- Getup ramps ---------------------------------------------------------
-    # The reference getup task ramps its smoothness and effort penalties in over
-    # the first ~1500 iterations rather than paying them from the start, on the
-    # grounds that a policy which cannot yet stand up should not be graded on how
-    # gracefully it fails. Same idea here, on the terms this task has, and on the
-    # same horizon as the velocity ranges above: cheap and violent first, then
-    # tightened once standing up is reliable.
-    "action_rate_weight": CurriculumTermCfg(
-      func=pi_mdp.reward_weight,
-      params={
-        "reward_name": "action_rate_l2",
-        "weight_stages": [
-          {"step": 400 * 24, "weight": -0.03},
-          {"step": 900 * 24, "weight": -0.05},
-        ],
-      },
-    ),
-    "joint_acc_weight": CurriculumTermCfg(
-      func=pi_mdp.reward_weight,
-      params={
-        "reward_name": "joint_acc_l2",
-        "weight_stages": [
-          {"step": 900 * 24, "weight": -1e-7},
-          {"step": 1500 * 24, "weight": -2.5e-7},
-        ],
-      },
-    ),
-    # Rolling upright is a large body rotation by definition, so these two are
-    # the penalties most directly opposed to getting up at all.
-    "body_ang_vel_weight": CurriculumTermCfg(
-      func=pi_mdp.reward_weight,
-      params={
-        "reward_name": "body_ang_vel",
-        "weight_stages": [
-          {"step": 900 * 24, "weight": -0.15},
-          {"step": 1500 * 24, "weight": -0.25},
-        ],
-      },
-    ),
-    "angular_momentum_weight": CurriculumTermCfg(
-      func=pi_mdp.reward_weight,
-      params={
-        "reward_name": "angular_momentum",
-        "weight_stages": [
-          {"step": 900 * 24, "weight": -0.05},
-          {"step": 1500 * 24, "weight": -0.1},
-        ],
-      },
-    ),
-    # Off entirely at first, then ramped to -0.5 by 900 iterations (the
-    # reference's schedule). Early on, tucking a foot under the pelvis is a
-    # legitimate intermediate on the way up from flat; only the *final* posture
-    # should be charged for it.
-    "foot_too_close_weight": CurriculumTermCfg(
-      func=pi_mdp.reward_weight,
-      params={
-        "reward_name": "foot_too_close_to_base",
-        "weight_stages": [
-          {"step": 600 * 24, "weight": -0.2},
-          {"step": 900 * 24, "weight": -0.5},
-        ],
-      },
-    ),
-    # Off entirely at first: pushing off the floor scrapes the feet, and while
-    # the gate above already suppresses that below GAIT_GATE, the moments right
-    # after standing up are still all slip.
-    "slip_weight": CurriculumTermCfg(
-      func=pi_mdp.reward_weight,
-      params={
-        "reward_name": "foot_slip",
-        "weight_stages": [
-          {"step": 600 * 24, "weight": -0.1},
-          {"step": 1200 * 24, "weight": -0.25},
         ],
       },
     ),
