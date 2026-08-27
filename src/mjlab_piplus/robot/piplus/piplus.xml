@@ -15,7 +15,7 @@
     </default>
     <default class="pi_actuator_arm">
       <!-- ctrllimited is false because policies should be able to set values outside the ranges to reach torques required -->
-      <position kp="6" kv="0.6" forcerange="-10 10" ctrllimited="false"/>
+      <position kp="25" kv="0.6" forcerange="-10 10" ctrllimited="false"/>
     </default>
     <default class="pi_actuator_leg">
       <position kp="50" kv="1.1" forcerange="-20 20" ctrllimited="false"/>
@@ -26,17 +26,6 @@
     <default class="collision">
       <geom group="3" contype="1" conaffinity="1"/>
     </default>
-    <!--
-      Self-collision-only padding geoms. SELF_PAD_COLLISION in
-      piplus_constants.py puts them on contype/conaffinity bit 2, so they only
-      ever contact each other -- never the terrain, and never ground dynamics.
-      The "_selfpad" suffix keeps them out of FULL_COLLISION's
-      ".*_collision[0-9]" regex; group=4 keeps them out of the collision (3) and
-      visual (2) render groups.
-      Most pads are the same size as the geom they shadow: the set exists to
-      SELECT which link pairs count as a self-collision. Only torso (1.2x),
-      hands (2x) and feet (1.3x) are enlarged, to charge near misses too.
-    -->
     <default class="self_collision_pad">
       <geom group="4" contype="2" conaffinity="2" rgba="1 0 0 0.3"/>
     </default>

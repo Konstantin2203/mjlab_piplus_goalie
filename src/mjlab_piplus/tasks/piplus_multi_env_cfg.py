@@ -315,10 +315,10 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
       debug_vis=True,
       change_command_probability=0.3,
       fractions={
-        "velocity": 0.35,
-        "path": 0.25,
-        "goal_pose": 0.15,
-        "kick": 0.15,
+        "velocity": 0.25,
+        "path": 0.2,
+        "goal_pose": 0.2,
+        "kick": 0.25,
         "stand": 0.10,
       },
       terms={
@@ -542,6 +542,11 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
   # midpoint between the two feet), so ``foot_asset_cfg`` carries the foot sites.
   foot_asset_cfg = SceneEntityCfg("robot", site_names=foot_sites)
   base_cfg = SceneEntityCfg("robot", body_names=("base_link",))
+  # Foot *bodies* (not the sites above): the foot-placement penalties measure
+  # link positions, and body_ids order follows the tuple below.
+  feet_cfg = SceneEntityCfg(
+    "robot", body_names=("r_ankle_roll_link", "l_ankle_roll_link")
+  )
 
   rewards = {
     # -- Command tracking (velocity + stand) ----------------------------------
@@ -817,14 +822,16 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     ),
     "getup_height": RewardTermCfg(
       func=pi_mdp.getup_height,
-      weight=1.0,
+      weight=2.0,
       params={"desired_height": STANDING_HEIGHT, "asset_cfg": base_cfg},
     ),
     # Same term, measured at the head. Base height and head height together say
     # "tall *and* unfolded" in a way neither says alone -- see
-    # STANDING_HEAD_HEIGHT. Weight 1.0 against getup_height's 1.0; the reference
-    # runs 2:1 in favour of the pelvis, which is worth trying if the policy
-    # starts standing with a stooped trunk to farm head height.
+    # STANDING_HEAD_HEIGHT. Weighted 1.0 against getup_height's 2.0, the
+    # reference's ratio: the pelvis is the stronger discriminator (a sitting
+    # robot's trunk is vertical, so its head is already 0.37 of the 0.53), and
+    # head height mainly prices a *folded* posture -- tall at the base, short at
+    # the head.
     "head_height": RewardTermCfg(
       func=pi_mdp.getup_height,
       weight=1.0,
@@ -886,15 +893,39 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     # -- Safety ---------------------------------------------------------------
     "joint_acc_l2": RewardTermCfg(func=mdp.joint_acc_l2, weight=0.0),  # -> -2.5e-7
     # Not ramped: a joint driven into its hard stop is damage, not style.
-    "joint_pos_limits": RewardTermCfg(func=mdp.joint_pos_limits, weight=-10.0),
+    "joint_pos_limits": RewardTermCfg(func=mdp.joint_pos_limits, weight=-1.0),
     "action_rate_l2": RewardTermCfg(func=mdp.action_rate_l2, weight=-0.01),  # -> -0.05
+    # Flat -0.1, the reference's weight, and deliberately not ramped: the pads
+    # read ~0 while standing, so there is no early-training tax to curriculum
+    # away, and a getup that has to plant a hand on a thigh should pay a small
+    # constant price rather than a growing one.
     "self_collisions": RewardTermCfg(
       func=mdp.self_collision_cost,
-      weight=-0.25,  # -> -1.0
+      weight=-0.1,
       params={
         "sensor_name": "self_collision",
         "force_threshold": 2.0,
       },  # we dont want even soft collisions
+    ),
+    # Two flat geometric fences on the standing shape, both from the reference.
+    # A straddle wider than 0.40 m is stable without ever extending the legs, so
+    # it is a way to pass the height terms cheaply; a foot inside 0.15 m of the
+    # base means the robot is squatting on its own ankle while reading as tall.
+    # Ungated: neither shape is something a fallen robot needs to pass through,
+    # and foot_too_close is ramped in by the curriculum instead.
+    "foot_distance": RewardTermCfg(
+      func=pi_mdp.foot_distance,
+      weight=-1.0,
+      params={"max_distance": 0.40, "asset_cfg": feet_cfg},
+    ),
+    "foot_too_close_to_base": RewardTermCfg(
+      func=pi_mdp.foot_too_close_to_base,
+      weight=0.0,  # -> -0.5
+      params={
+        "min_distance": 0.15,
+        "foot_cfg": feet_cfg,
+        "base_cfg": base_cfg,
+      },
     ),
     # Gated: the standing pose is the wrong target for a robot on the floor. It
     # has to bend where the posture term says not to -- tuck a knee under itself,
@@ -1175,16 +1206,17 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
         ],
       },
     ),
-    # The arms are the main tool for getting off the floor and they touch the
-    # torso doing it. At the full -1.0 from step 0 the cheapest way to avoid the
-    # charge is to never use them.
-    "self_collision_weight": CurriculumTermCfg(
+    # Off entirely at first, then ramped to -0.5 by 900 iterations (the
+    # reference's schedule). Early on, tucking a foot under the pelvis is a
+    # legitimate intermediate on the way up from flat; only the *final* posture
+    # should be charged for it.
+    "foot_too_close_weight": CurriculumTermCfg(
       func=pi_mdp.reward_weight,
       params={
-        "reward_name": "self_collisions",
+        "reward_name": "foot_too_close_to_base",
         "weight_stages": [
+          {"step": 600 * 24, "weight": -0.2},
           {"step": 900 * 24, "weight": -0.5},
-          {"step": 1500 * 24, "weight": -1.0},
         ],
       },
     ),

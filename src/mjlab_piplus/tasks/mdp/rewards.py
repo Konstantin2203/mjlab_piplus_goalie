@@ -738,3 +738,40 @@ def flat_foot_l2(
   )  # (E, n_feet, 3)
   proj_g = quat_apply_inverse(quat, gravity_w)  # (E, n_feet, 3)
   return torch.sum(torch.square(proj_g[..., :2]), dim=(-2, -1))
+
+
+##
+# Foot placement.
+#
+# Two flat (0/1) geometric penalties ported from the reference getup env. Both
+# fence off degenerate standing shapes that the height and posture terms alone
+# do not price: a straddle wide enough to be stable without ever extending the
+# legs, and a foot tucked in under the pelvis, which reads as "tall" to the
+# height terms while the robot is really squatting on its own ankle.
+##
+
+
+def foot_distance(
+  env: ManagerBasedRlEnv,
+  max_distance: float = 0.40,
+  asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+  """Flat 1.0 while the XY distance between the two feet exceeds ``max_distance``."""
+  asset: Entity = env.scene[asset_cfg.name]
+  foot_pos_xy = asset.data.body_link_pos_w[:, asset_cfg.body_ids, :2]
+  dist = torch.norm(foot_pos_xy[:, 0] - foot_pos_xy[:, 1], dim=-1)
+  return (dist > max_distance).float()
+
+
+def foot_too_close_to_base(
+  env: ManagerBasedRlEnv,
+  min_distance: float = 0.15,
+  foot_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+  base_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+  """Flat 1.0 while either foot is closer than ``min_distance`` to the base link."""
+  asset: Entity = env.scene[foot_cfg.name]
+  foot_pos = asset.data.body_link_pos_w[:, foot_cfg.body_ids, :]
+  base_pos = asset.data.body_link_pos_w[:, base_cfg.body_ids, :]
+  dist = torch.norm(foot_pos - base_pos, dim=-1)
+  return (dist < min_distance).any(dim=1).float()

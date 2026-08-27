@@ -13,7 +13,7 @@ def get_piplus_multi_rl_cfg() -> RslRlOnPolicyRunnerCfg:
       obs_normalization=True,
       distribution_cfg={
         "class_name": "GaussianDistribution",
-        "init_std": 1.0,
+        "init_std": 2.0,
         "std_type": "scalar",
       },
     ),
@@ -22,12 +22,7 @@ def get_piplus_multi_rl_cfg() -> RslRlOnPolicyRunnerCfg:
       activation="elu",
       obs_normalization=True,
     ),
-    # NOTE: no symmetry_cfg. The multi-command actor obs tail is
-    # ``[one_hot(3) | velocity(3) | path(2N + 2)]``, which none of the existing
-    # transforms in ``mdp/symmetry.py`` mirror correctly -- they are hard-coded
-    # by index against the old layouts. A wrong mirror is worse than none (it
-    # trains the policy toward a false invariance), so symmetry stays off until
-    # a PiPlusMultiSymmetry is written and checked with ``check_symmetry.py``.
+    # NOTE: no symmetry_cfg at the moment
     algorithm=RslRlPpoAlgorithmCfg(
       value_loss_coef=1.0,
       use_clipped_value_loss=True,

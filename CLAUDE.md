@@ -163,7 +163,7 @@ Terms live in `src/mjlab_piplus/tasks/mdp/getup.py` and are wired into
   posture (tall at the base, short at the head); against pure sitting the base
   term is still the stronger discriminator, since a sitting robot's trunk is
   vertical and its head is already 0.37 of the 0.53. The reference runs the
-  pelvis at 2:1 over the head; here both are 1.0.
+  pelvis at 2:1 over the head, and so does this env.
 - **The penalty is gated, the shaping is not.** `getup_orientation` and
   `getup_height` are ungated on purpose: gating them on "is fallen" would make
   the reward step *down* the instant the robot stands up.
@@ -180,12 +180,21 @@ Terms live in `src/mjlab_piplus/tasks/mdp/getup.py` and are wired into
   stateful), just multiplied by zero. It does not compose with
   `MultiRewardTermCfg`: a term is gated or command-weighted, not both.
 - **Penalties ramp in.** Following the reference's curriculum: `action_rate_l2`,
-  `joint_acc_l2`, `body_ang_vel`, `angular_momentum`, `self_collisions` and
-  `foot_slip` all start reduced (or at zero) and reach their configured values
+  `joint_acc_l2`, `body_ang_vel`, `angular_momentum`, `foot_slip` and
+  `foot_too_close_to_base` all start reduced (or at zero) and reach their configured values
   by ~1500 iterations, via `reward_weight` terms in the curriculum. Standing up
   from flat is violent, whippy and self-touching; charged full price from step 0
   these make lying still the cheaper option. Each reward carries a `# -> value`
-  comment naming its endpoint. `joint_pos_limits` is deliberately not ramped.
+  comment naming its endpoint. `joint_pos_limits` (-1.0) and `self_collisions`
+  (-0.1) are deliberately flat: both read ~0 at a settled standing pose, so
+  there is no early-training tax to curriculum away.
+- **Foot placement is fenced.** `foot_distance` (-1.0, flat past 0.40 m between
+  the feet) and `foot_too_close_to_base` (ramped to -0.5 by 900 iterations, fires
+  inside 0.15 m) are the reference's two flat geometric penalties. They price
+  standing shapes the height terms would otherwise pass: a straddle wide enough
+  to be stable without extending the legs, and a foot tucked under the pelvis.
+  At the settled pose the measurements are 0.12-0.17 m and 0.31 m, so both read
+  zero with margin.
 - **Spawns.** `reset_fallen_or_standing` replaces the old `reset_base` +
   `reset_robot_joints` pair. `FALL_PROBABILITY` of envs start on the floor at a
   uniformly random orientation with the default pose plus Gaussian joint noise
