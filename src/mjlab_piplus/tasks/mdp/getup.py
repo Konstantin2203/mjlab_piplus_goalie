@@ -64,6 +64,7 @@ if TYPE_CHECKING:
 
 __all__ = [
   "GatedRewardTermCfg",
+  "upright_gate",
   "reset_fallen_or_standing",
   "on_ground",
   "getup_orientation",
@@ -136,6 +137,39 @@ def _upright_gate(
     return gate
   height = _base_height(env, asset)
   return gate * ((height - zero_height) / (full_height - zero_height)).clamp(0.0, 1.0)
+
+
+def upright_gate(
+  env: ManagerBasedRlEnv,
+  angles: tuple[float, float],
+  heights: tuple[float, float] | None = None,
+  asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+  """The default gate for :class:`GatedRewardTermCfg`: "is the robot standing".
+
+  A thin, config-facing wrapper over :func:`_upright_gate` that takes the
+  ``(full, zero)`` pairs the env cfg already keeps as constants
+  (``GAIT_GATE``, ``POSTURE_GATE``, ``HEIGHT_GATE``) rather than four loose
+  floats.
+
+  Args:
+    env: The environment.
+    angles: ``(full_angle, zero_angle)`` in radians -- paid in full at or below
+      ``full_angle`` of tilt, off at or above ``zero_angle``.
+    heights: Optional ``(full_height, zero_height)`` in metres, applied as a
+      second multiplicative ramp on base height. Give it wherever the term
+      would otherwise pay a robot sitting on the floor, which is upright and so
+      passes the angle ramp on its own.
+    asset_cfg: Entity whose base tilt and height drive the gate.
+  """
+  full_angle, zero_angle = angles
+  if zero_angle <= full_angle:
+    raise ValueError(f"angles must be (full, zero) with zero > full; got {angles}.")
+  if heights is not None and heights[1] >= heights[0]:
+    raise ValueError(f"heights must be (full, zero) with zero < full; got {heights}.")
+  asset: Entity = env.scene[asset_cfg.name]
+  full_height, zero_height = heights if heights is not None else (None, None)
+  return _upright_gate(env, asset, full_angle, zero_angle, full_height, zero_height)
 
 
 ##
@@ -396,34 +430,19 @@ def ground_contact_cost(
 ##
 
 
-class _UprightGatedReward:
-  """Evaluates a reward term, then scales it by an upright gate."""
+class _GatedReward:
+  """Evaluates a reward term, then scales it by the cfg's gate function."""
 
   def __init__(self, cfg: GatedRewardTermCfg, env: ManagerBasedRlEnv) -> None:
     inner = cfg.inner_func
     assert inner is not None, "GatedRewardTermCfg.__post_init__ did not run."
     self._inner = inner(cfg=cfg, env=env) if inspect.isclass(inner) else inner
-    if cfg.gate_zero_angle <= cfg.gate_full_angle:
-      raise ValueError(
-        "gate_zero_angle must be greater than gate_full_angle "
-        f"(got {cfg.gate_zero_angle} <= {cfg.gate_full_angle})."
-      )
-    if (cfg.gate_full_height is None) != (cfg.gate_zero_height is None):
-      raise ValueError("gate_full_height and gate_zero_height must be given together.")
-    if (
-      cfg.gate_full_height is not None
-      and cfg.gate_zero_height is not None
-      and cfg.gate_zero_height >= cfg.gate_full_height
-    ):
-      raise ValueError(
-        "gate_zero_height must be less than gate_full_height "
-        f"(got {cfg.gate_zero_height} >= {cfg.gate_full_height})."
-      )
-    self._asset: Entity = env.scene[cfg.gate_asset_name]
-    self._full = cfg.gate_full_angle
-    self._zero = cfg.gate_zero_angle
-    self._full_h = cfg.gate_full_height
-    self._zero_h = cfg.gate_zero_height
+    gate = cfg.gate_func
+    # A class-valued gate is instantiated the way the RewardManager instantiates
+    # a class-valued ``func``, so a gate may carry state (a hysteresis latch, a
+    # timer) exactly as an inner term may.
+    self._gate = gate(cfg=cfg, env=env) if inspect.isclass(gate) else gate
+    self._gate_params = dict(cfg.gate_params)
 
   def __call__(self, env: ManagerBasedRlEnv, **params: Any) -> torch.Tensor:
     # The inner term is evaluated even where the gate is 0: the gait terms are
@@ -431,10 +450,7 @@ class _UprightGatedReward:
     # foot position), and skipping them while the robot is down would emit a
     # large spurious value on the step it stands back up.
     value = self._inner(env, **params)
-    gate = _upright_gate(
-      env, self._asset, self._full, self._zero, self._full_h, self._zero_h
-    )
-    return value * gate
+    return value * self._gate(env, **self._gate_params)
 
   def __getattr__(self, item: str) -> Any:
     # Delegate ``reset`` / ``debug_vis`` so the RewardManager's ``hasattr``
@@ -449,10 +465,15 @@ class _UprightGatedReward:
 
 @dataclass(kw_only=True)
 class GatedRewardTermCfg(RewardTermCfg):
-  """A reward term that fades out as the robot tips over.
+  """A reward term multiplied by a gate function every step.
 
-  Two kinds of term need this once a fall is something the robot is expected to
-  recover from rather than an episode ending:
+  The gate is ``gate_func(env, **gate_params) -> Tensor`` in ``[0, 1]``. It
+  defaults to :func:`upright_gate`, which fades a term out as the robot tips
+  over; supplying a different callable is how a term gets gated on something
+  else entirely without touching this class.
+
+  Two kinds of term need the default gate once a fall is something the robot is
+  expected to recover from rather than an episode ending:
 
   * **Terms that describe standing.** The posture reward pays for holding the
     default standing joint pose; charged to a robot lying on its back it pays for
@@ -465,41 +486,45 @@ class GatedRewardTermCfg(RewardTermCfg):
     in order to push off. Gate those at the fallen angle, so they switch off
     exactly where :func:`on_ground` starts charging.
 
-  Gate on height as well as tilt (``gate_full_height`` / ``gate_zero_height``)
-  wherever the term would otherwise pay a robot that is sitting on the floor:
-  sitting is upright, so the angle test alone hands it the walking rewards for
-  free and makes the local optimum worth staying in.
+  A third kind is the mirror image: **penalties that price a motion the robot
+  only makes while getting up.** Standing up from flat is necessarily whippy and
+  high-momentum, so an ungated angular-velocity penalty is a standing charge on
+  the recovery itself. Gating it on tilt alone -- deliberately *without* the
+  height ramp -- charges it at full price while upright and waives it while
+  down. The height ramp is right for rewards, where it stops a sitting robot
+  collecting them, and wrong for penalties, where it would make sitting cheaper
+  than standing.
+
+  Pass ``heights`` to :func:`upright_gate` wherever a *reward* would otherwise
+  pay a robot that is sitting on the floor: sitting is upright, so the angle
+  ramp alone hands it the walking rewards for free and makes the local optimum
+  worth staying in.
 
   Note this does not compose with ``MultiRewardTermCfg`` -- a term can be gated
   or command-weighted, not both. Nothing needs both yet: the gated terms are all
   command-independent.
   """
 
-  gate_full_angle: float = math.radians(45.0)
-  """Tilt (rad) up to which the term is paid in full."""
+  gate_func: Any = upright_gate
+  """The gate: ``(env, **gate_params) -> Tensor`` in ``[0, 1]``, shape
+  ``(num_envs,)``, multiplied into the term's value every step.
 
-  gate_zero_angle: float = math.radians(70.0)
-  """Tilt (rad) at which the term is switched off entirely."""
+  Defaults to :func:`upright_gate`. Any callable with that signature works, and
+  a *class* is instantiated with ``(cfg, env)`` the way the RewardManager
+  instantiates a class-valued ``func``, so a gate may carry state."""
 
-  gate_full_height: float | None = None
-  """Base height (m) at or above which the term is paid in full. ``None``
-  (with ``gate_zero_height``) gates on tilt alone."""
-
-  gate_zero_height: float | None = None
-  """Base height (m) at or below which the term is switched off entirely."""
-
-  gate_asset_name: str = "robot"
-  """Entity whose base tilt drives the gate."""
+  gate_params: dict[str, Any] = field(default_factory=dict)
+  """Keyword arguments forwarded to ``gate_func`` on every call."""
 
   inner_func: Any = field(default=None, init=False)
   """The user's reward callable. ``func`` is replaced by the gating wrapper in
   ``__post_init__``; the original is kept here for it to call."""
 
   def __post_init__(self) -> None:
-    if self.func is _UprightGatedReward:
+    if self.func is _GatedReward:
       return  # Already wrapped (e.g. re-constructed from an existing cfg).
     self.inner_func = self.func
-    self.func = _UprightGatedReward
+    self.func = _GatedReward
 
 
 ##

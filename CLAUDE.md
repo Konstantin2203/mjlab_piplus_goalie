@@ -168,9 +168,15 @@ Terms live in `src/mjlab_piplus/tasks/mdp/getup.py` and are wired into
   `getup_height` are ungated on purpose: gating them on "is fallen" would make
   the reward step *down* the instant the robot stands up.
 - **Walking terms are gated the other way.** `GatedRewardTermCfg` (in
-  `getup.py`) wraps a term and fades it out with tilt, linearly in `cos(tilt)`
-  between its two angles — a hard cutoff would be a cliff in the return, which a
-  policy will go and sit on. `pose` uses the tight `POSTURE_GATE` (20°→40°): the
+  `getup.py`) wraps a term and multiplies it by
+  `gate_func(env, **gate_params)`, a `[0, 1]` factor evaluated every step. The
+  default `gate_func` is `upright_gate`, which fades the term out with tilt,
+  linearly in `cos(tilt)` between the two angles of its `angles` pair — a hard
+  cutoff would be a cliff in the return, which a policy will go and sit on. Pass
+  a `heights` pair for a second ramp on base height. Any callable of that shape
+  can be substituted, and a *class* is instantiated with `(cfg, env)` like a
+  class-valued `func`, so a gate may carry state.
+  `pose` uses the tight `POSTURE_GATE` (20°→40°): the
   standing pose is the wrong target for a robot on the floor, which has to bend
   where posture says not to. `foot_gait`, `feet_phase` and `foot_slip` use
   `GAIT_GATE` (30°→`FALLEN_ANGLE`), so they are off exactly where `on_ground`
@@ -179,6 +185,14 @@ Terms live in `src/mjlab_piplus/tasks/mdp/getup.py` and are wired into
   term is still *evaluated* while gated (`feet_phase` and `feet_slip` are
   stateful), just multiplied by zero. It does not compose with
   `MultiRewardTermCfg`: a term is gated or command-weighted, not both.
+- **Two penalties are gated the same way, minus the height ramp.**
+  `body_ang_vel` and `angular_momentum` use `GAIT_GATE` **with no `heights`**.
+  Standing up from flat is necessarily whippy and high-momentum, so ungated
+  these are a standing charge on the recovery itself; gated, they are waived
+  exactly where `on_ground` takes over. The height ramp is deliberately omitted:
+  for a *reward* it stops a sitting robot collecting the term, but for a
+  *penalty* it would make sitting the cheaper place to be. That asymmetry is the
+  rule — gate rewards on tilt **and** height, penalties on tilt alone.
 - **Penalties ramp in.** Following the reference's curriculum: `action_rate_l2`,
   `joint_acc_l2`, `body_ang_vel`, `angular_momentum`, `foot_slip` and
   `foot_too_close_to_base` all start reduced (or at zero) and reach their configured values

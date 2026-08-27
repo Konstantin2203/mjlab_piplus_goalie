@@ -505,7 +505,7 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
       func=pi_mdp.reset_fallen_or_standing,
       mode="reset",
       params={
-        "fall_probability": 0.0, # temp rm
+        "fall_probability": 0.3,
         "fall_height": 0.4,
         "fall_velocity_range": 0.5,
         "joint_pos_std": 0.3,
@@ -933,10 +933,7 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     "posture": pi_mdp.GatedRewardTermCfg(
       func=pi_mdp.variable_posture,
       weight=1.0,
-      gate_full_angle=POSTURE_GATE[0],
-      gate_zero_angle=POSTURE_GATE[1],
-      gate_full_height=HEIGHT_GATE[0],
-      gate_zero_height=HEIGHT_GATE[1],
+      gate_params={"angles": POSTURE_GATE, "heights": HEIGHT_GATE},
       params={
         "asset_cfg": SceneEntityCfg("robot", joint_names=(".*",)),
         "command_name": "command",
@@ -947,7 +944,18 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
         # kick, so pinning them to the home pose would work against both. The
         # standing regime still holds them near the default, since a standing
         # robot has no reason to flail.
-        "std_standing": {r".*": 0.05},
+        "std_standing": { 
+          r".*_hip_pitch_joint": 0.15,
+          r".*_hip_roll_joint": 0.05,
+          r".*_thigh_joint": 0.05,
+          r".*_calf_joint": 0.15,
+          r".*_ankle_pitch_joint": 0.15,
+          r".*_ankle_roll_joint": 0.05,
+          r".*_shoulder_pitch_joint": 0.05,
+          r".*_shoulder_roll_joint": 0.05,
+          r".*_upper_arm_joint": 0.05,
+          r".*_elbow_joint": 0.05,
+        },
         "std_walking": {
           r".*_hip_pitch_joint": 0.35,
           r".*_hip_roll_joint": 0.15,
@@ -991,10 +999,7 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     "foot_gait": pi_mdp.GatedRewardTermCfg(
       func=pi_mdp.feet_gait,
       weight=1.0,
-      gate_full_angle=GAIT_GATE[0],
-      gate_zero_angle=GAIT_GATE[1],
-      gate_full_height=HEIGHT_GATE[0],
-      gate_zero_height=HEIGHT_GATE[1],
+      gate_params={"angles": GAIT_GATE, "heights": HEIGHT_GATE},
       params={
         "frequency": WALK_FREQUENCY,
         "offset": [0.0, 0.5],
@@ -1006,10 +1011,7 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     "feet_phase": pi_mdp.GatedRewardTermCfg(
       func=pi_mdp.feet_phase,
       weight=1.0,
-      gate_full_angle=GAIT_GATE[0],
-      gate_zero_angle=GAIT_GATE[1],
-      gate_full_height=HEIGHT_GATE[0],
-      gate_zero_height=HEIGHT_GATE[1],
+      gate_params={"angles": GAIT_GATE, "heights": HEIGHT_GATE},
       params={
         "frequency": WALK_FREQUENCY,
         "offset": [0.0, 0.5],
@@ -1033,10 +1035,7 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
       func=pi_mdp.feet_slip,
       # Ramped in by the curriculum; see "slip_weight".
       weight=0.0,
-      gate_full_angle=GAIT_GATE[0],
-      gate_zero_angle=GAIT_GATE[1],
-      gate_full_height=HEIGHT_GATE[0],
-      gate_zero_height=HEIGHT_GATE[1],
+      gate_params={"angles": GAIT_GATE, "heights": HEIGHT_GATE},
       params={
         "sensor_name": "feet_ground_contact",
         "command_name": "command",
