@@ -336,8 +336,8 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
           rel_heading_envs=0.3,
           rel_forward_envs=0.15,
           ranges=pi_mdp.UniformVelocityCommandWithStopCfg.Ranges(
-            lin_vel_x=(-0.5, 1.0),
-            lin_vel_y=(-0.25, 0.25),
+            lin_vel_x=(-0.5, 0.8),
+            lin_vel_y=(-0.4, 0.4),
             ang_vel_z=(-1.5, 1.5),
             heading=(-math.pi, math.pi),
           ),
@@ -505,7 +505,7 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
       func=pi_mdp.reset_fallen_or_standing,
       mode="reset",
       params={
-        "fall_probability": 0.3,
+        "fall_probability": 0.0, # temp rm
         "fall_height": 0.4,
         "fall_velocity_range": 0.5,
         "joint_pos_std": 0.3,
@@ -1112,40 +1112,6 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
   # Curriculum
   ##
   curriculum = {
-    # The velocity command lives inside the composite term, so it cannot be
-    # reached by name through the command manager -- hence commands_vel_multi.
-    "command_vel": CurriculumTermCfg(
-      func=pi_mdp.commands_vel_multi,
-      params={
-        "command_name": "command",
-        "sub_command_name": "velocity",
-        # Pushed back from (0, 800) to make room for getup. With the fall
-        # termination gone, the first few hundred iterations are spent with a
-        # third of the envs on the floor; opening the velocity ranges over that
-        # stretch would have the policy chasing fast commands it cannot serve
-        # while it still cannot stand up. Standing up first, then walking.
-        "velocity_stages": [
-          {
-            "step": 0 * 24,
-            "lin_vel_x": (-0.15, 0.25),
-            "lin_vel_y": (-0.1, 0.1),
-            "ang_vel_z": (-math.pi / 6, math.pi / 6),
-          },
-          {
-            "step": 400 * 24,
-            "lin_vel_x": (-0.25, 0.35),
-            "lin_vel_y": (-0.15, 0.15),
-            "ang_vel_z": (-math.pi / 4, math.pi / 4),
-          },
-          {
-            "step": 1500 * 24,
-            "lin_vel_x": (-0.5, 0.8),
-            "lin_vel_y": (-0.4, 0.4),
-            "ang_vel_z": (-1.5, 1.5),
-          },
-        ],
-      },
-    ),
     # Kick bootstrap off: the flat payout per contact exists only to get the
     # policy to touch the ball at all. Once it does, the quality terms should
     # drive the rest, or weak taps stay competitive with real kicks.
