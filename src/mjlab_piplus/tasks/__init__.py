@@ -5,6 +5,8 @@ from .piplus_multi_env_cfg import piplus_multi_env_cfg
 from .piplus_multi_rl_cfg import get_piplus_multi_rl_cfg
 from .piplus_path_env_cfg import piplus_path_env_cfg
 from .piplus_path_rl_cfg import get_piplus_path_rl_cfg
+from .piplus_standup_imitation_env_cfg import piplus_standup_imitation_env_cfg
+from .piplus_standup_imitation_rl_cfg import get_piplus_standup_imitation_rl_cfg
 from .piplus_velocity_env_cfg import piplus_velocity_env_cfg
 from .piplus_velocity_rl_cfg import get_piplus_velocity_rl_cfg
 
@@ -29,5 +31,15 @@ register_mjlab_task(
   env_cfg=piplus_multi_env_cfg(),
   play_env_cfg=piplus_multi_env_cfg(play=True),
   rl_cfg=get_piplus_multi_rl_cfg(),
+  runner_cls=VelocityOnPolicyRunner,
+)
+# Validation task for the getup imitation bridge: no commands, no shaping, no
+# penalties -- the imitation reward is the entire objective, so the return is a
+# direct readout of how well the student tracks the teacher.
+register_mjlab_task(
+  task_id="Mjlab-StandupImitation-PiPlus",
+  env_cfg=piplus_standup_imitation_env_cfg(),
+  play_env_cfg=piplus_standup_imitation_env_cfg(play=True),
+  rl_cfg=get_piplus_standup_imitation_rl_cfg(),
   runner_cls=VelocityOnPolicyRunner,
 )

@@ -165,6 +165,13 @@ HEIGHT_GATE = (0.29, 0.23)
 # walking clock. The posture gate is tighter -- posture describes *standing*,
 # and a robot leaning 40 degrees is not standing, it is on its way to the floor.
 # Both are multiplied by HEIGHT_GATE, so sitting up does not reopen them.
+# Teacher for the getup imitation reward: an rsl_rl checkpoint from the
+# reference getup env in mjlab_playground. Its actor is a 66 -> 20 MLP with
+# obs_normalization disabled, trained with a *relative* joint position action
+# (scale 0.6). mdp/imitation.py asserts the shape and the missing normalizer,
+# so a checkpoint from a differently-configured run fails loudly.
+GETUP_TEACHER_CHECKPOINT = "getup_model.pt"
+
 GAIT_GATE = (math.radians(30.0), FALLEN_ANGLE)
 POSTURE_GATE = (math.radians(20.0), math.radians(40.0))
 
@@ -831,72 +838,64 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     #
     # (Every weight in this file is a per-step value: the reward manager scales
     # the lot by ``dt``, so the ratios between terms are what these numbers say.)
-    "on_ground": RewardTermCfg(
-      func=pi_mdp.on_ground,
+    # A flat -1.0 per step while down. The "is it fallen" test is the gate now
+    # rather than something the term re-derives, so it opens on exactly the same
+    # band as the imitation reward and the fallen halves of the penalties, and
+    # ramps at the edges instead of stepping.
+    "on_ground": pi_mdp.GatedRewardTermCfg(
+      func=pi_mdp.always_one,
       weight=-1.0,
-      params={
-        "limit_angle": FALLEN_ANGLE,
-        "min_height": STANDING_MIN_HEIGHT,
-        "asset_cfg": base_cfg,
-      },
+      gate_func=pi_mdp.fallen_gate,
+      gate_params=REGIME_GATE,
     ),
-    "getup_orientation": RewardTermCfg(
-      func=pi_mdp.getup_orientation,
-      weight=0.5,
-      params={"asset_cfg": base_cfg},
-    ),
-    "getup_height": RewardTermCfg(
-      func=pi_mdp.getup_height,
+    # Imitate a pre-trained getup policy instead of discovering a stand-up from
+    # shaped rewards. Gated to the fallen half: the teacher's env has no
+    # velocity command and it was trained to stand up and stop, so ungated it
+    # would fight the walking controller. mdp/imitation.py holds the two
+    # bridges -- observation layout, and relative- vs default-relative actions.
+    "getup_imitation": pi_mdp.GatedRewardTermCfg(
+      func=pi_mdp.getup_imitation,
       weight=2.0,
-      params={"desired_height": STANDING_HEIGHT, "asset_cfg": base_cfg},
-    ),
-    # Same term, measured at the head. Base height and head height together say
-    # "tall *and* unfolded" in a way neither says alone -- see
-    # STANDING_HEAD_HEIGHT. Weighted 1.0 against getup_height's 2.0, the
-    # reference's ratio: the pelvis is the stronger discriminator (a sitting
-    # robot's trunk is vertical, so its head is already 0.37 of the 0.53), and
-    # head height mainly prices a *folded* posture -- tall at the base, short at
-    # the head.
-    "head_height": RewardTermCfg(
-      func=pi_mdp.getup_height,
-      weight=1.0,
       params={
-        "desired_height": STANDING_HEAD_HEIGHT,
-        "asset_cfg": SceneEntityCfg("robot", body_names=("head_yaw_link",)),
+        "checkpoint": GETUP_TEACHER_CHECKPOINT,
+        # Radians of joint-target error at which the reward falls to 1/e.
+        # NOT tighter than this: an untrained policy sits ~0.39 rad from the
+        # teacher, and exp(-(err/std)^2) with std=0.2 puts that at 0.018 with a
+        # nearly flat gradient -- the same saturation that kills `posture` when
+        # its std is too tight. 0.3 starts the policy at 0.17 with a live slope.
+        "std": 0.3,
+        "teacher_scale": 0.6,
       },
+      gate_func=pi_mdp.fallen_gate,
+      gate_params=REGIME_GATE,
     ),
-    # The camera bar sits ~5 mm proud of the head's collision shell, so this only
-    # fires when the lens itself reaches the floor. Graded by force: resting on
-    # it costs a few times what lying on your back costs, while a real faceplant
-    # saturates all four substeps at -40/step -- twenty seconds' worth of
-    # on_ground penalty spent in a fifth of a second. On the real robot the
-    # camera is the one thing a fall can destroy, so there is no trajectory where
-    # hitting it hard should look like an acceptable price for standing up
-    # faster. It is deliberately not a termination: the robot has to learn to
-    # fall away from its face, which it cannot do if the episode ends on impact.
-    "camera_ground_impact": RewardTermCfg(
-      func=pi_mdp.ground_contact_cost,
-      weight=-10.0,
-      params={
-        "sensor_name": "camera_ground_contact",
-        "force_scale": 50.0,
-        "force_threshold": 1.0,
-      },
-    ),
-    "foot_distance": RewardTermCfg(
-      func=pi_mdp.foot_distance,
-      weight=-1.0,
-      params={"max_distance": 0.40, "asset_cfg": feet_cfg},
-    ),
-    "foot_too_close_to_base": RewardTermCfg(
-      func=pi_mdp.foot_too_close_to_base,
-      weight=0.0,  # -> -0.5
-      params={
-        "min_distance": 0.15,
-        "foot_cfg": feet_cfg,
-        "base_cfg": base_cfg,
-      },
-    ),
+    # "getup_orientation": RewardTermCfg(
+    #  func=pi_mdp.getup_orientation,
+    #  weight=0.5,
+    #  params={"asset_cfg": base_cfg},
+    # ),
+    # "getup_height": RewardTermCfg(
+    #  func=pi_mdp.getup_height,
+    #  weight=2.0,
+    #  params={"desired_height": STANDING_HEIGHT, "asset_cfg": base_cfg},
+    # ),
+    # "head_height": RewardTermCfg(
+    #  func=pi_mdp.getup_height,
+    #  weight=1.0,
+    #  params={
+    #    "desired_height": STANDING_HEAD_HEIGHT,
+    #    "asset_cfg": SceneEntityCfg("robot", body_names=("head_yaw_link",)),
+    #  },
+    # ),
+    # "camera_ground_impact": RewardTermCfg(
+    #  func=pi_mdp.ground_contact_cost,
+    #  weight=-10.0,
+    #  params={
+    #    "sensor_name": "camera_ground_contact",
+    #    "force_scale": 50.0,
+    #    "force_threshold": 1.0,
+    #  },
+    # ),
   }
 
   # -- Stability ------------------------------------------------------------
@@ -915,27 +914,12 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
       weight=1.0,
       params={"std": math.sqrt(0.2), "asset_cfg": base_cfg},
     ),
-    # Doubled: the standing copy keeps this env's -0.25, the fallen copy takes
-    # the reference's ramp to -0.1. Standing up is a deliberate rotation of the
-    # whole trunk, so the rate that reads as thrashing on a walker is just the
-    # motion on a robot pushing off the floor.
     "body_ang_vel": pi_mdp.GatedRewardTermCfg(
       func=mdp.body_angular_velocity_penalty,
       weight=-0.25,
       params={"asset_cfg": base_cfg},
       gate_params=REGIME_GATE,
     ),
-    "body_ang_vel_fallen": pi_mdp.GatedRewardTermCfg(
-      func=mdp.body_angular_velocity_penalty,
-      weight=0.0,  # -> -0.1, reference schedule
-      params={"asset_cfg": base_cfg},
-      gate_func=pi_mdp.fallen_gate,
-      gate_params=REGIME_GATE,
-    ),
-    # Not doubled: the reference has no angular-momentum term, so there is no
-    # fallen-regime value to take from it. Gated to standing alone, which means
-    # it is waived while down -- acceptable here only because body_ang_vel above
-    # still charges the same motion through its fallen copy.
     "angular_momentum": pi_mdp.GatedRewardTermCfg(
       func=mdp.angular_momentum_penalty,
       weight=-0.1,
@@ -946,45 +930,21 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
 
   # -- Safety ---------------------------------------------------------------
   safety_rewards = {
-    # Not doubled: no reference counterpart (the reference charges joint *vel*
-    # and *torque* instead, neither of which exists here).
     "joint_acc_l2": pi_mdp.GatedRewardTermCfg(
       func=mdp.joint_acc_l2,
       weight=-2.5e-7,
       gate_params=REGIME_GATE,
     ),
-    # Doubled: -10.0 standing, the reference's -1.0 while down. A joint driven
-    # into its stop is damage in both regimes, so the fallen copy is reduced,
-    # never zero -- and neither copy is ramped.
     "joint_pos_limits": pi_mdp.GatedRewardTermCfg(
       func=mdp.joint_pos_limits,
       weight=-10.0,
       gate_params=REGIME_GATE,
     ),
-    "joint_pos_limits_fallen": pi_mdp.GatedRewardTermCfg(
-      func=mdp.joint_pos_limits,
-      weight=-1.0,  # reference: dof_pos_limits, flat
-      gate_func=pi_mdp.fallen_gate,
-      gate_params=REGIME_GATE,
-    ),
-    # Doubled: -0.05 standing, the reference's -0.01 -> -0.1 ramp while down.
-    # Note the fallen copy ends up *heavier* than the standing one; that is the
-    # reference's number, and it is charged on raw policy output, so it prices
-    # how fast the getup is rather than how far it travels.
     "action_rate_l2": pi_mdp.GatedRewardTermCfg(
       func=mdp.action_rate_l2,
       weight=-0.05,
       gate_params=REGIME_GATE,
     ),
-    "action_rate_l2_fallen": pi_mdp.GatedRewardTermCfg(
-      func=mdp.action_rate_l2,
-      weight=-0.01,  # -> -0.1, reference schedule
-      gate_func=pi_mdp.fallen_gate,
-      gate_params=REGIME_GATE,
-    ),
-    # Doubled: -1.0 standing, the reference's -0.1 while down. The arms are the
-    # main tool for getting off the floor and they touch the torso doing it, so
-    # at the standing price the cheapest getup is the one that never uses them.
     "self_collisions": pi_mdp.GatedRewardTermCfg(
       func=mdp.self_collision_cost,
       weight=-1.0,
@@ -992,16 +952,6 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
         "sensor_name": "self_collision",
         "force_threshold": 2.0,
       },  # we dont want even soft collisions
-      gate_params=REGIME_GATE,
-    ),
-    "self_collisions_fallen": pi_mdp.GatedRewardTermCfg(
-      func=mdp.self_collision_cost,
-      weight=-0.1,  # reference: pad_self_collisions, flat
-      params={
-        "sensor_name": "self_collision",
-        "force_threshold": 2.0,
-      },
-      gate_func=pi_mdp.fallen_gate,
       gate_params=REGIME_GATE,
     ),
     # Gated for getup
@@ -1012,13 +962,6 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
       params={
         "asset_cfg": SceneEntityCfg("robot", joint_names=(".*",)),
         "command_name": "command",
-        # NOTE: every actuated joint must be matched here or
-        # ``resolve_matching_names_values`` raises -- hence the arm entries,
-        # which are new with the 20-DoF robot. They are loose on purpose: the
-        # arms are the main tool for getting off the floor and for balancing a
-        # kick, so pinning them to the home pose would work against both. The
-        # standing regime still holds them near the default, since a standing
-        # robot has no reason to flail.
         "std_standing": {
           r".*": 0.1,
         },
@@ -1108,24 +1051,6 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
         "asset_cfg": foot_asset_cfg,
       },
     ),
-    # The fallen twin, on the reference's much heavier ramp to -1.5. NOTE this
-    # is the one pair where the reference's number reads wrong for the regime it
-    # is being applied to: its env has the robot standing for most of the
-    # episode, so -1.5 is really its *standing* slip price, and charged to a
-    # robot pushing off the floor it prices exactly the foot scrape the push-off
-    # needs. Its own instance, so the two copies keep independent previous-foot
-    # state; both are evaluated every step, so neither goes stale.
-    "foot_slip_fallen": pi_mdp.GatedRewardTermCfg(
-      func=pi_mdp.feet_slip,
-      weight=0.0,  # -> -1.5, reference schedule
-      gate_func=pi_mdp.fallen_gate,
-      gate_params=REGIME_GATE,
-      params={
-        "sensor_name": "feet_ground_contact",
-        "command_name": "command",
-        "asset_cfg": foot_asset_cfg,
-      },
-    ),
   }
 
   rewards = (
@@ -1204,46 +1129,6 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
   # Curriculum
   ##
   curriculum = {
-    # -- Getup ramps ---------------------------------------------------------
-    # The fallen-gated copies, on the reference implementation's schedules.
-    # Standing up from flat is a violent, whippy, self-touching motion; charged
-    # full price from step 0 these make lying still the cheaper option and getup
-    # never starts. The standing copies are not ramped -- they apply to a robot
-    # that is already up, where the full price is the point.
-    "fallen_action_rate": CurriculumTermCfg(
-      func=pi_mdp.reward_weight,
-      params={
-        "reward_name": "action_rate_l2_fallen",
-        "weight_stages": [
-          {"step": 600 * 24, "weight": -0.05},
-          {"step": 900 * 24, "weight": -0.08},
-          {"step": 1200 * 24, "weight": -0.1},
-        ],
-      },
-    ),
-    "fallen_body_ang_vel": CurriculumTermCfg(
-      func=pi_mdp.reward_weight,
-      params={
-        "reward_name": "body_ang_vel_fallen",
-        "weight_stages": [
-          {"step": 900 * 24, "weight": -0.02},
-          {"step": 1200 * 24, "weight": -0.05},
-          {"step": 1500 * 24, "weight": -0.1},
-        ],
-      },
-    ),
-    "fallen_foot_slip": CurriculumTermCfg(
-      func=pi_mdp.reward_weight,
-      params={
-        "reward_name": "foot_slip_fallen",
-        "weight_stages": [
-          {"step": 600 * 24, "weight": -0.1},
-          {"step": 900 * 24, "weight": -0.5},
-          {"step": 1200 * 24, "weight": -1.0},
-          {"step": 1500 * 24, "weight": -1.5},
-        ],
-      },
-    ),
     # Kick bootstrap off: the flat payout per contact exists only to get the
     # policy to touch the ball at all. Once it does, the quality terms should
     # drive the rest, or weak taps stay competitive with real kicks.
@@ -1370,13 +1255,13 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     # for the ball and for terrain that is not a plane.
     nconmax=120,
     njmax=200,
-    #contact_sensor_maxmatch=500,
+    # contact_sensor_maxmatch=500,
     mujoco=MujocoCfg(
       timestep=0.005,
       iterations=10,
       ls_iterations=20,
       cone="pyramidal",
-      #ccd_iterations=500,
+      # ccd_iterations=500,
     ),
   )
   episode_length_s = 20.0

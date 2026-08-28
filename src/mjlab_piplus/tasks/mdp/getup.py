@@ -66,6 +66,7 @@ __all__ = [
   "GatedRewardTermCfg",
   "upright_gate",
   "fallen_gate",
+  "always_one",
   "reset_fallen_or_standing",
   "on_ground",
   "getup_orientation",
@@ -171,6 +172,16 @@ def upright_gate(
   asset: Entity = env.scene[asset_cfg.name]
   full_height, zero_height = heights if heights is not None else (None, None)
   return _upright_gate(env, asset, full_angle, zero_angle, full_height, zero_height)
+
+
+def always_one(env: ManagerBasedRlEnv) -> torch.Tensor:
+  """Constant 1.0. Only useful wrapped in a :class:`GatedRewardTermCfg`.
+
+  Lets a gate *be* the condition instead of duplicating it inside the term: a
+  flat rate charged exactly where the gate is open, ramped at its edges like
+  everything else, rather than a step function multiplied by a ramp.
+  """
+  return torch.ones(env.num_envs, device=env.device)
 
 
 def fallen_gate(

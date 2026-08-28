@@ -3,6 +3,7 @@ from mjlab_piplus.tasks.mdp.curriculums import *
 from mjlab_piplus.tasks.mdp.dr import *
 from mjlab_piplus.tasks.mdp.events import *
 from mjlab_piplus.tasks.mdp.getup import *
+from mjlab_piplus.tasks.mdp.imitation import *
 from mjlab_piplus.tasks.mdp.kick import *
 from mjlab_piplus.tasks.mdp.metrics import *
 from mjlab_piplus.tasks.mdp.multi_command import *

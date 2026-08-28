@@ -293,6 +293,152 @@ all behave as before. `scale` is the **quadratic coefficient**, not a gain.
 > map its physical meaning varies with `|a|`: the same raw step moves the joint
 > `0.4|a|` times as far, so big excursions are under-charged for smoothness.
 
+### Getup by imitation (`mdp/imitation.py`)
+
+Instead of discovering a stand-up from shaped rewards, the fallen robot is paid
+for reproducing what an already-trained getup policy would do from the same
+state. The teacher is a checkpoint from the reference env in `mjlab_playground`
+(`getup_model.pt` at the repo root); `GETUP_TEACHER_CHECKPOINT` names it.
+
+Two things are bridged, and they are the whole module:
+
+- **Observation.** The teacher's actor is a 66 → 20 MLP taking
+  `[base_ang_vel(3) | projected_gravity(3) | joint_pos_rel(20) |
+  joint_vel_rel(20) | last_action(20)]`. The first four are the *same mjlab
+  functions* this env already uses, so they are rebuilt by calling them
+  directly — **not** by slicing this env's actor obs, which has extra terms
+  (phase, command) in a different layout and is noised. The fifth is the
+  **teacher's own** previous output, kept in a buffer here and zeroed on reset;
+  carrying it across an episode boundary would feed it the tail of a different
+  getup. The reference runner sets `obs_normalization=False` on its actor, so
+  there is no normalizer to apply — the loader raises if a checkpoint has one.
+- **Action.** The teacher is a `RelativeJointPositionAction`
+  (`target = joint_pos + a*0.6`); this env is default-relative
+  (`target = default + f(a)`). Comparing raw action vectors would be
+  meaningless. Both are converted to a **joint position target in radians** and
+  the reward is `exp(-mean_j (Δq)^2 / std^2)` over that. This also makes the
+  term indifferent to this env's action scale or to swapping in a nonlinear map.
+  `_processed_actions` is read *before* the encoder-bias subtraction, which is
+  where the teacher's expression sits too, so the bias cancels.
+
+Joint order is resolved **by name** (`TEACHER_JOINT_ORDER`), not assumed — it
+happens to be the identity for all 20 actuated joints, but a reorder on either
+side would otherwise scramble the mapping silently.
+
+> ⚠️ **The teacher's `joint_pos` observation is relative to the TEACHER's
+> default pose, not this env's.** The reference robot's home keyframe
+> ("walkready") differs from ours on 9 of 20 joints — elbows by 0.7 rad, calves
+> by 0.2, hips and ankles by 0.1, RMS 0.235 — so subtracting our default (what
+> mjlab's `joint_pos_rel` does) offsets the teacher's input by that much.
+> Measured: it changed the teacher's action by mean 0.30 (max 1.55), i.e. a
+> 0.179 rad error in the joint target it asks for, and cost ~0.036 m of the
+> height its getup reaches. `TEACHER_DEFAULT_JOINT_POS` holds the correct pose.
+> Note the consequence: following the teacher drives the robot toward *its*
+> standing pose, not ours — which in the multi task pulls against `posture`.
+
+> ⚠️ **Rewards run after the physics step, but the action being judged was
+> chosen from the pre-step state.** The teacher's target is therefore cached one
+> call earlier, from the state the student actually acted on, rather than
+> recomputed at reward time. During a getup the joints move ~0.06 rad per 20 ms
+> step, and comparing across that gap scored a *perfect* teacher-following
+> oracle **0.618** instead of 0.997. An env's first step after a reset has no
+> cached target from its own episode and scores 0.
+
+> ⚠️ `std` is 0.3, and should not go tighter. An untrained policy sits ~0.39 rad
+> from the teacher; at `std=0.2` that is a reward of 0.018 with gradient 0.44,
+> versus 0.17 and 1.60 at 0.3 — the same exponential-saturation dead zone that
+> kills `posture` when its std is too tight.
+
+The term is gated to the fallen half with `fallen_gate`: the teacher's env has
+no velocity command and it was trained to stand up and *stop*, so ungated it
+would fight the walking controller. `on_ground` is now the mirror image — a flat
+`always_one` at weight -1.0 through the same `fallen_gate`, so the "is it
+fallen" test is the gate rather than something the term re-derives.
+
+### `Mjlab-StandupImitation-PiPlus` — the imitation validation task
+
+`piplus_standup_imitation_env_cfg.py`. A stripped env whose only job is to
+answer "does the teacher bridge work": no commands, no gait shaping, no
+penalties, no ball, no curriculum, no terminations but the time-out. The
+**imitation reward is the entire objective**, so the return is a direct readout
+of how closely the student tracks the teacher, uncontaminated by anything else.
+
+Deliberate differences from the multi task:
+
+- **The imitation term is ungated here.** In the multi task it is confined to
+  the fallen half so it cannot fight the walking controller; here there is
+  nothing to fight, and gating would blind the reward exactly when the robot
+  succeeds and stands up.
+- **The three shaping terms come from the reference** at its own weights:
+  `torso_height` 2.0, `head_height` 1.0, `orientation` 1.0, all ungated (gating
+  them on "is fallen" would step the return *down* the instant the robot stands
+  up). They sum to 4.0/step; `IMITATION_WEIGHT` matches that total at 4.0.
+- **No `on_ground` and no terminations but the time-out.** Being on the floor is
+  priced by the height terms falling toward zero there, which is a gradient
+  rather than a flat rate.
+- **Every env spawns fallen** (`fall_probability=1.0`).
+- **The actor obs is exactly the teacher's 66-vector**, so the student can in
+  principle represent the teacher and a poor score is evidence about the bridge
+  rather than a missing input.
+
+It carries the multi task's **domain randomization** (all 11 startup terms) and
+**observation noise + 1-step delay**, verbatim, so a policy that works here is
+answering the same sensing and dynamics question it will face there. No
+`push_robot`: that term gates on the stand command and this env has no command
+manager to gate on.
+
+> ⚠️ **The teacher does not see any of the noise.** `imitation.py` builds its
+> observation from true state, so the target stays a clean function of where the
+> robot actually is while the student reproduces it from noisy, delayed sensing.
+> A teacher fed the same noise would emit a noisy target — variance in the
+> reward with no added information.
+
+That extends to the encoder bias, and it matters. `teacher_biased` defaults
+**False**. Teacher getup success (fraction of envs above 0.29 m after 300 steps,
+256 envs, teacher-following oracle):
+
+| configuration | final base h | success |
+|---|---|---|
+| no DR, no obs noise | 0.329 | 1.00 |
+| no DR, obs noise on | 0.329 | 1.00 |
+| full DR minus `encoder_bias` | 0.327 | 0.98 |
+| full DR, `encoder_bias` at the reference's ±0.0698 | 0.310 | 0.85 |
+| full DR, teacher sees biased position | 0.292 | 0.65 |
+| **full DR, teacher sees true position (default)** | **0.312** | **0.84–0.89** |
+
+Two readings. **Observation noise costs the teacher nothing** — it reads true
+state, so only the student is affected. **`encoder_bias` is the entire DR
+effect**: it is the one randomization that reaches the teacher's input, this env
+runs it at ±0.1 against the ±0.0698 the reference trained on, and a persistent
+per-joint offset is not something a policy can average away. Feeding the teacher
+the true position recovers most of the loss. The residual (0.84 vs 1.00) is the
+physical DR — masses, gains, friction — which the teacher genuinely never saw,
+and `getup_model.pt` is an early (iteration 200) checkpoint.
+
+Measured, 128 envs x 300 steps, no DR (values are per-step, i.e. `reward_buf / dt`):
+
+| policy | total/step | imitation value | base height start → end |
+|---|---|---|---|
+| zero action | 1.233 | 0.0003 | 0.398 → 0.092 |
+| random action | 1.216 | 0.0003 | 0.398 → 0.089 |
+| **teacher-following oracle** | **7.627** | **0.9967** | 0.397 → **0.348** |
+
+The oracle scores 0.997 of a possible 1.0 on the imitation term, ~2500x above
+chance, and the teacher driven through this env's default-relative action term
+genuinely stands the robot up (0.09 collapsed → 0.31). The bridge is exact: the
+student's commanded target matches the teacher's to 2e-8 rad.
+
+Per-term payout, robot held in each pose (max 4.036/step of shaping):
+
+| state | torso_height | head_height | orientation | shaping total |
+|---|---|---|---|---|
+| flat on the floor | 0.519 | 0.150 | 0.500 | 1.171 |
+| standing upright | 2.000 | 1.000 | 1.000 | 4.036 |
+
+So the shaping alone offers 2.87/step for standing up, against up to 2.0/step
+for imitating well. A policy that stands *without* imitating out-scores one that
+imitates on the floor — intended, but worth knowing before reading a run.
+
 ### Viewer GUI (`mdp/push_gui.py`)
 
 mjlab's viser viewer only hands *command terms* a GUI hook
