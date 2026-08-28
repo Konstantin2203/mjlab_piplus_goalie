@@ -65,6 +65,7 @@ if TYPE_CHECKING:
 __all__ = [
   "GatedRewardTermCfg",
   "upright_gate",
+  "fallen_gate",
   "reset_fallen_or_standing",
   "on_ground",
   "getup_orientation",
@@ -170,6 +171,25 @@ def upright_gate(
   asset: Entity = env.scene[asset_cfg.name]
   full_height, zero_height = heights if heights is not None else (None, None)
   return _upright_gate(env, asset, full_angle, zero_angle, full_height, zero_height)
+
+
+def fallen_gate(
+  env: ManagerBasedRlEnv,
+  angles: tuple[float, float],
+  heights: tuple[float, float] | None = None,
+  asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+  """Exact complement of :func:`upright_gate`: 1 while down, 0 while standing.
+
+  Pair it with :func:`upright_gate` on the *same* ``angles``/``heights`` to
+  split one penalty into two independently-priced copies -- a standing one and
+  a fallen one. Because the two gates sum to exactly 1 everywhere, the robot is
+  always paying one weight or a linear blend of the two, never neither and
+  never both at full price. That is what makes the split safe where a lone
+  gated penalty is not: a term gated off while down is *free* while down, and
+  free is a thing a policy will go and sit in.
+  """
+  return 1.0 - upright_gate(env, angles, heights, asset_cfg)
 
 
 ##

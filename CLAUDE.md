@@ -185,6 +185,26 @@ Terms live in `src/mjlab_piplus/tasks/mdp/getup.py` and are wired into
   term is still *evaluated* while gated (`feet_phase` and `feet_slip` are
   stateful), just multiplied by zero. It does not compose with
   `MultiRewardTermCfg`: a term is gated or command-weighted, not both.
+- **Penalties are doubled and oppositely gated.** Each of `body_ang_vel`,
+  `joint_pos_limits`, `action_rate_l2`, `self_collisions` and `foot_slip` exists
+  twice: the plain name carries this env's standing weight through
+  `upright_gate`, and a `*_fallen` twin carries the **reference
+  implementation's** weight and curriculum through `fallen_gate`, which is
+  `1 - upright_gate`. Both halves use the same band, `REGIME_GATE`
+  (`GAIT_GATE` x `HEIGHT_GATE`), so the two gates sum to exactly 1 at every tilt
+  and height and the effective weight is a linear blend between the two
+  regimes — verified `max|sum-1| = 0` at standing, sitting and flat.
+  **That summing property is the point.** A lone gated penalty is *free*
+  wherever its gate is 0, and free is a thing a policy will go and sit in; the
+  twin means the robot is always paying one weight or a blend, never neither.
+  Endpoints, standing -> fallen: `body_ang_vel` -0.25 -> -0.1,
+  `joint_pos_limits` -10.0 -> -1.0, `action_rate_l2` -0.05 -> -0.1,
+  `self_collisions` -1.0 -> -0.1, `foot_slip` -0.25 -> -1.5. Only the fallen
+  copies are ramped (`fallen_*` curriculum terms, reference schedules); the
+  standing copies apply to a robot already up, where full price is the point.
+  `joint_acc_l2` and `angular_momentum` are **not** doubled — the reference has
+  no counterpart to take a fallen value from — so they are gated to standing
+  alone and waived while down.
 - **Two penalties are gated the same way, minus the height ramp.**
   `body_ang_vel` and `angular_momentum` use `GAIT_GATE` **with no `heights`**.
   Standing up from flat is necessarily whippy and high-momentum, so ungated
@@ -229,6 +249,49 @@ Terms live in `src/mjlab_piplus/tasks/mdp/getup.py` and are wired into
 
 Watch `Metrics/getup_success` (latched, should stay near 1.0) against
 `Metrics/fallen` (episode fraction spent down, starts around 0.2).
+
+### The action map is signed-quadratic, not linear
+
+`QuadraticJointPositionActionCfg` (`mdp/actions.py`) replaces mjlab's linear
+`JointPositionActionCfg` in the multi task:
+
+```
+target = default + sign(a) * 0.2 * a^2
+```
+
+One fixed function, so the deployed policy needs no notion of whether it is
+walking or getting up — the reason a conditional action scale was rejected.
+It subclasses `JointPositionAction` and overrides only `process_actions`, so the
+default offset, encoder-bias correction, `clip` bounds and dict-valued `scale`
+all behave as before. `scale` is the **quadratic coefficient**, not a gain.
+
+**Reach is the win.** Every joint reaches its full range inside `|a| = 4.6`
+(shoulder_pitch 4.12 rad → 4.54; hip_pitch → 4.09; calf → 3.85; ankle_roll →
+1.90), against `|a| = 41` for the same excursion under the old linear 0.1.
+
+> ⚠️ **Resolution is not the win, at the current entropy setting.** Local gain
+> is `d(target)/da = 2*0.2*|a| = 0.4|a|`, so the map is finer than the old
+> linear 0.1 only for `|a| < 0.25` and finer than 0.5 only for `|a| < 1.25`.
+> Measured against where `ewxi1s0n` actually operates, with std ≈ 1.0–1.5:
+>
+> | joint | walking swing | noise @lin0.1 | @lin0.5 | @quad0.2 |
+> |---|---|---|---|---|
+> | hip_pitch | 1.98 | 0.147 | 0.735 | **1.308** |
+> | calf | 1.49 | 0.111 | 0.555 | **0.857** |
+> | ankle_roll | 0.44 | 0.118 | 0.590 | **0.495** |
+> | hip_roll | 0.28 | 0.094 | 0.470 | **0.315** |
+>
+> The quadratic is *better than linear 0.5* on the small joints and *worse* on
+> the big ones, and worse than linear 0.1 everywhere. The fine end exists but
+> `entropy_coef=0.01` pins std near 1.0–1.5 and the policy cannot sit in it.
+> **Lowering `entropy_coef` (and `init_std`) is what unlocks the quadratic's
+> resolution**; without that it buys reach only. Std will self-correct somewhat
+> — a coarser map makes a given std cost more reward — so treat these as an
+> upper bound, not a prediction.
+
+> ⚠️ `action_rate_l2` is charged on **raw** policy output, so under a nonlinear
+> map its physical meaning varies with `|a|`: the same raw step moves the joint
+> `0.4|a|` times as far, so big excursions are under-charged for smoothness.
 
 ### Viewer GUI (`mdp/push_gui.py`)
 
