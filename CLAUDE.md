@@ -406,6 +406,21 @@ That extends to the encoder bias, and it matters. `teacher_biased` defaults
 | full DR, teacher sees biased position | 0.292 | 0.65 |
 | **full DR, teacher sees true position (default)** | **0.312** | **0.84–0.89** |
 
+The teacher's own env in `mjlab_playground`
+(`getup/config/pi_plus/env_cfgs.py`) now carries **this same DR set and sensor
+noise**, so the next teacher is trained under the conditions it will advise
+under. `getup/config/pi_plus/verify_dr_matches_piplus.py` diffs the two configs
+term by term and exits non-zero on any mismatch — run it after touching either
+side:
+
+```sh
+cd ~/mjlab_piplus && PYTHONPATH=~/mjlab_playground/src uv run python \
+  ~/mjlab_playground/src/mjlab_playground/getup/config/pi_plus/verify_dr_matches_piplus.py
+```
+
+The numbers below predate that change and were measured with `getup_model.pt`
+(iteration 200), trained under the playground's *old* randomization.
+
 Two readings. **Observation noise costs the teacher nothing** — it reads true
 state, so only the student is affected. **`encoder_bias` is the entire DR
 effect**: it is the one randomization that reaches the teacher's input, this env

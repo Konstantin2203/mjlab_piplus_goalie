@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import math
 
-from mjlab.envs import ManagerBasedRlEnvCfg, mdp
+from mjlab.envs import ManagerBasedRlEnvCfg
 from mjlab.envs.mdp import dr
 from mjlab.envs.mdp.actions import JointPositionActionCfg
 from mjlab.managers.action_manager import ActionTermCfg
@@ -48,6 +48,9 @@ from mjlab.utils.noise import UniformNoiseCfg as Unoise
 
 from mjlab_piplus.robot.piplus_constants import get_piplus_robot_cfg
 from mjlab_piplus.tasks import mdp as pi_mdp
+
+from mjlab.tasks.velocity import mdp
+
 
 # Kept identical to the multi task so a policy validated here is validated for
 # the environment it will actually be used in.
@@ -221,6 +224,11 @@ def piplus_standup_imitation_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg
       weight=ORIENTATION_WEIGHT,
       params={"asset_cfg": base_cfg},
     ),
+    # "upright": RewardTermCfg(
+    #   func=mdp.upright,
+    #   weight=1.0,
+    #   params={"std": math.sqrt(0.2), "asset_cfg": base_cfg},
+    # ),
   }
 
   ##
