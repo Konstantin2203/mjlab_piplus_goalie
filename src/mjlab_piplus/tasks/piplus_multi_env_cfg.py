@@ -1,4 +1,5 @@
-"""Multi-command env: one policy driven by a velocity, path, or stand command.
+"""Multi-command env: one policy driven by a velocity, path, footstep, goal-pose,
+kick or stand command.
 
 A single ``MultiCommand`` assigns each env one of three command types and
 switches between them during the episode, so the policy learns the hand-over
@@ -7,7 +8,8 @@ between modes rather than being three separate policies.
 The policy sees every sub-command concatenated with the inactive blocks zeroed,
 prefixed by a one-hot naming the active type:
 
-    [one_hot(5) | velocity(3) | path(2N + 2) | goal_pose(4) | kick(7)]
+    [one_hot(6) | velocity(3) | path(2N + 2) | footstep(8M) | goal_pose(4)
+     | kick(7)]
 
 Standing is its own command type here, not a flag on the velocity command, so a
 zero-velocity *velocity* command means walk-in-place. Reward terms that only
@@ -59,6 +61,13 @@ from mjlab_piplus.robot.piplus_constants import (
   get_piplus_robot_cfg,
 )
 from mjlab_piplus.tasks import mdp as pi_mdp
+from mjlab_piplus.tasks.mdp.footstep import (
+  FootstepCommandCfg,
+  footstep_tracking_roll_pitch,
+  footstep_tracking_xy,
+  footstep_tracking_yaw,
+  footstep_tracking_z,
+)
 from mjlab_piplus.tasks.mdp.multi_rewards import MultiRewardTermCfg
 from mjlab_piplus.tasks.mdp.path_following import (
   PathCommandCfg,
@@ -82,11 +91,25 @@ KICK_DIR_SIGMA_START = math.radians(60.0)
 KICK_DIR_SIGMA_END = math.radians(20.0)
 
 # Weight presets, spelled out so a reward's applicability reads at a glance.
-_OFF = {"velocity": 0.0, "path": 0.0, "goal_pose": 0.0, "kick": 0.0, "stand": 0.0}
+_OFF = {
+  "velocity": 0.0,
+  "path": 0.0,
+  "footstep": 0.0,
+  "goal_pose": 0.0,
+  "kick": 0.0,
+  "stand": 0.0,
+}
 VELOCITY_AND_STAND = {**_OFF, "velocity": 1.0, "stand": 1.0}
 PATH_ONLY = {**_OFF, "path": 1.0}
+FOOTSTEP_ONLY = {**_OFF, "footstep": 1.0}
 GOAL_POSE_ONLY = {**_OFF, "goal_pose": 1.0}
 KICK_ONLY = {**_OFF, "kick": 1.0}
+
+# Number of future path points in the command observation.
+NUM_PATH_OBSERVATIONS = 8
+# Number of upcoming footsteps in the command observation. Each costs 8 dims
+# (which foot, target xyz, target roll/pitch, target yaw as cos/sin).
+NUM_FOOTSTEP_OBSERVATIONS = 4
 
 
 def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
@@ -150,8 +173,8 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
       func=pi_mdp.phase,
       params={"frequency": WALK_FREQUENCY, "command_name": "command"},
     ),
-    # [one_hot(5) | velocity(3) | path(2N+2) | goal_pose(4) | kick(7)],
-    # inactive blocks zeroed.
+    # [one_hot(6) | velocity(3) | path(2N+2) | footstep(8M) | goal_pose(4)
+    #  | kick(7)], inactive blocks zeroed.
     "command": ObservationTermCfg(
       func=mdp.generated_commands,
       params={"command_name": "command"},
@@ -231,14 +254,34 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     pathlib_size=2000,
   )
 
+  # A timed footstep plan: where the next few footfalls go, relative to where
+  # each foot rests in the default stance. Half its scenarios read the footsteps
+  # off the same A* path library the path command walks (shared in memory, since
+  # the generation parameters match), the other half sample them as Gaussian
+  # deltas from the previous footstep.
+  footstep_cfg = FootstepCommandCfg(
+    entity_name="robot",
+    debug_vis=True,
+    resampling_time_range=(10.0, 20.0),
+    # Must match the gait the phase observation and the feet_* rewards run on:
+    # the footstep schedule is read straight off that clock.
+    frequency=WALK_FREQUENCY,
+    stance_threshold=0.56,
+    num_observations=NUM_FOOTSTEP_OBSERVATIONS,
+    # Two footsteps per gait period, so this has to outlast the 20 s resample.
+    max_steps=96,
+    path_fraction=0.5,
+  )
+
   commands: dict[str, CommandTermCfg] = {
     "command": pi_mdp.MultiCommandCfg(
       debug_vis=True,
       change_command_probability=0.3,
       fractions={
-        "velocity": 0.25,
-        "path": 0.2,
-        "goal_pose": 0.2,
+        "velocity": 0.15,
+        "path": 0.15,
+        "goal_pose": 0.15,
+        "footstep": 0.2,
         "kick": 0.25,
         "stand": 0.10,
       },
@@ -264,6 +307,7 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
           ),
         ),
         "path": path_cfg,
+        "footstep": footstep_cfg,
         # Go to a pose sampled relative to the robot: no reference path, just
         # the goal. Standing is its own type here, so rel_standing_envs stays 0.
         "goal_pose": pi_mdp.GoalPoseCommandCfg(
@@ -565,6 +609,59 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
         "std": math.sqrt(1.0),
       },
       command_weights=PATH_ONLY,
+    ),
+  }
+
+  # -- Footstep -------------------------------------------------------------
+  # Deviation from the commanded footstep, split per axis group so each can be
+  # weighted on its own. Scored only while a foot is planted, against the
+  # target of the footstep it last landed -- see ``mdp/footstep``.
+  footstep_rewards = {
+    "footstep_xy": MultiRewardTermCfg(
+      func=footstep_tracking_xy,
+      weight=3.0,
+      params={
+        "command_name": "command",
+        "sub_command_name": "footstep",
+        # Gaussian width on the in-plane placement error (m). Tight: this is
+        # the whole task, and the stance width is only ~0.16 m.
+        "std": 0.06,
+      },
+      command_weights=FOOTSTEP_ONLY,
+    ),
+    "footstep_yaw": MultiRewardTermCfg(
+      func=footstep_tracking_yaw,
+      weight=1.0,
+      params={
+        "command_name": "command",
+        "sub_command_name": "footstep",
+        "std": 0.3,  # Gaussian width on the foot heading error (rad).
+      },
+      command_weights=FOOTSTEP_ONLY,
+    ),
+    # Placeholders: on flat ground every footstep target sits at the resting
+    # height and perfectly level, so these two say nothing yet and are held at
+    # weight 0. Raise them once the footstep plan carries terrain heights and
+    # tilts (the sampling ranges for z/roll/pitch are already wired, at 0).
+    "footstep_z": MultiRewardTermCfg(
+      func=footstep_tracking_z,
+      weight=0.0,
+      params={
+        "command_name": "command",
+        "sub_command_name": "footstep",
+        "std": 0.03,
+      },
+      command_weights=FOOTSTEP_ONLY,
+    ),
+    "footstep_roll_pitch": MultiRewardTermCfg(
+      func=footstep_tracking_roll_pitch,
+      weight=0.0,
+      params={
+        "command_name": "command",
+        "sub_command_name": "footstep",
+        "std": 0.2,
+      },
+      command_weights=FOOTSTEP_ONLY,
     ),
   }
 
@@ -881,6 +978,7 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
   rewards = (
     velocity_rewards
     | path_rewards
+    | footstep_rewards
     | goal_pose_rewards
     | kick_rewards
     | stability_rewards
@@ -1085,6 +1183,7 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     # Keep the play library small enough to generate in a few seconds, but not
     # so small that every episode shows the same worlds.
     path_cfg.pathlib_size = 200
+    footstep_cfg.pathlib.pathlib_size = 200
     metrics["phase_metric"] = MetricsTermCfg(
       func=pi_mdp.phase_metric,
       params={"frequency": WALK_FREQUENCY, "command_name": "command"},
