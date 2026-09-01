@@ -279,8 +279,8 @@ Deliberate differences from the multi task:
 It carries the multi task's **domain randomization** (all 11 startup terms) and
 **observation noise + 1-step delay**, verbatim, so a policy that works here is
 answering the same sensing and dynamics question it will face there. No
-`push_robot`: that term gates on the stand command and this env has no command
-manager to gate on.
+`push_robot`: a shove is something to walk off, and this env's only job is
+standing up from the floor.
 
 > ⚠️ **The teacher does not see any of the noise.** `imitation.py` builds its
 > observation from true state, so the target stays a clean function of where the

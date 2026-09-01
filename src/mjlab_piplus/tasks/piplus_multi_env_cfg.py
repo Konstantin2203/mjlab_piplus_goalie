@@ -488,13 +488,11 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
         "asset_cfg": SceneEntityCfg("robot", joint_names=(".*",)),
       },
     ),
-    # Skipped for envs under a stand command -- see the term's docstring.
     "push_robot": EventTermCfg(
-      func=pi_mdp.push_by_setting_velocity_unless_standing,
+      func=mdp.push_by_setting_velocity,
       mode="interval",
       interval_range_s=(2.0, 6.0),
       params={
-        "command_name": "command",
         "velocity_range": {
           "x": (-0.25, 0.25),
           "y": (-0.25, 0.25),
