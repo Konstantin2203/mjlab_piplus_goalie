@@ -111,187 +111,83 @@ The function `piplus_velocity_env_cfg(play=False)` builds a `ManagerBasedRlEnvCf
 - **Simulation**: 5 ms timestep, decimation 4 (→ 50 Hz policy), MuJoCo Warp with 10 solver iterations.
 - In `play` mode: curriculum disabled, episode length unbounded, extra air-time metrics added. Push events stay active.
 
-### Getup (fall recovery), in the multi task only
+### Falls in the multi task
 
-Terms live in `src/mjlab_piplus/tasks/mdp/getup.py` and are wired into
-`piplus_multi_env_cfg.py`. Design, and why each piece is the way it is:
+There is **no getup**. A fall ends the episode (`fell_over`, `bad_orientation`
+past 70 deg, the same limit the velocity task uses) and `is_terminated` charges
+-200 once. Everything that supported fall recovery was removed: the
+`getup_imitation` and `on_ground` rewards, the `fallen_too_long` deadline, the
+`fallen`/`getup_success` metrics, and the `GatedRewardTermCfg` wrappers on all
+ten walking and safety terms — those gates existed only to fade walking rewards
+out while the robot was down, and with falls terminal there is nothing to fade.
+The reset is back to the walking task's `reset_base` (`reset_root_state_uniform`)
++ `reset_robot_joints` (`reset_joints_by_offset`) pair, replacing
+`reset_fallen_or_standing`.
 
-- **No getup command.** The terms are unconditional, so recovery is available
-  under every command type rather than being something the operator requests.
-- **No `fell_over` termination, but a deadline.** `fell_over` stays commented
-  out with a warning — firing on the *instant* of a fall means the robot never
-  experiences the state it is meant to recover from, and getup is unlearnable.
-  The pressure not to fall is the `on_ground` reward (a rate charged while
-  tilted past `FALLEN_ANGLE` or below `STANDING_MIN_HEIGHT`, weight `-1.0`, a
-  flat -1 per step while down), plus `fallen_too_long`: a real termination that
-  fires once the robot has been *continuously* down for `GETUP_TIMEOUT_S`
-  (6 s). Falling is survivable, staying down is not. The timer counts
-  consecutive down-steps by the same test `on_ground` uses and resets the moment
-  the robot is standing, so each fall gets a fresh window; envs that spawn
-  fallen get the full one. `is_terminated` is live again at `-200.0` — with
-  `time_out` flagged `time_out=True` and excluded by mjlab's `is_terminated`,
-  it fires on failed getups and nothing else. It costs `200 × dt = 4.0` once,
-  about a second of standing; the forfeited rest of the episode (up to ~75) is
-  the real cost, so the term mainly puts a discontinuity at the deadline.
-- **"Not fallen" needs height as well as angle.** Upright-only is a hole a
-  policy will find: sitting on the floor with a vertical trunk passes the angle
-  test, so nothing charges it and it never has to do the hard part. `on_ground`
-  therefore also requires the base above `STANDING_MIN_HEIGHT` (0.25 m), and the
-  reward gates below multiply in `HEIGHT_GATE` (0.29 → 0.23 m). All of these
-  derive from `STANDING_HEIGHT` and must move together.
-  **`STANDING_HEIGHT` is 0.34, not the keyframe's 0.39.** 0.39 is
-  `default_root_state` z, measured by FK with the feet flat, and the actuators do
-  not hold it: from a keyframe spawn under a zero action the base sags to 0.333
-  within ten steps (mean joint error 0.05 rad, calf off by 0.14) and the robot
-  topples within about three seconds — zero action is not a standing controller,
-  so 0.333 is a floor on the standing height, not a measurement of it. Held
-  actively upright it reaches ~0.357. With 0.39 as the target a visibly standing
-  robot failed `getup_success` and collected ~85% of the height gate; at 0.34
-  both height terms saturate at 1.000 there. Reference points, base link above
-  its own env's ground: ~0.357 held upright, 0.333 settled, ~0.17 sitting with
-  the legs folded, 0.10 flat. If a policy that is visibly walking starts showing
-  a high `Metrics/fallen`, `STANDING_MIN_HEIGHT` is too high for its gait.
-- **No end pose.** `variable_posture` already owns the standing pose; getup
-  stops at "upright and off the floor" and hands over.
-- **Height is paid twice: base and head.** `head_height` is `getup_height`
-  again with `head_yaw_link` and `STANDING_HEAD_HEIGHT` (0.53 = `STANDING_HEIGHT`
-  + the rigid 0.198 m head-over-base offset). Ported from the reference, which
-  pays pelvis *and* head and deletes its orientation term outright on the
-  grounds that both being high already implies an upright trunk. Here it is an
-  addition, not a replacement — `getup_orientation` and `upright` stay. It buys
-  about +0.42/step of standing-vs-sitting gap, and it is what prices a *folded*
-  posture (tall at the base, short at the head); against pure sitting the base
-  term is still the stronger discriminator, since a sitting robot's trunk is
-  vertical and its head is already 0.37 of the 0.53. The reference runs the
-  pelvis at 2:1 over the head, and so does this env.
-- **The penalty is gated, the shaping is not.** `getup_orientation` and
-  `getup_height` are ungated on purpose: gating them on "is fallen" would make
-  the reward step *down* the instant the robot stands up.
-- **Walking terms are gated the other way.** `GatedRewardTermCfg` (in
-  `getup.py`) wraps a term and multiplies it by
-  `gate_func(env, **gate_params)`, a `[0, 1]` factor evaluated every step. The
-  default `gate_func` is `upright_gate`, which fades the term out with tilt,
-  linearly in `cos(tilt)` between the two angles of its `angles` pair — a hard
-  cutoff would be a cliff in the return, which a policy will go and sit on. Pass
-  a `heights` pair for a second ramp on base height. Any callable of that shape
-  can be substituted, and a *class* is instantiated with `(cfg, env)` like a
-  class-valued `func`, so a gate may carry state.
-  `pose` uses the tight `POSTURE_GATE` (20°→40°): the
-  standing pose is the wrong target for a robot on the floor, which has to bend
-  where posture says not to. `foot_gait`, `feet_phase` and `foot_slip` use
-  `GAIT_GATE` (30°→`FALLEN_ANGLE`), so they are off exactly where `on_ground`
-  starts charging; both are multiplied by the `HEIGHT_GATE` ramp above — face down the gait clock means nothing, and the slip penalty
-  would charge for the ground contact the arms need to push off with. The inner
-  term is still *evaluated* while gated (`feet_phase` and `feet_slip` are
-  stateful), just multiplied by zero. It does not compose with
-  `MultiRewardTermCfg`: a term is gated or command-weighted, not both.
-- **Penalties are doubled and oppositely gated.** Each of `body_ang_vel`,
-  `joint_pos_limits`, `action_rate_l2`, `self_collisions` and `foot_slip` exists
-  twice: the plain name carries this env's standing weight through
-  `upright_gate`, and a `*_fallen` twin carries the **reference
-  implementation's** weight and curriculum through `fallen_gate`, which is
-  `1 - upright_gate`. Both halves use the same band, `REGIME_GATE`
-  (`GAIT_GATE` x `HEIGHT_GATE`), so the two gates sum to exactly 1 at every tilt
-  and height and the effective weight is a linear blend between the two
-  regimes — verified `max|sum-1| = 0` at standing, sitting and flat.
-  **That summing property is the point.** A lone gated penalty is *free*
-  wherever its gate is 0, and free is a thing a policy will go and sit in; the
-  twin means the robot is always paying one weight or a blend, never neither.
-  Endpoints, standing -> fallen: `body_ang_vel` -0.25 -> -0.1,
-  `joint_pos_limits` -10.0 -> -1.0, `action_rate_l2` -0.05 -> -0.1,
-  `self_collisions` -1.0 -> -0.1, `foot_slip` -0.25 -> -1.5. Only the fallen
-  copies are ramped (`fallen_*` curriculum terms, reference schedules); the
-  standing copies apply to a robot already up, where full price is the point.
-  `joint_acc_l2` and `angular_momentum` are **not** doubled — the reference has
-  no counterpart to take a fallen value from — so they are gated to standing
-  alone and waived while down.
-- **Two penalties are gated the same way, minus the height ramp.**
-  `body_ang_vel` and `angular_momentum` use `GAIT_GATE` **with no `heights`**.
-  Standing up from flat is necessarily whippy and high-momentum, so ungated
-  these are a standing charge on the recovery itself; gated, they are waived
-  exactly where `on_ground` takes over. The height ramp is deliberately omitted:
-  for a *reward* it stops a sitting robot collecting the term, but for a
-  *penalty* it would make sitting the cheaper place to be. That asymmetry is the
-  rule — gate rewards on tilt **and** height, penalties on tilt alone.
-- **Penalties ramp in.** Following the reference's curriculum: `action_rate_l2`,
-  `joint_acc_l2`, `body_ang_vel`, `angular_momentum`, `foot_slip` and
-  `foot_too_close_to_base` all start reduced (or at zero) and reach their configured values
-  by ~1500 iterations, via `reward_weight` terms in the curriculum. Standing up
-  from flat is violent, whippy and self-touching; charged full price from step 0
-  these make lying still the cheaper option. Each reward carries a `# -> value`
-  comment naming its endpoint. `joint_pos_limits` (-1.0) and `self_collisions`
-  (-0.1) are deliberately flat: both read ~0 at a settled standing pose, so
-  there is no early-training tax to curriculum away.
-- **Foot placement is fenced.** `foot_distance` (-1.0, flat past 0.40 m between
-  the feet) and `foot_too_close_to_base` (ramped to -0.5 by 900 iterations, fires
-  inside 0.15 m) are the reference's two flat geometric penalties. They price
-  standing shapes the height terms would otherwise pass: a straddle wide enough
-  to be stable without extending the legs, and a foot tucked under the pelvis.
-  At the settled pose the measurements are 0.12-0.17 m and 0.31 m, so both read
-  zero with margin.
-- **Spawns.** `reset_fallen_or_standing` replaces the old `reset_base` +
-  `reset_robot_joints` pair. `FALL_PROBABILITY` of envs start on the floor at a
-  uniformly random orientation with the default pose plus Gaussian joint noise
-  (not uniform over the joint range — that samples mostly unreachable tangles).
-- **Camera.** `camera_link_collision0` sits ~5 mm proud of the head shell, so a
-  faceplant hits it first; `camera_ground_impact` charges force-graded contact
-  heavily. Never grow `head_pitch_link_collision0` — burying
-  `camera_link_collision0` inside the head shell stops the penalty firing.
+The getup machinery itself still exists and is still used — see
+`mdp/getup.py`, `mdp/imitation.py` and `Mjlab-StandupImitation-PiPlus` below.
+It is only the multi task that no longer uses it.
+
+> ⚠️ **`nconmax` is 30**, down from the 120 getup needed. A robot lying on its
+> back touches the floor with the whole trunk, both arms and both legs at once
+> (~43 contacts). With falls terminal it never reaches those poses, and the
+> count is bounded by how many collision geoms can touch a plane at once: the
+> measured peak is **19** in any single world across 512 envs x 400 steps of
+> standing, of thrashing under random actions, and of being force-tipped to 65
+> and 89 degrees. Contacts past `nconmax` are dropped *silently* and look like
+> the robot sinking through the floor, so re-measure before trimming further,
+> and raise it for anything that puts the robot on the ground on purpose or for
+> terrain that is not a plane. Measured cost at 2048 envs: 120 -> 3384 MB,
+> 45 -> 2264 MB, 30 -> 2038 MB of process GPU memory.
+
+- **The arms stay actuated** (`with_arms=True`, 20 DoF). They were enabled for
+  getup, but they earn their place in walking as a balance aid and in the kick.
+  Note this keeps the multi task off `mdp/symmetry.py`, which mirrors the 12-DoF
+  observation by hard-coded index.
 - **Self-collision is scored on the pads, with no `secondary`.** A secondary
   *pattern* silently collapses to one geom — `ContactSensorCfg.secondary_policy`
   defaults to `"first"` — so matching `.*_selfpad` on both sides scores every pad
   against the base pad alone and reads ~0 however folded the robot is. Dropping
   the secondary is correct here, not a shortcut: bit-2 isolation already means a
   pad's only possible contact partner is another pad.
-- **`nconmax` is 120, not 45.** Overflow is silent and looks like sinking through
-  the floor. 256 fallen envs peak at ~1.6k contacts total against a 120×256
-  allocation, so there is ample headroom.
 
-Watch `Metrics/getup_success` (latched, should stay near 1.0) against
-`Metrics/fallen` (episode fraction spent down, starts around 0.2).
+### Action scale
 
-### The action map is signed-quadratic, not linear
+The multi task uses mjlab's plain `JointPositionActionCfg` at a uniform
+`scale=0.1`, `use_default_offset=True` — `target = default + 0.1 * a`.
 
-`QuadraticJointPositionActionCfg` (`mdp/actions.py`) replaces mjlab's linear
-`JointPositionActionCfg` in the multi task:
+Two alternatives were built and measured while getup was in scope, and both are
+still available if the action range ever becomes a constraint again:
 
-```
-target = default + sign(a) * 0.2 * a^2
-```
+- **Per-joint `scale` dict.** `BaseActionCfg.scale` accepts `dict[str, float]`
+  matched by regex over joint names (`actions.py:64-73`).
+- **`QuadraticJointPositionActionCfg`** (`mdp/actions.py`), a signed-quadratic
+  map `target = default + sign(a) * scale * a^2`, subclassing
+  `JointPositionAction` and overriding only `process_actions`.
 
-One fixed function, so the deployed policy needs no notion of whether it is
-walking or getting up — the reason a conditional action scale was rejected.
-It subclasses `JointPositionAction` and overrides only `process_actions`, so the
-default offset, encoder-bias correction, `clip` bounds and dict-valued `scale`
-all behave as before. `scale` is the **quadratic coefficient**, not a gain.
+> ⚠️ **Scale multiplies the policy's exploration noise as well as its mean.**
+> `Policy/mean_std` sits near 1.3 and does not anneal away (`entropy_coef=0.01`
+> is the floor), so a uniform 0.5 leaves ~0.65 rad of permanent per-joint jitter
+> against ~0.13 rad at 0.1. Measured: a uniform 0.5 run collapsed `posture`
+> 0.246 -> 0.001, `foot_gait` 0.186 -> 0.002 and `feet_phase` 0.198 -> 0.005
+> against a 0.1 baseline, while running *further* into training.
 
-**Reach is the win.** Every joint reaches its full range inside `|a| = 4.6`
-(shoulder_pitch 4.12 rad → 4.54; hip_pitch → 4.09; calf → 3.85; ankle_roll →
-1.90), against `|a| = 41` for the same excursion under the old linear 0.1.
+> ⚠️ **`action_rate_l2` is charged on raw policy output** (mjlab's docstring:
+> "Operates on raw policy output"), so the cost of a physical motion is
+> `w*(dq/scale)^2`. Raising a joint's scale 5x makes the same motion **25x**
+> cheaper to make abruptly — under a uniform 0.5 that silently removed the
+> smoothness constraint from walking (`Episode_Reward/action_rate_l2` fell
+> -1.74 -> -0.014). **Changing a scale also changes that joint's effective
+> smoothness weight by 1/scale^2.**
 
-> ⚠️ **Resolution is not the win, at the current entropy setting.** Local gain
-> is `d(target)/da = 2*0.2*|a| = 0.4|a|`, so the map is finer than the old
-> linear 0.1 only for `|a| < 0.25` and finer than 0.5 only for `|a| < 1.25`.
-> Measured against where `ewxi1s0n` actually operates, with std ≈ 1.0–1.5:
->
-> | joint | walking swing | noise @lin0.1 | @lin0.5 | @quad0.2 |
-> |---|---|---|---|---|
-> | hip_pitch | 1.98 | 0.147 | 0.735 | **1.308** |
-> | calf | 1.49 | 0.111 | 0.555 | **0.857** |
-> | ankle_roll | 0.44 | 0.118 | 0.590 | **0.495** |
-> | hip_roll | 0.28 | 0.094 | 0.470 | **0.315** |
->
-> The quadratic is *better than linear 0.5* on the small joints and *worse* on
-> the big ones, and worse than linear 0.1 everywhere. The fine end exists but
-> `entropy_coef=0.01` pins std near 1.0–1.5 and the policy cannot sit in it.
-> **Lowering `entropy_coef` (and `init_std`) is what unlocks the quadratic's
-> resolution**; without that it buys reach only. Std will self-correct somewhat
-> — a coarser map makes a given std cost more reward — so treat these as an
-> upper bound, not a prediction.
-
-> ⚠️ `action_rate_l2` is charged on **raw** policy output, so under a nonlinear
-> map its physical meaning varies with `|a|`: the same raw step moves the joint
-> `0.4|a|` times as far, so big excursions are under-charged for smoothness.
+If you do split the scale per joint, split it by *measured walking swing*, not
+by joint range. Rolling out `ewxi1s0n` (uniform 0.1) under a velocity command
+gives noise-to-signal per joint, at 0.1 -> at 0.5: `hip_pitch` 0.05 -> 0.23 and
+`calf` 0.08 -> 0.38 (they carry the gait's large excursions, +-1.9 and +-1.4
+rad, so 0.5 is cheap for them), against `thigh` 0.27 -> 1.35, `hip_roll`
+0.35 -> 1.73, `ankle_pitch` 0.23 -> 1.17, `ankle_roll` 0.28 -> 1.37 — those do
+small precise work and drown. **`thigh` included, despite its 2.77 rad range**,
+which is exactly why range is the wrong criterion.
 
 ### Getup by imitation (`mdp/imitation.py`)
 
@@ -365,10 +261,9 @@ of how closely the student tracks the teacher, uncontaminated by anything else.
 
 Deliberate differences from the multi task:
 
-- **The imitation term is ungated here.** In the multi task it is confined to
-  the fallen half so it cannot fight the walking controller; here there is
-  nothing to fight, and gating would blind the reward exactly when the robot
-  succeeds and stands up.
+- **The imitation term is ungated.** Gating it would blind the reward exactly
+  when the robot succeeds and stands up. (The multi task no longer uses this
+  reward at all — see "Falls in the multi task".)
 - **The three shaping terms come from the reference** at its own weights:
   `torso_height` 2.0, `head_height` 1.0, `orientation` 1.0, all ungated (gating
   them on "is fallen" would step the return *down* the instant the robot stands

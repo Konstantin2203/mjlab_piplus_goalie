@@ -89,101 +89,6 @@ GOAL_POSE_ONLY = {**_OFF, "goal_pose": 1.0}
 KICK_ONLY = {**_OFF, "kick": 1.0}
 
 
-##
-# Getup.
-##
-# Base height (m) the robot actually stands at. The getup height reward saturates
-# here and the success metric is measured against it, so it has to be a height
-# the robot reaches, not the one the model says it should.
-#
-# The home keyframe is 0.39 (that is ``default_root_state`` z), but the keyframe
-# pose is not a pose the actuators hold: spawned there and given a zero action,
-# the robot sags to 0.333 within ten steps and stays, with a mean joint error of
-# 0.05 rad and the calf off by 0.14. Held actively upright it reaches ~0.357.
-# 0.39 was measured by forward kinematics with the feet flat, and it overstates
-# the achievable height by the whole of that sag -- with it as the target, a
-# visibly standing robot failed ``getup_success`` and collected only ~85% of the
-# height gate. 0.34 is the settled height rounded up, i.e. the top of the range
-# the robot occupies rather than the top of the range the model allows.
-#
-# Everything below is derived from it; move them together.
-STANDING_HEIGHT = 0.34
-
-# Head height (m) with the base at STANDING_HEIGHT. The head sits a rigid 0.198 m
-# above the base link (measured at spawn, and the same offset the reference gets:
-# its walkready pelvis 0.327 + 0.198 = the 0.525 it uses), so this is just
-# STANDING_HEIGHT + 0.198, rounded down so the term can actually saturate.
-# Sanity check: the settled zero-action head height measures 0.531.
-#
-# Ported from the reference, which pays pelvis *and* head height and drops the
-# orientation term entirely, on the grounds that both being high already implies
-# an upright trunk. Here it is the term that specifically prices sitting: a robot
-# parked on its backside keeps its base low but its trunk vertical, so base
-# height alone under-charges it, and a robot folded forward over its knees is
-# tall at the base and short at the head.
-STANDING_HEAD_HEIGHT = 0.53
-
-# Tilt from vertical past which the robot counts as "on the ground". This is the
-# angle the removed ``fell_over`` termination used, so the penalty takes over
-# exactly where the termination left off.
-FALLEN_ANGLE = math.radians(45.0)
-
-# How long (s) the robot may stay continuously down before the episode is ended.
-# Not the old ``fell_over`` termination: that fired the instant the robot tipped,
-# so it never spent a step in the state it had to recover from. This is a window
-# to do something about it -- long enough for a real standup (the reference
-# trains getup in 6 s episodes end to end), short enough that lying there is not
-# a way to sit out the rest of a 20 s episode.
-GETUP_TIMEOUT_S = 6.0
-
-# Base height (m) below which the robot does not count as standing, whatever the
-# trunk angle says: sitting on the floor is upright, and an angle-only test hands
-# it every reward standing earns for none of the work.
-#
-# Measured in sim, base link above its own env's ground: 0.333 standing (settled,
-# zero action), ~0.17 sitting with the legs folded under, 0.10 lying flat. This
-# sits roughly midway between standing and sitting, so a deep crouch has ~8 cm of
-# room before it reads as a fall and sitting has ~8 cm before it reads as
-# standing. If a policy that is visibly walking shows a high ``Metrics/fallen``,
-# this is the number that is too high for its gait.
-STANDING_MIN_HEIGHT = 0.25
-
-# Height band for the gates below, (paid in full at or above, off at or below).
-# The upper end matches the height ``getup_success`` calls standing, i.e.
-# STANDING_HEIGHT less the metric's 0.05 tolerance. The lower end sits 2 cm below
-# STANDING_MIN_HEIGHT, so by the time on_ground starts charging the gates are
-# already two thirds shut and they close completely just after -- the walking
-# terms fade out across the fall rather than switching off at a line.
-HEIGHT_GATE = (0.29, 0.23)
-
-# Gate bands for the terms that only mean something while the robot is on its
-# feet, as (paid in full up to, switched off past) tilt from vertical. See
-# ``GatedRewardTermCfg``: between the two the term fades out linearly.
-#
-# The gait terms fade out exactly where ``on_ground`` starts charging, so there
-# is no band in which the robot is both "down" and still being scored against a
-# walking clock. The posture gate is tighter -- posture describes *standing*,
-# and a robot leaning 40 degrees is not standing, it is on its way to the floor.
-# Both are multiplied by HEIGHT_GATE, so sitting up does not reopen them.
-# Teacher for the getup imitation reward: an rsl_rl checkpoint from the
-# reference getup env in mjlab_playground. Its actor is a 66 -> 20 MLP with
-# obs_normalization disabled, trained with a *relative* joint position action
-# (scale 0.6). mdp/imitation.py asserts the shape and the missing normalizer,
-# so a checkpoint from a differently-configured run fails loudly.
-GETUP_TEACHER_CHECKPOINT = "getup_model.pt"
-
-GAIT_GATE = (math.radians(30.0), FALLEN_ANGLE)
-POSTURE_GATE = (math.radians(20.0), math.radians(40.0))
-
-# The gate spec shared by both halves of every doubled penalty. Both copies use
-# the *same* band -- one through ``upright_gate``, one through ``fallen_gate``,
-# which is 1 minus it -- so the two weights sum to exactly one weight at every
-# tilt and height. There is no band where a penalty is uncharged, which is the
-# whole reason the split is safe: gating a penalty off while down would make
-# lying down free, and free is a thing a policy will go and sit in.
-REGIME_GATE = {"angles": GAIT_GATE, "heights": HEIGHT_GATE}
-
-
 def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
   foot_sites = ("l_foot", "r_foot")
   # only for critic
@@ -517,22 +422,26 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     ),
   }
   events = {
-    "reset_fallen_or_standing": EventTermCfg(
-      func=pi_mdp.reset_fallen_or_standing,
+    "reset_base": EventTermCfg(
+      func=mdp.reset_root_state_uniform,
       mode="reset",
       params={
-        "fall_probability": 0.3,
-        "fall_height": 0.4,
-        "fall_velocity_range": 0.5,
-        "joint_pos_std": 0.3,
-        "stand_pose_range": {
+        "pose_range": {
           "x": (-0.0, 0.0),
           "y": (-0.0, 0.0),
           "z": (0.01, 0.01),
           "yaw": (-3.14, 3.14),
         },
-        "stand_joint_pos_range": (-0.1, 0.1),
-        "stand_joint_vel_range": (-0.5, 0.5),
+        "velocity_range": {},
+      },
+    ),
+    "reset_robot_joints": EventTermCfg(
+      func=mdp.reset_joints_by_offset,
+      mode="reset",
+      params={
+        "position_range": (-0.1, 0.1),
+        "velocity_range": (-0.5, 0.5),
+        "asset_cfg": SceneEntityCfg("robot", joint_names=(".*",)),
       },
     ),
     # Skipped for envs under a stand command -- see the term's docstring.
@@ -824,141 +733,60 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     ),
   }
 
-  # -- Getup ----------------------------------------------------------------
-  getup_rewards = {
-    # Not gated on a command: whatever the robot was asked to do, being on the
-    # floor is wrong and standing back up is right. See ``mdp/getup.py`` for why
-    # only the penalty is gated and the two shaping terms are not.
-    #
-    # Budget per step on the floor, at these weights: -1.0 flat for lying there,
-    # against up to +0.5 orientation and +1.0 height earned back on the way up,
-    # plus everything the walking and posture terms start paying again once the
-    # gates open. Lying still stays a clear loss, but only by about 0.5, so the
-    # climb is worth attempting rather than something to be endured.
+  # -- Stability ------------------------------------------------------------
+  stability_rewards = {
+    # Terminal penalty, paid once on the step "fell_over" fires. mjlab's
+    # ``is_terminated`` excludes ``time_out=True`` terms, and the jittered
+    # time-out is the only other termination, so this fires on falls and
+    # nothing else. Scaled by dt like every weight here it costs 200 * 0.02 =
+    # 4.0 once; the real cost of falling is the forfeited rest of the episode.
     #
     # (Every weight in this file is a per-step value: the reward manager scales
     # the lot by ``dt``, so the ratios between terms are what these numbers say.)
-    # A flat -1.0 per step while down. The "is it fallen" test is the gate now
-    # rather than something the term re-derives, so it opens on exactly the same
-    # band as the imitation reward and the fallen halves of the penalties, and
-    # ramps at the edges instead of stepping.
-    "on_ground": pi_mdp.GatedRewardTermCfg(
-      func=pi_mdp.always_one,
-      weight=-1.0,
-      gate_func=pi_mdp.fallen_gate,
-      gate_params=REGIME_GATE,
-    ),
-    # Imitate a pre-trained getup policy instead of discovering a stand-up from
-    # shaped rewards. Gated to the fallen half: the teacher's env has no
-    # velocity command and it was trained to stand up and stop, so ungated it
-    # would fight the walking controller. mdp/imitation.py holds the two
-    # bridges -- observation layout, and relative- vs default-relative actions.
-    "getup_imitation": pi_mdp.GatedRewardTermCfg(
-      func=pi_mdp.getup_imitation,
-      weight=2.0,
-      params={
-        "checkpoint": GETUP_TEACHER_CHECKPOINT,
-        # Radians of joint-target error at which the reward falls to 1/e.
-        # NOT tighter than this: an untrained policy sits ~0.39 rad from the
-        # teacher, and exp(-(err/std)^2) with std=0.2 puts that at 0.018 with a
-        # nearly flat gradient -- the same saturation that kills `posture` when
-        # its std is too tight. 0.3 starts the policy at 0.17 with a live slope.
-        "std": 0.3,
-        "teacher_scale": 0.6,
-      },
-      gate_func=pi_mdp.fallen_gate,
-      gate_params=REGIME_GATE,
-    ),
-    # "getup_orientation": RewardTermCfg(
-    #  func=pi_mdp.getup_orientation,
-    #  weight=0.5,
-    #  params={"asset_cfg": base_cfg},
-    # ),
-    # "getup_height": RewardTermCfg(
-    #  func=pi_mdp.getup_height,
-    #  weight=2.0,
-    #  params={"desired_height": STANDING_HEIGHT, "asset_cfg": base_cfg},
-    # ),
-    # "head_height": RewardTermCfg(
-    #  func=pi_mdp.getup_height,
-    #  weight=1.0,
-    #  params={
-    #    "desired_height": STANDING_HEAD_HEIGHT,
-    #    "asset_cfg": SceneEntityCfg("robot", body_names=("head_yaw_link",)),
-    #  },
-    # ),
-    # "camera_ground_impact": RewardTermCfg(
-    #  func=pi_mdp.ground_contact_cost,
-    #  weight=-10.0,
-    #  params={
-    #    "sensor_name": "camera_ground_contact",
-    #    "force_scale": 50.0,
-    #    "force_threshold": 1.0,
-    #  },
-    # ),
-  }
-
-  # -- Stability ------------------------------------------------------------
-  stability_rewards = {
-    # Terminal penalty, paid once on the step "fallen_too_long" fires (mjlab's
-    # is_terminated excludes time-outs, and time_out is the only other
-    # termination, so this term fires on failed getups and nothing else).
-    # Scaled by dt like every other weight, it costs 200 * 0.02 = 4.0, i.e.
-    # about one second of standing. The real cost of failing is the forfeited
-    # rest of the episode -- up to 14 s * ~5.4 = ~75 -- so this is a ~5% top-up
-    # that mainly serves to put a discontinuity at the deadline rather than to
-    # dominate the return.
     "is_terminated": RewardTermCfg(func=mdp.is_terminated, weight=-200.0),
     "upright": RewardTermCfg(
       func=mdp.upright,
       weight=1.0,
       params={"std": math.sqrt(0.2), "asset_cfg": base_cfg},
     ),
-    "body_ang_vel": pi_mdp.GatedRewardTermCfg(
+    "body_ang_vel": RewardTermCfg(
       func=mdp.body_angular_velocity_penalty,
       weight=-0.25,
       params={"asset_cfg": base_cfg},
-      gate_params=REGIME_GATE,
     ),
-    "angular_momentum": pi_mdp.GatedRewardTermCfg(
+    "angular_momentum": RewardTermCfg(
       func=mdp.angular_momentum_penalty,
       weight=-0.1,
       params={"sensor_name": "robot/root_angmom"},
-      gate_params=REGIME_GATE,
     ),
   }
 
   # -- Safety ---------------------------------------------------------------
   safety_rewards = {
-    "joint_acc_l2": pi_mdp.GatedRewardTermCfg(
+    "joint_acc_l2": RewardTermCfg(
       func=mdp.joint_acc_l2,
       weight=-2.5e-7,
-      gate_params=REGIME_GATE,
     ),
-    "joint_pos_limits": pi_mdp.GatedRewardTermCfg(
+    "joint_pos_limits": RewardTermCfg(
       func=mdp.joint_pos_limits,
       weight=-10.0,
-      gate_params=REGIME_GATE,
     ),
-    "action_rate_l2": pi_mdp.GatedRewardTermCfg(
+    "action_rate_l2": RewardTermCfg(
       func=mdp.action_rate_l2,
       weight=-0.05,
-      gate_params=REGIME_GATE,
     ),
-    "self_collisions": pi_mdp.GatedRewardTermCfg(
+    "self_collisions": RewardTermCfg(
       func=mdp.self_collision_cost,
       weight=-1.0,
       params={
         "sensor_name": "self_collision",
         "force_threshold": 2.0,
       },  # we dont want even soft collisions
-      gate_params=REGIME_GATE,
     ),
     # Gated for getup
-    "posture": pi_mdp.GatedRewardTermCfg(
+    "posture": RewardTermCfg(
       func=pi_mdp.variable_posture,
       weight=1.0,
-      gate_params={"angles": POSTURE_GATE, "heights": HEIGHT_GATE},
       params={
         "asset_cfg": SceneEntityCfg("robot", joint_names=(".*",)),
         "command_name": "command",
@@ -1005,10 +833,9 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     # gait clock keeps running and would pay for kicking the floor on the beat,
     # and the slip penalty would charge for exactly the ground contact the arms
     # and feet need to push off with. All three come back as the robot rises.
-    "foot_gait": pi_mdp.GatedRewardTermCfg(
+    "foot_gait": RewardTermCfg(
       func=pi_mdp.feet_gait,
       weight=1.0,
-      gate_params=REGIME_GATE,
       params={
         "frequency": WALK_FREQUENCY,
         "offset": [0.0, 0.5],
@@ -1017,10 +844,9 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
         "sensor_name": "feet_ground_contact",
       },
     ),
-    "feet_phase": pi_mdp.GatedRewardTermCfg(
+    "feet_phase": RewardTermCfg(
       func=pi_mdp.feet_phase,
       weight=1.0,
-      gate_params=REGIME_GATE,
       params={
         "frequency": WALK_FREQUENCY,
         "offset": [0.0, 0.5],
@@ -1040,11 +866,10 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
         "baseline_height": 0.019,
       },
     ),
-    "foot_slip": pi_mdp.GatedRewardTermCfg(
+    "foot_slip": RewardTermCfg(
       func=pi_mdp.feet_slip,
       # Ramped in by the curriculum; see "slip_weight".
       weight=0.0,
-      gate_params=REGIME_GATE,
       params={
         "sensor_name": "feet_ground_contact",
         "command_name": "command",
@@ -1058,7 +883,6 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     | path_rewards
     | goal_pose_rewards
     | kick_rewards
-    | getup_rewards
     | stability_rewards
     | safety_rewards
     | gait_rewards
@@ -1075,26 +899,6 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
         "asset_cfg": foot_asset_cfg,
       },
     ),
-    "fallen": MetricsTermCfg(
-      func=pi_mdp.on_ground,
-      params={
-        "limit_angle": FALLEN_ANGLE,
-        "min_height": STANDING_MIN_HEIGHT,
-        "asset_cfg": base_cfg,
-      },
-    ),
-    # Latched: did this env ever end up standing? Read against "fallen" -- this
-    # is the number that says whether getup actually works.
-    "getup_success": MetricsTermCfg(
-      func=pi_mdp.getup_success,
-      reduce="last",
-      params={
-        "desired_height": STANDING_HEIGHT,
-        "limit_angle": math.radians(20.0),
-        "height_tolerance": 0.05,
-        "asset_cfg": base_cfg,
-      },
-    ),
   }
 
   ##
@@ -1107,21 +911,14 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
       time_out=True,
       params={"min_fraction": 0.5},
     ),
-    # NOTE: still no "fell_over" termination -- ending the episode *on* a fall
-    # makes getup unlearnable, because the robot never spends a step in the
-    # state it is supposed to recover from. This one ends the episode only if
-    # the robot is still down GETUP_TIMEOUT_S later, so falling stays
-    # survivable and lying there does not. Uses the same "fallen" test as the
-    # on_ground reward, so the rate charge and the deadline agree on what down
-    # means, and the timer resets whenever the robot is standing again.
-    "fallen_too_long": TerminationTermCfg(
-      func=pi_mdp.fallen_too_long,
+    # A fall ends the episode. This was a getup *deadline* while the robot was
+    # expected to recover from falls; with that gone, the walking convention
+    # applies again -- the same 70 deg limit the velocity task uses.
+    "fell_over": TerminationTermCfg(
+      func=mdp.bad_orientation,
       params={
-        "timeout_s": GETUP_TIMEOUT_S,
-        "limit_angle": FALLEN_ANGLE,
-        "min_height": STANDING_MIN_HEIGHT,
-        "asset_cfg": base_cfg,
-      },
+        "limit_angle": math.radians(60.0)
+      },  # 0 deg upright, 90 deg would be flat on the ground
     ),
   }
 
@@ -1147,7 +944,7 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
         "reward_names": ["kick_impact", "kick_direction"],
         "param_name": "dir_sigma",
         "start_step": 1500 * 24,
-        "end_step": 8000 * 24,
+        "end_step": 6400 * 24,
         "start_value": KICK_DIR_SIGMA_START,
         "end_value": KICK_DIR_SIGMA_END,
       },
@@ -1247,13 +1044,19 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
   # Simulation
   ##
   sim = SimulationCfg(
-    # Raised from 45: a walker touches the ground with two feet, a robot lying
-    # on its back touches it with the whole trunk, both arms and both legs at
-    # once, which peaks around 43 -- so 45 was already clipping. Contacts past
-    # nconmax are dropped silently, which shows up as the robot sinking through
-    # the floor exactly when it is trying to push off it -- the rest is headroom
-    # for the ball and for terrain that is not a plane.
-    nconmax=120,
+    # Sized from measurement, not from the getup-era 120 (a robot lying on its
+    # back touches the floor with the whole trunk, both arms and both legs at
+    # once, ~43 contacts). With falls terminal the robot never reaches those
+    # poses, and the contact count is bounded by how many collision geoms can
+    # touch a plane at once: measured peak is 19 in any single world across
+    # 512 envs x 400 steps of standing, of thrashing under random actions, and
+    # of being force-tipped to 65 and 89 degrees. 30 is ~58% headroom.
+    #
+    # Contacts past nconmax are dropped *silently* and look like the robot
+    # sinking through the floor, so re-measure before trimming further -- and
+    # raise it again for anything that puts the robot on the ground on purpose,
+    # or for terrain that is not a plane.
+    nconmax=45,
     njmax=200,
     # contact_sensor_maxmatch=500,
     mujoco=MujocoCfg(
@@ -1269,7 +1072,8 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
   if play:
     scene.num_envs = 1
     events = {  # remove other dr in play mode
-      "reset_fallen_or_standing": events["reset_fallen_or_standing"],
+      "reset_base": events["reset_base"],
+      "reset_robot_joints": events["reset_robot_joints"],
     }
     # Unbounded episodes in play: plain time_out (never fires at 1e10 s).
     terminations["time_out"] = TerminationTermCfg(func=mdp.time_out, time_out=True)
