@@ -99,7 +99,7 @@ _OFF = {
   "kick": 0.0,
   "stand": 0.0,
 }
-VELOCITY_AND_STAND = {**_OFF, "velocity": 1.0, "stand": 1.0}
+VELOCITY_AND_STAND = {**_OFF, "velocity": 1.0, "stand": 0.25}
 PATH_ONLY = {**_OFF, "path": 1.0}
 FOOTSTEP_ONLY = {**_OFF, "footstep": 1.0}
 GOAL_POSE_ONLY = {**_OFF, "goal_pose": 1.0}
@@ -956,9 +956,13 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
           ("r_ankle_roll_link_collision.*",),
           ("l_ankle_roll_link_collision.*",),
         ],
-        # Resting clearance of the lowest geom center when the foot is planted;
-        # subtracted so a planted foot reads ~0.
-        "baseline_height": 0.019,
+        # Resting clearance of the lowest geom center when the foot is
+        # planted; subtracted so a planted foot reads ~0. The min is over the
+        # four sole capsules (radius 0.01), so a foot flat on the plane reads
+        # ~0.0098 -- measured by settling the robot on a plane with ctrl held
+        # at the home pose. NOT 0.019: that is the value at the home keyframe,
+        # where the robot floats 9.1 mm above the ground.
+        "baseline_height": 0.0098,
       },
     ),
     "foot_slip": RewardTermCfg(
@@ -1134,6 +1138,9 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     distance=3.0,
     elevation=-5.0,
     azimuth=90.0,
+    # This task has 34 reward terms; the default of 20 silently drops the rest
+    # from the viser reward bar panel.
+    reward_bar_max_terms=40,
   )
 
   ##

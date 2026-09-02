@@ -431,9 +431,13 @@ def piplus_velocity_env_cfg(
           ("r_ankle_roll_link_collision.*",),
           ("l_ankle_roll_link_collision.*",),
         ],
-        # Resting clearance of the lowest geom center when the foot is planted;
-        # subtracted so a planted foot reads ~0.
-        "baseline_height": 0.019,
+        # Resting clearance of the lowest geom center when the foot is
+        # planted; subtracted so a planted foot reads ~0. The min is over the
+        # four sole capsules (radius 0.01), so a foot flat on the plane reads
+        # ~0.0098 -- measured by settling the robot on a plane with ctrl held
+        # at the home pose. NOT 0.019: that is the value at the home keyframe,
+        # where the robot floats 9.1 mm above the ground.
+        "baseline_height": 0.0098,
       },
     ),
     "foot_slip": RewardTermCfg(
