@@ -19,8 +19,9 @@ apply at full weight everywhere.
 Fall recovery is folded in rather than being a command of its own: a fraction of
 envs respawn on the floor, there is no fall termination, and the getup terms are
 live under every command type. See ``mdp/getup.py`` and the "Getup" constants
-below. This is also the only task that actuates the arms (20 DoF), which is why
-it is the only one without a symmetry transform to keep in sync.
+below. This is also the only task that actuates the arms (20 DoF), so its
+left-right mirror is ``PiPlusMultiSymmetry`` (``JOINT_ORDER_20`` plus a block
+per sub-command), not the 12-DoF ``PiPlusSymmetry`` the other tasks use.
 
 This config is standalone -- it deliberately does not derive from
 ``piplus_velocity_env_cfg`` -- so the two tasks can be tuned independently.
@@ -247,7 +248,7 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     entity_name="robot",
     debug_vis=True,
     resampling_time_range=(10.0, 20.0),
-    num_observations=8,
+    num_observations=NUM_PATH_OBSERVATIONS,
     # A path can be handed to a robot that is already mid-episode and away from
     # its spawn, so anchor each new path at the robot's current position.
     align=True,

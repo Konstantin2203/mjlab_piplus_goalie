@@ -30,8 +30,8 @@ def get_spec(with_arms: bool = False) -> mujoco.MjSpec:
   Args:
     with_arms: Keep the arm joints and their position actuators. When False they
       are deleted from the spec, leaving the arms welded to the torso -- the
-      12-DoF layout the velocity and path tasks (and the index-hard-coded
-      mirror in ``mdp/symmetry.py``) are built around.
+      12-DoF layout the velocity and path tasks (and ``JOINT_ORDER_12`` in
+      ``mdp/symmetry.py``) are built around.
   """
   spec = mujoco.MjSpec.from_file(str(PIPLUS_XML))
   for geom in spec.geoms:
@@ -187,8 +187,8 @@ def get_piplus_robot_cfg(
 
   Args:
     with_arms: Actuate the eight arm joints (20 DoF instead of 12). Off by
-      default: the velocity and path tasks mirror their observations by
-      hard-coded index in ``mdp/symmetry.py`` and assume 12 joints.
+      default: the velocity and path tasks are built around the 12-joint
+      layout (``JOINT_ORDER_12`` in ``mdp/symmetry.py``).
     self_pads: Activate the MJCF's ``*_selfpad`` geoms, for tasks that score
       self-collision. The geoms are always in the spec; without this they stay
       inert, because ``FULL_COLLISION``'s ``disable_other_geoms`` leaves them at

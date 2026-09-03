@@ -64,10 +64,11 @@ Each actuator series uses `BuiltinPositionActuatorCfg` with built-in action lag 
 
 > ⚠️ **`with_arms` changes the DoF count (12 → 20)** and therefore the action
 > dim and the joint blocks of the observation. Only the **multi** task uses it.
-> The velocity and path tasks must stay at 12 because `mdp/symmetry.py` mirrors
-> their observations by hard-coded index. `get_spec(with_arms=False)` deletes the
-> arm joints and their actuators from the spec, so the arms stay welded to the
-> torso exactly as before.
+> `mdp/symmetry.py` carries both layouts (`JOINT_ORDER_12` / `JOINT_ORDER_20`),
+> so the mirror follows either — but a task's symmetry class has to name the
+> right one. `get_spec(with_arms=False)` deletes the arm joints and their
+> actuators from the spec, so the arms stay welded to the torso exactly as
+> before.
 
 The `*_selfpad` geoms are declared in `piplus.xml` under the
 `self_collision_pad` class, the way the reference declares its own — they are
@@ -96,15 +97,25 @@ The function `piplus_velocity_env_cfg(play=False)` builds a `ManagerBasedRlEnvCf
 - **Critic obs**: actor obs + base linear velocity, foot height (from `TerrainHeightSensorCfg`), foot air time, foot contact, foot contact forces. No noise.
 
 > ⚠️ **Symmetry depends on the actor obs layout.** The left-right mirror in
-> `symmetry.py` (`_transform_obs` / `_transform_obs_common`) is hard-coded by
-> index, and each term has its own mirror rule (swap left/right joints, plus a
-> sign flip for axial vs. polar quantities — e.g. ang-vel `[-1,1,-1]`, gravity
-> `[1,-1,1]`, command `[1,-1,-1]`, phase half-period shift `[-1,-1]`). **Any
-> change to the actor obs — term order, dimensions, or what a term measures —
-> requires updating `_transform_obs` and `check_symmetry.py` to match.** The
-> **critic obs does NOT need a mirror transform**: under data augmentation the
-> mirrored sample reuses the original's value/return (`V(mirror(s)) == V(s)`),
-> so the value function is only evaluated on the original obs.
+> `symmetry.py` is a list of `Block`s, one per actor obs term (and one per
+> sub-command inside a `MultiCommand`), each with its own rule: swap left/right
+> joints and negate, plus a sign flip for axial vs. polar quantities — ang-vel
+> `[-1,1,-1]`, gravity `[1,-1,1]`, velocity command `[1,-1,-1]`, phase
+> half-period shift `[-1,-1]`. **Any change to the actor obs — term order,
+> dimensions, or what a term measures — requires editing the block list for
+> that task.** Widths are no longer implicit: the mirror is resolved against the
+> real observation width on first use and raises with the full block breakdown
+> if they disagree, so a drift fails at startup instead of silently mirroring
+> the wrong columns. The **critic obs does NOT need a mirror transform**: under
+> data augmentation the mirrored sample reuses the original's value/return
+> (`V(mirror(s)) == V(s)`), so the value function is only evaluated on the
+> original obs.
+>
+> Run `uv run python -m mjlab_piplus.tasks.mdp.check_symmetry` after touching
+> the observations, the commands, or the robot: it checks the joint order and
+> the left/right axis mirroring against the compiled MJCF, the block widths
+> against each env cfg, and that every mirror is an involution.
+
 - **Sensors**: `ContactSensorCfg` for feet ground contact (ankle roll link subtrees vs. terrain), self-collision sensor, terrain height scan anchored at foot sites.
 - **Curriculum**: velocity command ranges ramp up in two stages, from step 0 to step 800 × 24 (`command_vel`).
 - **Terminations**: time out (20 s episodes), orientation > 45° (`bad_orientation`). The root-height termination is currently commented out.
@@ -142,8 +153,8 @@ It is only the multi task that no longer uses it.
 
 - **The arms stay actuated** (`with_arms=True`, 20 DoF). They were enabled for
   getup, but they earn their place in walking as a balance aid and in the kick.
-  Note this keeps the multi task off `mdp/symmetry.py`, which mirrors the 12-DoF
-  observation by hard-coded index.
+  The mirror follows: `PiPlusMultiSymmetry` uses `JOINT_ORDER_20` and mirrors
+  the composite command block by block.
 - **Self-collision is scored on the pads, with no `secondary`.** A secondary
   *pattern* silently collapses to one geom — `ContactSensorCfg.secondary_policy`
   defaults to `"first"` — so matching `.*_selfpad` on both sides scores every pad
@@ -369,7 +380,18 @@ step.
 
 ### RL config (`piplus_velocity_rl_cfg.py`)
 
-PPO with asymmetric actor-critic (actor/critic each 512-256-128 MLP, ELU activation). Left-right symmetry is enabled via `PiPlusSymmetry` (data augmentation + mirror loss, coeff 0.5). Logs to W&B project `mjlab_piplus`. 24 steps per env per rollout, up to 6 400 iterations, checkpoint every 50 iterations.
+PPO with asymmetric actor-critic (actor/critic each 512-256-128 MLP, ELU activation). Logs to W&B project `mjlab_piplus`. 24 steps per env per rollout, up to 6 400 iterations, checkpoint every 50 iterations.
+
+Each task's RL cfg carries its own symmetry class from `mdp/symmetry.py`, and
+the two enforcement paths are configured independently — `use_data_augmentation`
+appends the mirrored samples to every mini-batch, `use_mirror_loss` adds a soft
+penalty at `mirror_loss_coeff`:
+
+| task | class | augmentation | mirror loss |
+|---|---|---|---|
+| velocity | `PiPlusSymmetry` | off | off (coeff 0.5) |
+| path | `PiPlusPathSymmetry` | on | on, 0.1 |
+| multi | `PiPlusMultiSymmetry` | on | on, 0.1 |
 
 ## Editing conventions
 
