@@ -495,6 +495,27 @@ class variable_posture:
   standing env gets the tight ``std_standing``
   tolerance to hold the default pose. The walking/running split still uses the
   command speed via ``running_threshold``.
+
+  It also differs from mjlab's in *where the mean sits*. mjlab computes
+  ``exp(-mean_j (dq_j/std_j)^2)``; this computes ``mean_j exp(-(dq_j/std_j)^2)``.
+  Both are 1.0 at the default pose and fall off with deviation, but the
+  exp-of-mean form couples every joint into a single exponent, so one joint far
+  from default drives the whole term -- and its gradient -- to zero.
+
+  > WARNING: that is not a theoretical concern, it is what the multi task's
+  > standing collapse was. With ``std_standing`` 0.1 over 20 joints, the deep
+  > squat the policy settled into sat at exponent 122; float32 underflows
+  > ``exp(-x)`` near 88, so the term was *bit-exactly* 0 with a bit-exactly 0
+  > gradient and nothing pulled the pose back. ``upright`` did not object
+  > either -- it scores tilt only, and the squat was perfectly vertical. Even a
+  > 0.3 rad uniform drift scored 1.2e-4 under the old form, i.e. the basin
+  > around the default pose was a few centiradians wide.
+
+  In the mean-of-exp form each joint keeps its own gradient and contributes at
+  most ``1/n``, so a joint that is hopeless cannot silence the ones that are
+  recoverable. The same ``std`` now reads as a per-joint tolerance rather than
+  a budget shared across all of them, which makes the tight ``std_standing``
+  values mean what they look like they mean.
   """
 
   def __init__(self, cfg: RewardTermCfg, env: ManagerBasedRlEnv):
@@ -561,7 +582,10 @@ class variable_posture:
     desired_joint_pos = self.default_joint_pos[:, asset_cfg.joint_ids]
     error_squared = torch.square(current_joint_pos - desired_joint_pos)
 
-    return torch.exp(-torch.mean(error_squared / (std**2), dim=1))
+    # Per-joint exponential, then averaged -- NOT exp of the averaged error.
+    # See the class docstring: the exp-of-mean form lets one badly-off joint
+    # zero the whole term, gradient included.
+    return torch.mean(torch.exp(-error_squared / (std**2)), dim=1)
 
 
 def feet_clearance_positive(*args, **kwargs):
