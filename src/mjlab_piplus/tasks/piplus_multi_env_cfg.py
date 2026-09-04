@@ -279,10 +279,10 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
       debug_vis=True,
       change_command_probability=0.3,
       fractions={
-        "velocity": 0.15,
+        "velocity": 0.2,
         "path": 0.15,
         "goal_pose": 0.15,
-        "footstep": 0.2,
+        "footstep": 0.15,
         "kick": 0.25,
         "stand": 0.10,
       },
@@ -301,9 +301,9 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
           rel_heading_envs=0.3,
           rel_forward_envs=0.15,
           ranges=pi_mdp.UniformVelocityCommandWithStopCfg.Ranges(
-            lin_vel_x=(-0.5, 0.8),
+            lin_vel_x=(-0.5, 1.5),
             lin_vel_y=(-0.4, 0.4),
-            ang_vel_z=(-1.5, 1.5),
+            ang_vel_z=(-math.pi, math.pi),
             heading=(-math.pi, math.pi),
           ),
         ),
@@ -594,7 +594,7 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
         "asset_cfg": base_cfg,
         "foot_asset_cfg": foot_asset_cfg,
         # Reward is progress speed in m/s, capped here (no bonus above this).
-        "max_speed": 0.8,
+        "max_speed": 1.5,
       },
       command_weights=PATH_ONLY,
     ),
@@ -676,7 +676,7 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
         "command_name": "command",
         "sub_command_name": "goal_pose",
         # Progress speed in m/s, capped (no bonus above this).
-        "max_speed": 0.8,
+        "max_speed": 1.5,
       },
       command_weights=GOAL_POSE_ONLY,
     ),
@@ -1020,6 +1020,10 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
       params={
         "limit_angle": math.radians(60.0)
       },  # 0 deg upright, 90 deg would be flat on the ground
+    ),
+    "root_height_below_minimum": TerminationTermCfg(
+     func=mdp.root_height_below_minimum,
+     params={"minimum_height": 0.25},
     ),
   }
 
