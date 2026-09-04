@@ -104,8 +104,8 @@ LEG_HOME_JOINT_POS: dict[str, float] = {
 ARM_HOME_JOINT_POS: dict[str, float] = {
   "r_shoulder_pitch_joint": -1.5708,
   "l_shoulder_pitch_joint": 1.5708,
-  "r_shoulder_roll_joint": -1.2,
-  "l_shoulder_roll_joint": 1.2,
+  "r_shoulder_roll_joint": -1.0,
+  "l_shoulder_roll_joint": 1.0,
   ".*_upper_arm_joint": 0.0,
   "r_elbow_joint": -0.7,
   "l_elbow_joint": 0.7,

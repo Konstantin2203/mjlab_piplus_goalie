@@ -83,13 +83,17 @@ DELAY_MIN = 1
 DELAY_MAX = 1
 WALK_FREQUENCY = 1.75
 
-# Top commanded forward speed (m/s). One number, three places: the velocity
-# command's ``lin_vel_x`` ceiling and the caps on the path and goal-pose
-# progress rewards. They are the same quantity -- a progress cap below the
-# commanded ceiling silently stops paying for the speed the command is still
-# asking for -- so they move together or not at all. (The kick's ``max_speed``
-# is a different thing: closing speed on the ball, not a commanded walk speed.)
-MAX_COMMANDED_SPEED = 1.5
+# Top walking speed (m/s). One number, three places: the velocity command's
+# ``lin_vel_x`` ceiling, and the progress caps of the path and goal-pose
+# rewards. They are not literally the same quantity -- under a path or
+# goal-pose command no twist is commanded at all, so there the cap bounds an
+# *emergent* speed -- but they have to move together: a progress cap below the
+# speed the robot can be asked for stops paying for speed it is still expected
+# to make. Note the caps are a bare clamp, so raising this also raises those
+# two terms' per-step head-room (at weight 2.0: 1.6 -> 3.0 at 0.8 -> 1.5),
+# which shifts their share against the weight-1.0 goal/alignment terms.
+# (The kick's ``max_speed`` is a different thing: closing speed on the ball.)
+MAX_COMMANDED_SPEED = 0.8
 
 # Angular tolerance (Gaussian sigma, radians) of the kick's signed aim reward,
 # narrowed over training by the ``narrow_kick_aim`` curriculum. Both kick aim
@@ -895,7 +899,7 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
         "asset_cfg": SceneEntityCfg("robot", joint_names=(".*",)),
         "command_name": "command",
         "std_standing": {
-          r".*": 0.1,
+          r".*": 0.05,
         },
         "std_walking": {
           r".*_hip_pitch_joint": 0.35,
@@ -904,10 +908,10 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
           r".*_calf_joint": 0.35,
           r".*_ankle_pitch_joint": 0.35,
           r".*_ankle_roll_joint": 0.1,
-          r".*_shoulder_pitch_joint": 0.6,
-          r".*_shoulder_roll_joint": 0.4,
-          r".*_upper_arm_joint": 0.6,
-          r".*_elbow_joint": 0.6,
+          r".*_shoulder_pitch_joint": 0.25,
+          r".*_shoulder_roll_joint": 0.1,
+          r".*_upper_arm_joint": 0.05,
+          r".*_elbow_joint": 0.2,
         },
         "std_running": {
           r".*_hip_pitch_joint": 0.5,
@@ -916,10 +920,10 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
           r".*_calf_joint": 0.5,
           r".*_ankle_pitch_joint": 0.5,
           r".*_ankle_roll_joint": 0.1,
-          r".*_shoulder_pitch_joint": 0.8,
-          r".*_shoulder_roll_joint": 0.5,
-          r".*_upper_arm_joint": 0.8,
-          r".*_elbow_joint": 0.8,
+          r".*_shoulder_pitch_joint": 0.35,
+          r".*_shoulder_roll_joint": 0.15,
+          r".*_upper_arm_joint": 0.05,
+          r".*_elbow_joint": 0.25,
         },
         # NOTE: under a path command the commanded twist reads zero, so this
         # term sees the walking regime; only a velocity command can select
