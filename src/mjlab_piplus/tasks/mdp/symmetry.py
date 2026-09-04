@@ -58,6 +58,7 @@ __all__ = [
   "footstep_command_block",
   "goal_pose_command_block",
   "joint_block",
+  "ball_state_block",
   "kick_command_block",
   "one_hot_block",
   "path_command_block",
@@ -222,12 +223,17 @@ def footstep_command_block(num_observations: int) -> Block:
 
 
 def kick_command_block() -> Block:
-  """``[ball_x, ball_y, ball_vx, ball_vy, cos(dir_err), sin(dir_err), strength]``.
+  """``[cos(dir_err), sin(dir_err), strength]``.
 
-  Ball position and velocity are base-frame planar vectors; the commanded kick
-  direction is an angle relative to the heading; the strength is a speed.
+  The commanded kick direction is an angle relative to the heading, so its
+  cosine is even and its sine odd; the strength is a speed.
   """
-  return sign_block("kick", 1, -1, 1, -1, 1, -1, 1)
+  return sign_block("kick", 1, -1, 1)
+
+
+def ball_state_block() -> Block:
+  """``[ball_x, ball_y, ball_vx, ball_vy]``: two base-frame planar vectors."""
+  return sign_block("ball", 1, -1, 1, -1)
 
 
 ##
@@ -415,10 +421,13 @@ class PiPlusMultiSymmetry(PiPlusSymmetry):
 
   The command tail is
   ``[one_hot(6) | velocity(3) | path(2N+2) | footstep(8M) | goal_pose(4) |
-  kick(7)]`` -- ``MultiCommand.command`` emits the one-hot first and then each
+  kick(3)]`` -- ``MultiCommand.command`` emits the one-hot first and then each
   sub-command in ``terms`` order, skipping the zero-width ``stand``. Blocks are
   fully explicit here (no open-ended tail) because the sizes of two different
   sub-commands would otherwise be indistinguishable from the total width.
+
+  The ball observation is a term of its own, after the command, so it is the
+  last block.
   """
 
   def __init__(
@@ -437,6 +446,7 @@ class PiPlusMultiSymmetry(PiPlusSymmetry):
           footstep_command_block(num_footstep_observations),
           goal_pose_command_block(),
           kick_command_block(),
+          ball_state_block(),
         ]
       ),
       joint_order=JOINT_ORDER_20,

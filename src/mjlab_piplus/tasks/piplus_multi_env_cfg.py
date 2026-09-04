@@ -9,7 +9,11 @@ The policy sees every sub-command concatenated with the inactive blocks zeroed,
 prefixed by a one-hot naming the active type:
 
     [one_hot(6) | velocity(3) | path(2N + 2) | footstep(8M) | goal_pose(4)
-     | kick(7)]
+     | kick(3)]
+
+The ball's position and velocity are *not* in there: they are a sensed quantity
+on a camera's timescale, so they ride in their own observation term with a much
+longer delay, zeroed whenever the kick command is not the active type.
 
 Standing is its own command type here, not a flag on the velocity command, so a
 zero-velocity *velocity* command means walk-in-place. Reward terms that only
@@ -81,6 +85,12 @@ from mjlab_piplus.tasks.mdp.path_following import (
 
 DELAY_MIN = 1
 DELAY_MAX = 1
+
+# Sensing delay of the ball observation, in control steps (200-300 ms at 50 Hz).
+# The ball is seen by a camera rather than read off an encoder, so it lags far
+# behind the proprioceptive terms above.
+BALL_DELAY_MIN = 10
+BALL_DELAY_MAX = 15
 WALK_FREQUENCY = 1.75
 
 # Top walking speed (m/s). One number, three places: the velocity command's
@@ -117,6 +127,10 @@ PATH_ONLY = {**_OFF, "path": 1.0}
 FOOTSTEP_ONLY = {**_OFF, "footstep": 1.0}
 GOAL_POSE_ONLY = {**_OFF, "goal_pose": 1.0}
 KICK_ONLY = {**_OFF, "kick": 1.0}
+# Full weight everywhere, but tripled under a stand command: holding the default
+# pose is most of what "stand" asks for, while under the moving commands the same
+# term pulls against the gait and stays at its nominal weight.
+STAND_BOOSTED = {name: 1.0 for name in _OFF} | {"stand": 3.0}
 
 # Number of future path points in the command observation.
 NUM_PATH_OBSERVATIONS = 8
@@ -187,10 +201,23 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
       params={"frequency": WALK_FREQUENCY, "command_name": "command"},
     ),
     # [one_hot(6) | velocity(3) | path(2N+2) | footstep(8M) | goal_pose(4)
-    #  | kick(7)], inactive blocks zeroed.
+    #  | kick(3)], inactive blocks zeroed.
     "command": ObservationTermCfg(
       func=mdp.generated_commands,
       params={"command_name": "command"},
+    ),
+    # Ball position and velocity in the base frame, zeroed off the kick
+    # command. Its own term rather than part of the kick command block: it is
+    # sensed, and on a camera's timescale -- the delay is applied inside the
+    # term (see ``pi_mdp.ball_state``), not through delay_min_lag/delay_max_lag.
+    "ball": ObservationTermCfg(
+      func=pi_mdp.ball_state,
+      params={
+        "command_name": "command",
+        "sub_command_name": "kick",
+        "min_lag": BALL_DELAY_MIN,
+        "max_lag": BALL_DELAY_MAX,
+      },
     ),
   }
   critic_terms = {
@@ -892,9 +919,10 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
       },  # we dont want even soft collisions
     ),
     # Gated for getup
-    "posture": RewardTermCfg(
+    "posture": MultiRewardTermCfg(
       func=pi_mdp.variable_posture,
       weight=1.0,
+      command_weights=STAND_BOOSTED,
       params={
         "asset_cfg": SceneEntityCfg("robot", joint_names=(".*",)),
         "command_name": "command",

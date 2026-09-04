@@ -126,7 +126,8 @@ def check_obs_widths() -> tuple[tuple[str, PiPlusSymmetry, int, int], ...]:
     + 2
     + OBS_PER_FOOTSTEP * NUM_FOOTSTEP_OBSERVATIONS
     + 4  # goal_pose
-    + 7  # kick
+    + 3  # kick: [cos(dir_err), sin(dir_err), strength]
+    + 4  # ball: [x, y, vx, vy], its own observation term
   )
 
   cases = (

@@ -48,7 +48,8 @@ def track_linear_velocity(
   actual = asset.data.root_link_lin_vel_b
   xy_error = torch.sum(torch.square(command[:, :2] - actual[:, :2]), dim=1)
   z_error = torch.square(actual[:, 2])
-  return torch.exp(-(xy_error + z_error) / std**2)
+  #return torch.exp(-(xy_error + z_error) / std**2)
+  return torch.exp(-(xy_error) / std**2)
 
 
 def track_angular_velocity(
@@ -63,7 +64,8 @@ def track_angular_velocity(
   actual = asset.data.root_link_ang_vel_b
   z_error = torch.square(command[:, 2] - actual[:, 2])
   xy_error = torch.sum(torch.square(actual[:, :2]), dim=1)
-  return torch.exp(-(z_error + xy_error) / std**2)
+  #return torch.exp(-(z_error + xy_error) / std**2)
+  return torch.exp(-(z_error) / std**2)
 
 
 class track_angular_velocity_filtered:
@@ -496,24 +498,25 @@ class variable_posture:
   tolerance to hold the default pose. The walking/running split still uses the
   command speed via ``running_threshold``.
 
-  It also differs from mjlab's in *where the mean sits*. mjlab computes
-  ``exp(-mean_j (dq_j/std_j)^2)``; this computes ``mean_j exp(-(dq_j/std_j)^2)``.
-  Both are 1.0 at the default pose and fall off with deviation, but the
-  exp-of-mean form couples every joint into a single exponent, so one joint far
-  from default drives the whole term -- and its gradient -- to zero.
+  The kernel is mjlab's: ``exp(-mean_j (dq_j/std_j)^2)``, one exponent over all
+  the joints at once.
 
-  > WARNING: that is not a theoretical concern, it is what the multi task's
-  > standing collapse was. With ``std_standing`` 0.1 over 20 joints, the deep
-  > squat the policy settled into sat at exponent 122; float32 underflows
-  > ``exp(-x)`` near 88, so the term was *bit-exactly* 0 with a bit-exactly 0
-  > gradient and nothing pulled the pose back. ``upright`` did not object
-  > either -- it scores tilt only, and the squat was perfectly vertical. Even a
-  > 0.3 rad uniform drift scored 1.2e-4 under the old form, i.e. the basin
-  > around the default pose was a few centiradians wide.
-
-  So ``std`` now reads as a per-joint tolerance rather than a budget shared
-  across all of them, which is what the tight ``std_standing`` values look like
-  they already meant.
+  > WARNING: that exponent saturates hard, and `std` is a budget shared across
+  > every joint rather than a per-joint tolerance. Measured on the multi task
+  > (20 joints, ``std_standing`` 0.1): a *good* stand under DR and observation
+  > noise scores 0.0015, and the deep squat the policy once collapsed into
+  > scores 0.0000 -- so across the states training actually visits, this term's
+  > usable range is about 0.0015 wide. It reaches 1.0 only at the exact default
+  > pose, which nothing ever occupies. Assume it is near-flat outside a few
+  > centiradians of default and do not expect it to price large deviations;
+  > ``upright`` will not catch them either, since it scores tilt only (a deep
+  > squat is perfectly vertical).
+  >
+  > A per-joint form (``mean_j exp(...)``) was tried and reverted: it widened
+  > that range to ~0.37, but gave every joint its own independent hold-still
+  > pressure, which pulls against the gait -- with ``std_walking`` 0.1 on
+  > ``ankle_roll``, the ~0.15 rad excursion lateral balance needs cost about
+  > 0.045/step continuously.
   """
 
   def __init__(self, cfg: RewardTermCfg, env: ManagerBasedRlEnv):
@@ -587,8 +590,9 @@ class variable_posture:
     desired_joint_pos = self.default_joint_pos[:, asset_cfg.joint_ids]
     error_squared = torch.square(current_joint_pos - desired_joint_pos)
 
-    # Mean of exp, not exp of mean -- see the class docstring.
-    return torch.mean(torch.exp(-error_squared * inv_std_sq), dim=1)
+    # One exponent over all joints (mjlab's form) -- see the class docstring
+    # for the saturation this implies.
+    return torch.exp(-torch.mean(error_squared * inv_std_sq, dim=1))
 
 
 def feet_clearance_positive(*args, **kwargs):

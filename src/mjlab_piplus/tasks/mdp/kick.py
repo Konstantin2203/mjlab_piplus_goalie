@@ -5,14 +5,19 @@ the robot; while it is not, it parks the ball far away so the other command
 types never trip over it. That makes the ball's presence in the scene entirely
 this command's business.
 
-The policy sees, in the robot base frame, where the ball is, how fast it is
-moving, which way to kick it, and how hard:
+What the policy sees is split in two, because the two halves are different
+kinds of thing. The *command* is which way to kick and how hard:
 
-    [ball_x, ball_y, ball_vx, ball_vy, cos(dir_err), sin(dir_err), strength]
+    [cos(dir_err), sin(dir_err), strength]
 
 ``dir_err`` is the commanded kick direction relative to the robot's heading,
 encoded as a unit vector because it wraps. ``MultiCommand`` zeroes the whole
 block on envs the kick command is not driving.
+
+Where the ball is and how fast it moves is *sensed*, not commanded, so it is a
+separate observation term (:class:`ball_state`) with its own, much longer
+sensing delay -- the ball is seen by a camera, not by an encoder. See that
+class for the delay and the zeroing.
 
 The ball lifecycle
 ------------------
@@ -79,6 +84,8 @@ from typing import TYPE_CHECKING, Any
 import torch
 from mjlab.entity import Entity
 from mjlab.managers.command_manager import CommandTerm, CommandTermCfg
+from mjlab.managers.observation_manager import ObservationTermCfg
+from mjlab.utils.buffers import DelayBuffer
 from mjlab.utils.lab_api.math import quat_apply, wrap_to_pi
 
 from mjlab_piplus.objects import BALL_RADIUS
@@ -92,6 +99,7 @@ if TYPE_CHECKING:
 __all__ = [
   "KickCommand",
   "KickCommandCfg",
+  "ball_state",
   "kick_approach",
   "kick_ball_speed",
   "kick_contact",
@@ -246,14 +254,21 @@ class KickCommand(CommandTerm):
   def command(self) -> torch.Tensor:
     return torch.cat(
       [
-        self.ball_pos_b,
-        self.ball_vel_b,
         torch.cos(self.dir_err).unsqueeze(1),
         torch.sin(self.dir_err).unsqueeze(1),
         self.strength.unsqueeze(1),
       ],
       dim=1,
     )
+
+  @property
+  def ball_state_b(self) -> torch.Tensor:
+    """Ball position and velocity in the base frame, ``(num_envs, 4)``.
+
+    Not part of ``command``: it is a sensed quantity, observed through
+    :class:`ball_state` with its own delay.
+    """
+    return torch.cat([self.ball_pos_b, self.ball_vel_b], dim=1)
 
   @property
   def target_vel_w(self) -> torch.Tensor:
@@ -673,6 +688,64 @@ def _speed_score(
   """
   err = (speed - strength) / (rel_std * strength.clamp(min=1e-3))
   return torch.exp(-0.5 * err**2)
+
+
+##
+# Observation.
+##
+
+
+class ball_state:
+  """Delayed ball observation: ``[ball_x, ball_y, ball_vx, ball_vy]``, base frame.
+
+  Deliberately not part of the kick *command*. The ball is seen, not commanded,
+  and it is seen by a camera: the delay here is ``min_lag``-``max_lag`` control
+  steps, an order of magnitude longer than the one-step lag the proprioceptive
+  terms carry. That is its own sensing channel, so it gets its own term rather
+  than riding along on a command block whose other entries the policy is told
+  instantly.
+
+  The observation is zeroed on every env the kick command is not driving --
+  *after* the delay as well as before it. Both matter, and for different
+  reasons. Masking on the way in keeps the parked ball (100 m away, see
+  ``KickCommandCfg.park_position``) out of the history, so switching *to* kick
+  cannot serve a 100 m spike out of the buffer; masking on the way out makes
+  the zeroing immediate, so switching *away* from kick does not leave a stale
+  ball in the observation for the length of the lag while the one-hot already
+  says otherwise.
+
+  mjlab's own ``delay_min_lag`` / ``delay_max_lag`` are applied by the
+  observation manager *after* the term, which would delay the mask along with
+  the data -- hence the buffer here. It is mjlab's ``DelayBuffer`` all the
+  same, with the same per-env, resampled-every-step lag, and the observation
+  manager still resets it per episode through the ``reset`` hook below.
+  """
+
+  def __init__(self, cfg: ObservationTermCfg, env: ManagerBasedRlEnv) -> None:
+    self._buffer = DelayBuffer(
+      min_lag=int(cfg.params["min_lag"]),
+      max_lag=int(cfg.params["max_lag"]),
+      batch_size=env.num_envs,
+      device=env.device,
+    )
+
+  def __call__(
+    self,
+    env: ManagerBasedRlEnv,
+    command_name: str,
+    sub_command_name: str | None = None,
+    min_lag: int = 0,
+    max_lag: int = 0,
+  ) -> torch.Tensor:
+    del min_lag, max_lag  # Read once in __init__; the buffer owns them.
+    term, active = resolve_command_term(env, command_name, sub_command_name)
+    assert isinstance(term, KickCommand)
+    mask = active.unsqueeze(1).float()
+    self._buffer.append(term.ball_state_b * mask)
+    return self._buffer.compute() * mask
+
+  def reset(self, env_ids: torch.Tensor | slice | None = None) -> None:
+    self._buffer.reset(batch_ids=env_ids)
 
 
 ##
