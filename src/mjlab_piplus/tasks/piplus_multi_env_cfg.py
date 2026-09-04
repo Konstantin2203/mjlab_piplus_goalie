@@ -83,6 +83,14 @@ DELAY_MIN = 1
 DELAY_MAX = 1
 WALK_FREQUENCY = 1.75
 
+# Top commanded forward speed (m/s). One number, three places: the velocity
+# command's ``lin_vel_x`` ceiling and the caps on the path and goal-pose
+# progress rewards. They are the same quantity -- a progress cap below the
+# commanded ceiling silently stops paying for the speed the command is still
+# asking for -- so they move together or not at all. (The kick's ``max_speed``
+# is a different thing: closing speed on the ball, not a commanded walk speed.)
+MAX_COMMANDED_SPEED = 1.5
+
 # Angular tolerance (Gaussian sigma, radians) of the kick's signed aim reward,
 # narrowed over training by the ``narrow_kick_aim`` curriculum. Both kick aim
 # terms are signed: outside the tolerance they pay *negative*, so a tolerance
@@ -301,7 +309,7 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
           rel_heading_envs=0.3,
           rel_forward_envs=0.15,
           ranges=pi_mdp.UniformVelocityCommandWithStopCfg.Ranges(
-            lin_vel_x=(-0.5, 1.5),
+            lin_vel_x=(-0.5, MAX_COMMANDED_SPEED),
             lin_vel_y=(-0.4, 0.4),
             ang_vel_z=(-math.pi, math.pi),
             heading=(-math.pi, math.pi),
@@ -594,7 +602,7 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
         "asset_cfg": base_cfg,
         "foot_asset_cfg": foot_asset_cfg,
         # Reward is progress speed in m/s, capped here (no bonus above this).
-        "max_speed": 1.5,
+        "max_speed": MAX_COMMANDED_SPEED,
       },
       command_weights=PATH_ONLY,
     ),
@@ -676,7 +684,7 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
         "command_name": "command",
         "sub_command_name": "goal_pose",
         # Progress speed in m/s, capped (no bonus above this).
-        "max_speed": 1.5,
+        "max_speed": MAX_COMMANDED_SPEED,
       },
       command_weights=GOAL_POSE_ONLY,
     ),
@@ -1021,9 +1029,11 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
         "limit_angle": math.radians(60.0)
       },  # 0 deg upright, 90 deg would be flat on the ground
     ),
+    # Backstop only. A squat is perfectly vertical, so `fell_over` never sees
+    # it; this is the one term that does.
     "root_height_below_minimum": TerminationTermCfg(
-     func=mdp.root_height_below_minimum,
-     params={"minimum_height": 0.25},
+      func=mdp.root_height_below_minimum,
+      params={"minimum_height": 0.25},
     ),
   }
 

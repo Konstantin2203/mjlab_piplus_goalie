@@ -511,11 +511,9 @@ class variable_posture:
   > 0.3 rad uniform drift scored 1.2e-4 under the old form, i.e. the basin
   > around the default pose was a few centiradians wide.
 
-  In the mean-of-exp form each joint keeps its own gradient and contributes at
-  most ``1/n``, so a joint that is hopeless cannot silence the ones that are
-  recoverable. The same ``std`` now reads as a per-joint tolerance rather than
-  a budget shared across all of them, which makes the tight ``std_standing``
-  values mean what they look like they mean.
+  So ``std`` now reads as a per-joint tolerance rather than a budget shared
+  across all of them, which is what the tight ``std_standing`` values look like
+  they already meant.
   """
 
   def __init__(self, cfg: RewardTermCfg, env: ManagerBasedRlEnv):
@@ -546,6 +544,13 @@ class variable_posture:
     )
     self.std_running = torch.tensor(std_running, device=env.device, dtype=torch.float32)
 
+    # The stds are fixed; only which regime an env is in varies per step. Keep
+    # 1/std^2 so the hot path is a multiply, not a pow followed by a divide,
+    # over a (num_envs, num_joints) tensor every step.
+    self.inv_std_sq_standing = self.std_standing**-2
+    self.inv_std_sq_walking = self.std_walking**-2
+    self.inv_std_sq_running = self.std_running**-2
+
   def __call__(
     self,
     env: ManagerBasedRlEnv,
@@ -572,20 +577,18 @@ class variable_posture:
     walking_mask = walking.float()
     running_mask = running.float()
 
-    std = (
-      self.std_standing * standing_mask.unsqueeze(1)
-      + self.std_walking * walking_mask.unsqueeze(1)
-      + self.std_running * running_mask.unsqueeze(1)
+    inv_std_sq = (
+      self.inv_std_sq_standing * standing_mask.unsqueeze(1)
+      + self.inv_std_sq_walking * walking_mask.unsqueeze(1)
+      + self.inv_std_sq_running * running_mask.unsqueeze(1)
     )
 
     current_joint_pos = asset.data.joint_pos[:, asset_cfg.joint_ids]
     desired_joint_pos = self.default_joint_pos[:, asset_cfg.joint_ids]
     error_squared = torch.square(current_joint_pos - desired_joint_pos)
 
-    # Per-joint exponential, then averaged -- NOT exp of the averaged error.
-    # See the class docstring: the exp-of-mean form lets one badly-off joint
-    # zero the whole term, gradient included.
-    return torch.mean(torch.exp(-error_squared / (std**2)), dim=1)
+    # Mean of exp, not exp of mean -- see the class docstring.
+    return torch.mean(torch.exp(-error_squared * inv_std_sq), dim=1)
 
 
 def feet_clearance_positive(*args, **kwargs):
