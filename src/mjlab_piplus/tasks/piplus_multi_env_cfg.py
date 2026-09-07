@@ -927,7 +927,7 @@ def piplus_multi_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
         "asset_cfg": SceneEntityCfg("robot", joint_names=(".*",)),
         "command_name": "command",
         "std_standing": {
-          r".*": 0.05,
+          r".*": 0.1,
         },
         "std_walking": {
           r".*_hip_pitch_joint": 0.35,
