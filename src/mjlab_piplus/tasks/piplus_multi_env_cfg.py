@@ -89,8 +89,8 @@ DELAY_MAX = 1
 # Sensing delay of the ball observation, in control steps (200-300 ms at 50 Hz).
 # The ball is seen by a camera rather than read off an encoder, so it lags far
 # behind the proprioceptive terms above.
-BALL_DELAY_MIN = 10
-BALL_DELAY_MAX = 15
+BALL_DELAY_MIN = 2
+BALL_DELAY_MAX = 5
 WALK_FREQUENCY = 1.75
 
 # Top walking speed (m/s). One number, three places: the velocity command's
