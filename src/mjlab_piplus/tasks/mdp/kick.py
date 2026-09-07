@@ -277,9 +277,6 @@ class KickCommand(CommandTerm):
       [torch.cos(self.kick_dir_w), torch.sin(self.kick_dir_w)], dim=1
     )
 
-  # No ``wants_stand``: the ball comes back after every kick, so there is never
-  # a point in the command period where the robot is meant to stop and stand.
-
   # The GoalPoseTerm contract, with the ball as the "goal": lets the shared
   # goal-bearing rewards be pointed at this command too.
 

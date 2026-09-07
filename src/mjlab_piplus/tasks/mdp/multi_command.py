@@ -128,8 +128,9 @@ class StandCommand(CommandTerm):
   """A command that says nothing except "stand still".
 
   Contributes zero observation dimensions -- the MultiCommand one-hot already
-  tells the policy that stand is active. Its only content is ``wants_stand``,
-  which the reward terms query through :func:`stand_mask`.
+  tells the policy that stand is active. It carries no content at all: being
+  the active type *is* the signal, and ``MultiCommand.stand_mask`` reads that
+  type directly.
   """
 
   cfg: StandCommandCfg
@@ -137,15 +138,10 @@ class StandCommand(CommandTerm):
   def __init__(self, cfg: StandCommandCfg, env: ManagerBasedRlEnv) -> None:
     super().__init__(cfg, env)
     self._empty = torch.zeros(self.num_envs, 0, device=self.device)
-    self._wants_stand = torch.ones(self.num_envs, dtype=torch.bool, device=self.device)
 
   @property
   def command(self) -> torch.Tensor:
     return self._empty
-
-  @property
-  def wants_stand(self) -> torch.Tensor:
-    return self._wants_stand
 
   def _update_metrics(self) -> None:
     pass
@@ -243,17 +239,17 @@ class MultiCommand(CommandTerm):
   def stand_mask(self) -> torch.Tensor:
     """Per-env "the robot should stand still" mask.
 
-    True where the active sub-command asks to stand. ``StandCommand`` always
-    does; other terms opt in with a ``wants_stand`` property (e.g. the path
-    command once it has settled on its goal pose).
+    True exactly where the stand command type is active, and nowhere else.
+    Standing is its own command type here, so no other sub-command may declare
+    itself standing: a path or goal-pose env that has arrived is still under a
+    *moving* command and must keep the walking regime (loose posture std,
+    running gait clock), or it silently switches to the standing regime for the
+    rest of its dwell at the goal.
     """
-    mask = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
-    for i, name in enumerate(self.term_names):
-      wants = getattr(self.terms[name], "wants_stand", None)
-      if wants is None:
-        continue
-      mask |= wants & (self.active_type == i)
-    return mask
+    name = self.cfg.stand_command_name
+    if name not in self.terms:
+      return torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+    return self.active_mask(name)
 
   @property
   def velocity_command(self) -> torch.Tensor:
@@ -515,6 +511,10 @@ class MultiCommandCfg(CommandTermCfg):
 
   velocity_command_name: str = "velocity"
   """Which sub-command :func:`velocity_command` reads the commanded twist from."""
+
+  stand_command_name: str = "stand"
+  """Which sub-command :attr:`MultiCommand.stand_mask` reports as standing. It
+  is the *only* source of the stand mask: a sub-command cannot opt itself in."""
 
   resampling_time_range: tuple[float, float] = (0.0, 0.0)
   """Unused. The next resample is armed from the *selected* sub-command's

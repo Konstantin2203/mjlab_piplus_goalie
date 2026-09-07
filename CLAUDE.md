@@ -162,6 +162,56 @@ It is only the multi task that no longer uses it.
   the secondary is correct here, not a shortcut: bit-2 isolation already means a
   pad's only possible contact partner is another pad.
 
+### Standing in the multi task
+
+`stand_mask` is **exactly "the stand command type is active"** — nothing else.
+Sub-commands used to be able to declare themselves standing through a
+`wants_stand` property (the path command at its goal, the velocity command's
+stand flag, the goal-pose command's standing envs); that opt-in is gone, along
+with the path command's `stand_at_goal` / `stand_delay` / `twist_command_name`
+plumbing that fed it. Standing is its own command type here, so a path or
+goal-pose env that has arrived is still under a *moving* command and keeps the
+walking regime. `MultiCommandCfg.stand_command_name` (default `"stand"`) names
+the type the mask reads.
+
+> ⚠️ **`std_standing` at 0.05 loses the stand pose entirely, and the loss is
+> permanent.** `variable_posture` is one exponent over all 20 joints, so the
+> standing regime's tolerance is a cliff, not a slope. Measured on
+> `bp9zuz30` (std 0.05), forcing every env onto the stand command, no DR:
+>
+> | iter | RMS Δq (rad) | \|shoulder_roll\| | posture | total/step |
+> |---|---|---|---|---|
+> | 0 | 0.025 | 0.03 | 2.32 | 6.30 |
+> | 200 | 0.029 | 0.01 | 2.13 | 6.13 |
+> | 400 | 0.082 | 0.04 | 0.20 | 4.19 |
+> | 800 | 0.340 | 0.29 | **0.0000** | 4.00 |
+> | 3000 | 0.408 | 0.85 | 0.0000 | 4.00 |
+> | 6399 | 0.716 | 2.03 | 0.0000 | 4.00 |
+>
+> A ~0.08 rad wobble at iteration 400 already costs 90 % of the term; by 800 it
+> is *identically zero in float32* and so is its gradient. From there the pose
+> is a free direction — the total is flat at 4.00 for 5600 iterations while the
+> shoulders travel another 1.7 rad — and the policy random-walks into an
+> arms-out, legs-splayed stance. Nothing else prices a static offset:
+> `action_rate_l2` charges changes, not magnitude, and there is no `action_l2`.
+> Holding the default pose instead is worth **6.27/step against 3.99** (posture
+> 2.30 at weight 3.0), so the policy is not trading the pose for anything — it
+> simply cannot see it any more.
+>
+> Widening the std keeps the pose: at 0.1 and 0.15 (`cct7hpwm`, `ww5l7ll3`) the
+> stand pose is still RMS 0.012–0.031 rad at iteration 1000, where 0.05 had
+> already escaped by 800. The cliff moves, it does not disappear — at std 0.1 an
+> RMS of 0.3 is still a dead 0.0004 — so treat any *transient* excursion during
+> early training as permanent.
+
+> ⚠️ **Standing is scored more leniently than walking, which is backwards.**
+> Same policy, same checkpoint, per-step posture payout: **0.85 under a velocity
+> command** (std_walking, weight 1.0, RMS 0.13), **0.11 under kick**, **0.0000
+> under stand** (std_standing, weight 3.0). The 3x stand boost is multiplying a
+> term the tight std has already zeroed. Under walking the term is alive and it
+> shows — the arms sit within 0.02 rad of default while walking and 2.03 rad
+> from it while standing.
+
 ### Action scale
 
 The multi task uses mjlab's plain `JointPositionActionCfg` at a uniform

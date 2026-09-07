@@ -131,8 +131,7 @@ class GoalPoseCommand(CommandTerm):
     ``yaw_err`` is a wrapping angle, discontinuous at +/-pi and awkward to learn
     against, so the orientation is handed to the policy as a unit vector
     instead. Rewards read ``goal_command_b`` / ``yaw_err`` off this term rather
-    than slicing here. The stand request is not part of the command: it is
-    reported through ``wants_stand``, like every other command term.
+    than slicing here.
     """
     yaw_err = self.goal_command_b[:, 2]
     return torch.stack(
@@ -149,16 +148,6 @@ class GoalPoseCommand(CommandTerm):
   def yaw_err(self) -> torch.Tensor:
     """Wrapped yaw error to the goal orientation, ``(num_envs,)``."""
     return self.goal_command_b[:, 2]
-
-  @property
-  def wants_stand(self) -> torch.Tensor:
-    """Per-env "stand still" request, read by ``MultiCommand.stand_mask``.
-
-    True for envs whose goal was set to their current pose. Under a
-    ``MultiCommand`` standing is its own command type, so set
-    ``rel_standing_envs=0`` there and let that type do the standing.
-    """
-    return self.is_standing_env
 
   def _update_metrics(self) -> None:
     max_command_time = self.cfg.resampling_time_range[1]
@@ -422,18 +411,6 @@ class UniformVelocityCommandWithStop(CommandTerm):
     if not self.cfg.expose_stand_flag:
       return self.vel_command_b
     return torch.cat([self.vel_command_b, self.stand_flag], dim=1)
-
-  @property
-  def wants_stand(self) -> torch.Tensor:
-    """Per-env "stand still" request, read by ``MultiCommand.stand_mask``.
-
-    Always False when the stand flag is not exposed, which is how the multi
-    command configures this term: standing is its own command type there, so
-    this term only ever produces walk / walk-in-place.
-    """
-    if not self.cfg.expose_stand_flag:
-      return torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
-    return self.stand_flag[:, 0] > 0.5
 
   def _update_metrics(self) -> None:
     max_command_time = self.cfg.resampling_time_range[1]

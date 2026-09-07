@@ -176,10 +176,8 @@ class PathCommand(CommandTerm):
     self.near_goal = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
     self.at_goal = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
     # Seconds the robot has continuously held the full goal pose (position +
-    # orientation); drives the delayed stand trigger (see ``stand_delay``).
+    # orientation). Reported only; standing is the stand command's job.
     self.at_goal_time = torch.zeros(self.num_envs, device=self.device)
-    # Latched "settled on the goal pose" flag, exposed as ``wants_stand``.
-    self._wants_stand = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
     # Envs whose freshly sampled path still has to be shifted onto the robot.
     # The shift is applied in _update_command, not here: at an episode reset the
     # command manager runs *before* sim.forward(), so the robot pose visible
@@ -191,21 +189,7 @@ class PathCommand(CommandTerm):
     # Set by create_gui() when the viewer is active.
     self._gui_show_obstacles: "viser.GuiCheckboxHandle | None" = None
     self._gui_show_path: "viser.GuiCheckboxHandle | None" = None
-    # Twist command whose stand flag we drive near the goal (resolved lazily).
-    self._twist_term = None
     self._update_robot_pose()
-
-  @property
-  def wants_stand(self) -> torch.Tensor:
-    """Per-env "stand still" request, read by ``MultiCommand.stand_mask``.
-
-    True once the robot has held the full goal pose for ``stand_delay`` seconds.
-    Gated by ``cfg.stand_at_goal`` (default off, matching the standalone path
-    task where the equivalent twist-flag drive is disabled).
-    """
-    if not self.cfg.stand_at_goal:
-      return torch.zeros_like(self._wants_stand)
-    return self._wants_stand
 
   def _load_or_generate_pathlib(
     self, cfg: PathCommandCfg
@@ -291,18 +275,6 @@ class PathCommand(CommandTerm):
           f.write(f"{waypoint_str},")
         f.write(f"{self.global_command_counter}\n")
     self.global_command_counter += 1
-
-  def _set_twist_stand(self, stand: torch.Tensor) -> None:
-    """Drive the twist command's stand flag from a boolean mask (near-goal).
-
-    The twist command runs before this one each step, so overwriting its
-    stand_flag here takes effect for the current step's observation and rewards.
-    """
-    if self._twist_term is None:
-      self._twist_term = self._env.command_manager.get_term(self.cfg.twist_command_name)
-    twist = self._twist_term
-    if twist is not None and hasattr(twist, "stand_flag"):
-      twist.stand_flag[:, 0] = stand.float()
 
   def _update_metrics(self):
     pass
@@ -398,20 +370,15 @@ class PathCommand(CommandTerm):
     )  # (num_envs, 2)
     self.command_b = torch.cat([path_obs, orient], dim=-1)
 
-    # At the goal pose (position + orientation), ask the (hidden) twist command
-    # to stand: this freezes the gait phase and gates off the phase-based rewards
-    # so the robot stands still. Delayed by a dwell timer: the robot must hold
-    # the goal pose continuously for ``stand_delay`` seconds first, so it settles
-    # onto the goal instead of freezing the instant it arrives.
+    # Dwell timer on the full goal pose. It used to trigger a stand at the goal;
+    # standing is the stand command's own type now, so this only records how long
+    # the robot has held the goal.
     dt = self._env.step_dt
     self.at_goal_time = torch.where(
       self.at_goal,
       self.at_goal_time + dt,
       torch.zeros_like(self.at_goal_time),
     )
-    stand = self.at_goal & (self.at_goal_time >= self.cfg.stand_delay)
-    self._wants_stand = stand
-    # self._set_twist_stand(stand)
 
     if self.cfg.eval_mode:
       # hacky calculate metrics
@@ -542,18 +509,6 @@ class PathCommandCfg(CommandTermCfg):
   command is set to stand (freezing the gait) only once the robot is both within
   ``near_goal_threshold`` and within this yaw error of the goal orientation, so
   the gait stays active while it turns onto the goal heading."""
-  stand_delay: float = 1.0
-  """Seconds the robot must remain within both ``near_goal_threshold`` and
-  ``near_goal_yaw_threshold`` *continuously* before the twist command is set to
-  stand. 0 stands the instant the goal pose is reached; larger values make the
-  robot settle onto the goal before the gait freezes. The timer resets whenever
-  the robot leaves the goal pose or a new goal is sampled."""
-  twist_command_name: str = "twist"
-  """Name of the velocity command whose stand flag is driven at the goal pose."""
-  stand_at_goal: bool = False
-  """Whether ``wants_stand`` reports the delayed at-goal trigger. Only consulted
-  when this term is a sub-command of a ``MultiCommand``; off by default, matching
-  the standalone path task where the twist-flag drive is disabled."""
   align: bool = False
   """Shift each newly sampled path (and its obstacle world) so it starts at the
   robot's current xy. Required when the path can be handed to a robot that is
