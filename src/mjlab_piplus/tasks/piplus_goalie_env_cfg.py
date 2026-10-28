@@ -22,6 +22,7 @@ from mjlab.utils.noise import UniformNoiseCfg as Unoise
 from mjlab.viewer import ViewerConfig
 
 from mjlab_piplus.robot.piplus_constants import get_piplus_robot_cfg
+from mjlab_piplus.objects.ball import get_ball_cfg
 from mjlab_piplus.tasks import mdp as pi_mdp
 from mjlab_piplus.terrain import AstroturfTerrainCfg
 
@@ -30,7 +31,7 @@ DELAY_MAX = 1
 WALK_FREQUENCY = 1.75
 
 
-def piplus_velocity_env_cfg(
+def piplus_goalie_env_cfg(
   play: bool = False, static: bool = False
 ) -> ManagerBasedRlEnvCfg:
   foot_sites = ("l_foot", "r_foot")
