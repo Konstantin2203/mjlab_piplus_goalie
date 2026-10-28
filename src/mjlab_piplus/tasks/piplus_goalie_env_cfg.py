@@ -23,6 +23,7 @@ from mjlab.viewer import ViewerConfig
 
 from mjlab_piplus.robot.piplus_constants import get_piplus_robot_cfg
 from mjlab_piplus.objects.ball import get_ball_cfg
+from mjlab_piplus.objects.ball import get_goal_line_cfg
 from mjlab_piplus.tasks import mdp as pi_mdp
 from mjlab_piplus.terrain import AstroturfTerrainCfg
 
@@ -571,7 +572,8 @@ def piplus_goalie_env_cfg(
     env_spacing=0.0,
     entities={
         "robot": get_piplus_robot_cfg(),
-        "ball": get_ball_cfg(),},
+        "ball": get_ball_cfg(),
+        "goal_line": get_goal_line_cfg()},
     sensors=(feet_contact_sensor_cfg, self_collision_cfg,), # foot_height_scan),
     terrain=TerrainEntityCfg(
       terrain_type="plane",
