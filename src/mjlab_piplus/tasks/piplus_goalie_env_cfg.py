@@ -23,7 +23,7 @@ from mjlab.viewer import ViewerConfig
 
 from mjlab_piplus.robot.piplus_constants import get_piplus_robot_cfg
 from mjlab_piplus.objects.ball import get_ball_cfg
-from mjlab_piplus.objects.ball import get_goal_line_cfg
+from mjlab_piplus.objects.goal_line import get_goal_line_cfg
 from mjlab_piplus.tasks import mdp as pi_mdp
 from mjlab_piplus.terrain import AstroturfTerrainCfg
 
