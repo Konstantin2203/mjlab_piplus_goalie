@@ -573,7 +573,8 @@ def piplus_goalie_env_cfg(
     entities={
         "robot": get_piplus_robot_cfg(),
         "ball": get_ball_cfg(),
-        "goal_line": get_goal_line_cfg()},
+        #"goal_line": get_goal_line_cfg()
+        },
     sensors=(feet_contact_sensor_cfg, self_collision_cfg,), # foot_height_scan),
     terrain=TerrainEntityCfg(
       terrain_type="plane",
