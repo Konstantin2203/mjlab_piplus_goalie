@@ -23,7 +23,6 @@ def get_goal_line_spec(
 ) -> mujoco.MjSpec:
   spec = mujoco.MjSpec()
   body = spec.worldbody.add_body(name="goal_line")
-  body.add_freejoint(name="goal_line_root")
   body.add_geom(
     name="goal_line",
     type=mujoco.mjtGeom.mjGEOM_BOX,
@@ -48,7 +47,7 @@ def get_goal_line_cfg(
   """
   return EntityCfg(
     init_state=EntityCfg.InitialStateCfg(
-      pos=(4.0, 0.0, 0.000),  # Resting on the plane, not dropped onto it.
+      pos=(-0.2, 0.0, 0.000),  # Resting on the plane, not dropped onto it.
       # The freejoint is the only joint, so there is nothing for the joint
       # dicts to match; leaving them at the defaults keeps the entity builder
       # from looking for a keyframe that this spec does not have.

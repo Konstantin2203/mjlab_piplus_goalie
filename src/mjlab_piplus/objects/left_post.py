@@ -1,9 +1,42 @@
-import mujoco from mjlab.entity import EntityCfg
+import mujoco 
+from mjlab.entity import EntityCfg
 
-POST_HEIGHT = 1.2
-POST_RADIUS = 0.025
+LEFT_POST_HEIGHT = 1.2
+LEFT_POST_RADIUS = 0.025
 
 
-def get_post_spec(
+def get_left_post_spec(
+  radius: float = LEFT_POST_RADIUS,
+  height: float = LEFT_POST_HEIGHT,
+  rgba: tuple[float, float, float, float] = (0.0, 0.1, 0.4, 1.0),
+) -> mujoco.MjSpec:
+  spec = mujoco.MjSpec()
+  body = spec.worldbody.add_body(name="left_post")
+  body.add_geom(
+    name="left_post",
+    type=mujoco.mjtGeom.mjGEOM_CYLINDER,
+    size=(radius, height / 2),
+    rgba=rgba,
+  )
+  return spec
 
-)
+def get_left_post_cfg(
+  radius: float = LEFT_POST_RADIUS,
+  height: float = LEFT_POST_HEIGHT,
+) -> EntityCfg:
+  """Scene entity for the left post, resting on the ground at the world origin.
+
+  It is a floating-base, non-articulated entity: one body, one freejoint, one
+  geom. Place it per episode with a ``reset_root_state_uniform`` event.
+  """
+  return EntityCfg(
+    init_state=EntityCfg.InitialStateCfg(
+      pos=(-0.2, 0.925, height / 2),  # Resting on the plane, not dropped onto it.
+      # The freejoint is the only joint, so there is nothing for the joint
+      # dicts to match; leaving them at the defaults keeps the entity builder
+      # from looking for a keyframe that this spec does not have.
+      joint_pos={},
+      joint_vel={},
+    ),
+    spec_fn=lambda: get_left_post_spec(radius=radius, height=height),
+  )
