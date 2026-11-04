@@ -83,17 +83,15 @@ def piplus_goalie_env_cfg(
       func=mdp.last_action,
       # noise=Unoise(n_min=-0.1, n_max=0.1),
     ),
-    "phase": ObservationTermCfg(
-      func=pi_mdp.phase,
-      params={
-        "frequency": WALK_FREQUENCY,
-        "command_name": "twist",
-      },
-    ),
-    "command": ObservationTermCfg(
-      func=mdp.generated_commands,
-      params={"command_name": "twist"},
-    ),
+    "ball": ObservationTermCfg(
+      func=pi_mdp.ball_state,
+      params={"command_name": "shot",
+              "min_lag": 2,
+              "max_lag": 5,
+              },
+
+
+    )
   }
   critic_terms = {
     **actor_terms,
@@ -157,23 +155,9 @@ def piplus_goalie_env_cfg(
   ##
 
   commands: dict[str, CommandTermCfg] = {
-    "twist": pi_mdp.UniformVelocityCommandWithStopCfg(
-      entity_name="robot",
-      resampling_time_range=(3.0, 8.0),
-      debug_vis=True,
-      heading_command=True,
-      heading_control_stiffness=0.0,
-      rel_standing_envs=0.075,
-      rel_walk_in_place_envs=0.075,
-      rel_heading_envs=0.3,
-      rel_forward_envs=0.15,
-      ranges=pi_mdp.UniformVelocityCommandWithStopCfg.Ranges(
-        lin_vel_x=(-0.5, 1.0),
-        lin_vel_y=(-0.25, 0.25),
-        ang_vel_z=(-1.5, 1.5),
-        heading=(-math.pi, math.pi),
+    "shot": pi_mdp.KickCommandCfg(
+       entity_name="robot"
       ),
-    )
   }
 
   ##
@@ -337,16 +321,7 @@ def piplus_goalie_env_cfg(
   # Rewards
   ##
   rewards = {
-    "track_linear_velocity": RewardTermCfg(
-      func=mdp.track_linear_velocity,
-      weight=2.0,
-      params={"command_name": "twist", "std": math.sqrt(0.125)},
-    ),
-    "track_angular_velocity": RewardTermCfg(
-      func=mdp.track_angular_velocity,
-      weight=2.0,
-      params={"command_name": "twist", "std": math.sqrt(0.5)},
-    ),
+
     # stability rewards
     "upright": RewardTermCfg(
         func=mdp.upright,
@@ -379,80 +354,8 @@ def piplus_goalie_env_cfg(
         "force_threshold": 2.0,
       },  # we dont want even soft collisions
     ),
-    "pose": RewardTermCfg(
-      func=pi_mdp.variable_posture,
-      weight=1.0,
-      params={
-        "asset_cfg": SceneEntityCfg("robot", joint_names=(".*",)),
-        "command_name": "twist",
-        "std_standing": {r".*": 0.05,},
-        "std_walking": {
-          r".*_hip_pitch_joint": 0.35,
-          r".*_hip_roll_joint": 0.15,
-          r".*_thigh_joint": 0.15,
-          r".*_calf_joint": 0.35,
-          r".*_ankle_pitch_joint": 0.35,
-          r".*_ankle_roll_joint": 0.1,
-        },
-        "std_running": {
-          r".*_hip_pitch_joint": 0.5,
-          r".*_hip_roll_joint": 0.25,
-          r".*_thigh_joint": 0.25,
-          r".*_calf_joint": 0.5,
-          r".*_ankle_pitch_joint": 0.5,
-          r".*_ankle_roll_joint": 0.1,
-        },
-        "running_threshold": 0.5,
-      },
-    ),
     # shaping rewards
     # encourage feet to be at target height when the foot velocity is high (i.e. during swing)
-    "foot_gait": RewardTermCfg(
-      func=pi_mdp.feet_gait,
-      weight=1.0,
-      params={
-        "frequency": WALK_FREQUENCY,
-        "offset": [0.0, 0.5],
-        "threshold": 0.56,
-        "command_name": "twist",
-        "sensor_name": "feet_ground_contact",
-      },
-    ),
-    "feet_phase": RewardTermCfg(
-      func=pi_mdp.feet_phase,
-      weight=1.0,
-      params={
-        "frequency": WALK_FREQUENCY,
-        "offset": [0.0, 0.5],
-        "foot_height": 0.03,
-        "stance_threshold": 0.56,
-        "std": 0.025,
-        "command_name": "twist",
-        "asset_cfg": SceneEntityCfg("robot"),
-        # Clearance is the lowest collision geom per foot (tilt-invariant).
-        # Order matches `offset`: right (0.0) first, left (0.5) second.
-        "foot_geom_names": [
-          ("r_ankle_roll_link_collision.*",),
-          ("l_ankle_roll_link_collision.*",),
-        ],
-        # Resting clearance of the lowest geom center when the foot is
-        # planted; subtracted so a planted foot reads ~0. The min is over the
-        # four sole capsules (radius 0.01), so a foot flat on the plane reads
-        # ~0.0098 -- measured by settling the robot on a plane with ctrl held
-        # at the home pose. NOT 0.019: that is the value at the home keyframe,
-        # where the robot floats 9.1 mm above the ground.
-        "baseline_height": 0.0098,
-      },
-    ),
-    "foot_slip": RewardTermCfg(
-      func=pi_mdp.feet_slip,
-      weight=-0.25,
-      params={
-        "sensor_name": "feet_ground_contact",
-        "command_name": "twist",
-        "asset_cfg": SceneEntityCfg("robot", site_names=foot_sites),
-      },
-    ),
     # "soft_landing": RewardTermCfg(
     #   func=pi_mdp.soft_landing,
     #   weight=-1e-3,
@@ -519,28 +422,7 @@ def piplus_goalie_env_cfg(
   ##
   # Curriculum
   ##
-  curriculum = {
-    "command_vel": CurriculumTermCfg(
-      func=mdp.commands_vel,
-      params={
-        "command_name": "twist",
-        "velocity_stages": [
-          {
-            "step": 0 * 24,
-            "lin_vel_x": (-0.25, 0.35),
-            "lin_vel_y": (-0.15, 0.15),
-            "ang_vel_z": (-math.pi / 4, math.pi / 4),
-          },
-          {
-            "step": 800 * 24,
-            "lin_vel_x": (-0.5, 0.8),
-            "lin_vel_y": (-0.4, 0.4),
-            "ang_vel_z": (-1.5, 1.5),
-          },
-        ],
-      },
-    ),
-  }
+  curriculum = {}
 
   ##
   # Sensors
@@ -615,13 +497,6 @@ def piplus_goalie_env_cfg(
   )
   episode_length_s = 20.0
   if play:
-    metrics["phase_metric"] = MetricsTermCfg(
-      func=pi_mdp.phase_metric,
-      params={
-        "frequency": WALK_FREQUENCY,
-        "command_name": "twist",
-      },
-    )
     scene.num_envs = 1
     events = {  # remove other dr in play mode
       "reset_base": events["reset_base"],
