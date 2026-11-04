@@ -44,7 +44,7 @@ def get_goal_line_cfg(
   """
   return EntityCfg(
     init_state=EntityCfg.InitialStateCfg(
-      pos=(4.0, 0.0, 0.000),  # Resting on the plane, not dropped onto it.
+      pos=(4.0, 0.0, 0.001),  # Resting on the plane, not dropped onto it.
       # The freejoint is the only joint, so there is nothing for the joint
       # dicts to match; leaving them at the defaults keeps the entity builder
       # from looking for a keyframe that this spec does not have.
