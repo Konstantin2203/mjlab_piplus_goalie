@@ -8,7 +8,8 @@ from mjlab_piplus.objects.ball import (
 )
 from mjlab_piplus.objects.goal_line import (
   GOAL_WIDTH, 
-  GOAL_LINE_WIDTH, 
+  GOAL_LINE_WIDTH,
+  GOAL_LINE_HEIGHT, 
   get_goal_line_cfg, 
   get_goal_line_spec,
 )
@@ -23,6 +24,7 @@ __all__ = [
   "get_ball_spec",
   "GOAL_WIDTH",
   "GOAL_LINE_WIDTH",
+  "GOAL_LINE_HEIGHT",
   "get_goal_line_cfg",
   "get_goal_line_spec",
 ]

@@ -12,11 +12,13 @@ from mjlab.entity import EntityCfg
 
 GOAL_WIDTH = 1.8
 GOAL_LINE_WIDTH = 0.05
+GOAL_LINE_HEIGHT = 0.01
 
 
 def get_goal_line_spec(
   width: float = GOAL_WIDTH,
   length: float = GOAL_LINE_WIDTH,
+  height: float = GOAL_LINE_HEIGHT,
   rgba: tuple[float, float, float, float] = (0.0, 0.1, 0.4, 1.0),
 ) -> mujoco.MjSpec:
   spec = mujoco.MjSpec()
@@ -25,10 +27,11 @@ def get_goal_line_spec(
   body.add_geom(
     name="goal_line",
     type=mujoco.mjtGeom.mjGEOM_BOX,
-    size=(length / 2, width / 2, 0.01),
+    size=(length / 2, width / 2, height / 2),
     contype=0,
     conaffinity=0,
     rgba=rgba,
+    group=2,  
   )
   return spec
 
@@ -36,6 +39,7 @@ def get_goal_line_spec(
 def get_goal_line_cfg(
   width: float = GOAL_WIDTH,
   length: float = GOAL_LINE_WIDTH,
+  height: float = GOAL_LINE_HEIGHT,
 ) -> EntityCfg:
   """Scene entity for the ball, resting on the ground at the world origin.
 
@@ -44,12 +48,12 @@ def get_goal_line_cfg(
   """
   return EntityCfg(
     init_state=EntityCfg.InitialStateCfg(
-      pos=(40.0, 40.0, 0.1),  # Resting on the plane, not dropped onto it.
+      pos=(4.0, 0.0, 0.000),  # Resting on the plane, not dropped onto it.
       # The freejoint is the only joint, so there is nothing for the joint
       # dicts to match; leaving them at the defaults keeps the entity builder
       # from looking for a keyframe that this spec does not have.
       joint_pos={},
       joint_vel={},
     ),
-    spec_fn=lambda: get_goal_line_spec(width=width, length=length),
+    spec_fn=lambda: get_goal_line_spec(width=width, length=length, height=height),
   )
