@@ -12,7 +12,7 @@ from mjlab_piplus.tasks.mdp import PiPlusSymmetry
 
 @dataclass
 class PiPlusPpoAlgorithmCfg(RslRlPpoAlgorithmCfg):
-  symmetry_cfg: dict[str, Any] | None = field(
+  symmetry_cfg: dict[str, Any] | None = None(
     default_factory=lambda: {
       "data_augmentation_func": PiPlusSymmetry(),
       # NOTE: defaults to False in rsl_rl. Without this, symmetry is enforced
