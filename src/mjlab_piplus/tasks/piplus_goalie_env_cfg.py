@@ -152,7 +152,7 @@ def piplus_goalie_env_cfg(
   commands: dict[str, CommandTermCfg] = {
     "shot": pi_mdp.ShotCommandCfg(
        goal_x=-0.2,
-       speed_range=(2.0, 4.0)
+       speed_range=(2.0, 3.0)
       ),
   }
 
