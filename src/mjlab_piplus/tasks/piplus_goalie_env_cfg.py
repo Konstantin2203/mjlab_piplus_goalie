@@ -84,13 +84,8 @@ def piplus_goalie_env_cfg(
       # noise=Unoise(n_min=-0.1, n_max=0.1),
     ),
     "ball": ObservationTermCfg(
-      func=pi_mdp.ball_state,
-      params={"command_name": "shot",
-              "min_lag": 2,
-              "max_lag": 5,
-              },
-
-
+      func=pi_mdp.shot_ball_state,
+      #Lag?
     )
   }
   critic_terms = {
@@ -155,8 +150,8 @@ def piplus_goalie_env_cfg(
   ##
 
   commands: dict[str, CommandTermCfg] = {
-    "shot": pi_mdp.KickCommandCfg(
-       entity_name="robot"
+    "shot": pi_mdp.ShotCommandCfg(
+       goal_x=-0.2,
       ),
   }
 
@@ -173,7 +168,7 @@ def piplus_goalie_env_cfg(
           "x": (-0.0, 0.0),
           "y": (-0.0, 0.0),
           "z": (0.01, 0.01),
-          "yaw": (-3.14, 3.14),
+          "yaw": (0.0, 0.0), #In welche Richtung der Roboter schaut (vlt später variieren)
         },
         "velocity_range": {},
       },
@@ -402,21 +397,15 @@ def piplus_goalie_env_cfg(
   # Terminations
   ##
   terminations = {
-    # Jittered per-env timeout keeps episode resets decorrelated
-    "time_out": TerminationTermCfg(
-      func=pi_mdp.time_out_jittered,
-      time_out=True,
-      params={"min_fraction": 0.5},
-    ),
-    #"time_out": TerminationTermCfg(func=mdp.time_out, time_out=True),
+    "time_out": TerminationTermCfg(func=mdp.time_out, time_out=True),
     "fell_over": TerminationTermCfg(
       func=mdp.bad_orientation,
       params={"limit_angle": math.radians(70.0)},
     ),
-    # "root_height_below_minimum": TerminationTermCfg(
-    #  func=mdp.root_height_below_minimum,
-    #  params={"minimum_height": 0.25},
-    # ),
+    #"root_height_below_minimum": TerminationTermCfg(
+    #func=mdp.root_height_below_minimum,
+    #params={"minimum_height": 0.25},
+    #),
   }
 
   ##
@@ -451,12 +440,14 @@ def piplus_goalie_env_cfg(
     num_slots=1,
     history_length=4,
   )
+  ball_cfg = get_ball_cfg()
+  ball_cfg.init_state.pos = (3.0, 0.0, 0.07)
   scene = SceneCfg(
     num_envs=4096,
     env_spacing=0.0,
     entities={
         "robot": get_piplus_robot_cfg(),
-        "ball": get_ball_cfg(),
+        "ball": ball_cfg,
         "goal_line": get_goal_line_cfg(),
         "left_post": get_left_post_cfg(),
         "right_post": get_right_post_cfg(),},
@@ -495,7 +486,7 @@ def piplus_goalie_env_cfg(
       ccd_iterations=500,
     ),
   )
-  episode_length_s = 20.0
+  episode_length_s = 5.0
   if play:
     scene.num_envs = 1
     events = {  # remove other dr in play mode
@@ -504,8 +495,6 @@ def piplus_goalie_env_cfg(
       # "push_robot": events["push_robot"],
     }
     # Unbounded episodes in play: plain time_out (never fires at 1e10 s).
-    terminations["time_out"] = TerminationTermCfg(func=mdp.time_out, time_out=True)
-    episode_length_s = 1e10
     curriculum = {}
     metrics["foot_air_time"] = MetricsTermCfg(
       func=pi_mdp.current_air_time,

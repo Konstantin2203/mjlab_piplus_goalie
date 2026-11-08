@@ -12,20 +12,10 @@ from mjlab_piplus.tasks.mdp import PiPlusSymmetry
 
 @dataclass
 class PiPlusPpoAlgorithmCfg(RslRlPpoAlgorithmCfg):
-  symmetry_cfg: dict[str, Any] | None = None(
-    default_factory=lambda: {
-      "data_augmentation_func": PiPlusSymmetry(),
-      # NOTE: defaults to False in rsl_rl. Without this, symmetry is enforced
-      # only by the soft mirror loss; enabling it appends mirrored samples to
-      # every mini-batch so the policy gradient itself drives a symmetric gait.
-      "use_data_augmentation": False,
-      "use_mirror_loss": False,
-      "mirror_loss_coeff": 0.5,
-    }
-  )
+  symmetry_cfg: dict[str, Any] | None = None
 
 
-def get_piplus_velocity_rl_cfg() -> RslRlOnPolicyRunnerCfg:
+def get_piplus_goalie_rl_cfg() -> RslRlOnPolicyRunnerCfg:
   return RslRlOnPolicyRunnerCfg(
     actor=RslRlModelCfg(
       hidden_dims=(512, 256, 128),

@@ -12,3 +12,4 @@ from mjlab_piplus.tasks.mdp.push_gui import *
 from mjlab_piplus.tasks.mdp.rewards import *
 from mjlab_piplus.tasks.mdp.symmetry import *
 from mjlab_piplus.tasks.mdp.terminations import *
+from mjlab_piplus.tasks.mdp.shot import *

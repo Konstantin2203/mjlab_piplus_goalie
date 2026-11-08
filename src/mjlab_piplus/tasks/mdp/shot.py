@@ -1,4 +1,119 @@
- # Into the base frame.
+from __future__ import annotations
+
+import math
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+import torch
+from mjlab.entity import Entity
+from mjlab.managers.command_manager import CommandTerm, CommandTermCfg
+
+from mjlab_piplus.objects import BALL_RADIUS
+
+if TYPE_CHECKING:
+  from mjlab.envs.manager_based_rl_env import ManagerBasedRlEnv
+  from mjlab.viewer.debug_visualizer import DebugVisualizer
+
+__all__ = [
+  "ShotCommand",
+  "ShotCommandCfg",
+  "shot_ball_state",
+]
+
+class ShotCommand(CommandTerm):
+  cfg: ShotCommandCfg
+
+  def __init__(self, cfg: ShotCommandCfg, env: ManagerBasedRlEnv) -> None:
+    super().__init__(cfg, env)
+    self.robot: Entity = env.scene[cfg.entity_name]
+    self.ball: Entity = env.scene[cfg.ball_entity_name]
+
+    self.ball_pos_w = torch.zeros(self.num_envs, 2, device=self.device)
+    self.ball_pos_b = torch.zeros(self.num_envs, 2, device=self.device)
+    self.ball_vel_b = torch.zeros(self.num_envs, 2, device=self.device)
+
+    self.target_y = torch.zeros(self.num_envs, device=self.device)
+    self.shot_speed = torch.zeros(self.num_envs, device=self.device)
+
+    self._pending_place = torch.zeros(
+      self.num_envs, dtype=torch.bool, device=self.device
+    )
+
+    self._wrote = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+    self._wrote_pos = torch.zeros(self.num_envs, 2, device=self.device)
+    self._wrote_vel = torch.zeros(self.num_envs, 2, device=self.device)
+
+    self.metrics["shots"] = torch.zeros(self.num_envs, device=self.device)
+
+  @property
+  def command(self) -> torch.Tensor:
+    return torch.zeros(self.num_envs, 0, device=self.device)
+
+  @property
+  def ball_state_b(self) -> torch.Tensor:
+    """Ball relativ zum Roboter: ``[x, y, vx, vy]``, Form ``(num_envs, 4)``."""
+    return torch.cat([self.ball_pos_b, self.ball_vel_b], dim=1)
+
+  def _write_ball(
+    self, env_ids: torch.Tensor, pos_xy: torch.Tensor, vel_xy: torch.Tensor
+  ) -> None:
+    if len(env_ids) == 0:
+      return
+    r = self.cfg.ball_radius
+    state = torch.zeros(len(env_ids), 13, device=self.device)
+    state[:, :2] = pos_xy
+    state[:, 2] = r
+    state[:, 3] = 1.0  # Quaternion ohne Drehung.
+    state[:, 7:9] = vel_xy
+    state[:, 10] = -vel_xy[:, 1] / r
+    state[:, 11] = vel_xy[:, 0] / r
+    self.ball.write_root_state_to_sim(state, env_ids)
+    self._wrote[env_ids] = True
+    self._wrote_pos[env_ids] = pos_xy
+    self._wrote_vel[env_ids] = vel_xy
+
+  def _apply_pending_placement(self) -> None:
+    env_ids = self._pending_place.nonzero().flatten()
+    if len(env_ids) == 0:
+      return
+    n = len(env_ids)
+    origin = self._env.scene.env_origins[env_ids, :2]
+
+    dist = torch.empty(n, device=self.device).uniform_(*self.cfg.distance_range)
+    side = torch.empty(n, device=self.device).uniform_(*self.cfg.lateral_range)
+    start = torch.stack([self.cfg.goal_x + dist, side], dim=1)
+
+    target_y = torch.empty(n, device=self.device).uniform_(*self.cfg.target_y_range)
+    target = torch.stack(
+      [torch.full_like(target_y, self.cfg.goal_x), target_y], dim=1
+    )
+
+    direction = target - start
+    direction = direction / torch.norm(direction, dim=1, keepdim=True)
+    speed = torch.empty(n, device=self.device).uniform_(*self.cfg.speed_range)
+    vel = direction * speed.unsqueeze(1)
+
+    self._write_ball(env_ids, origin + start, vel)
+    self.target_y[env_ids] = target_y
+    self.shot_speed[env_ids] = speed
+    self.metrics["shots"][env_ids] += 1.0
+    self._pending_place[env_ids] = False
+
+  def _resample_command(self, env_ids: torch.Tensor) -> None:
+    self._pending_place[env_ids] = True
+
+  def _update_command(self) -> None:
+    self._apply_pending_placement()
+
+    pos_w = self.ball.data.root_link_pos_w[:, :2]
+    vel_w = self.ball.data.root_link_lin_vel_w[:, :2]
+    if bool(self._wrote.any()):
+      fresh = self._wrote.unsqueeze(1)
+      pos_w = torch.where(fresh, self._wrote_pos, pos_w)
+      vel_w = torch.where(fresh, self._wrote_vel, vel_w)
+      self._wrote[:] = False
+    self.ball_pos_w = pos_w
+
     base_xy = self.robot.data.root_link_pos_w[:, :2]
     heading = self.robot.data.heading_w
     cos_h, sin_h = torch.cos(heading), torch.sin(heading)
@@ -17,7 +132,48 @@
       ],
       dim=1,
     )
-    self.dir_err = wrap_to_pi(self.kick_dir_w - heading)
 
-    self._update_approach_geometry(cos_h, sin_h)
-    self._update_cycle(active, vel_w)
+  def _update_metrics(self) -> None:
+    pass
+
+  def _debug_vis_impl(self, visualizer: DebugVisualizer) -> None:
+    env_indices = visualizer.get_env_indices(self.num_envs)
+    if not env_indices:
+      return
+    import numpy as np
+
+    pos = self.ball.data.root_link_pos_w[:, :2].cpu().numpy()
+    vel = self.ball.data.root_link_lin_vel_w[:, :2].cpu().numpy()
+    for i in env_indices:
+      start = np.array([pos[i, 0], pos[i, 1], BALL_RADIUS])
+      end = start + 0.3 * np.array([vel[i, 0], vel[i, 1], 0.0])
+      visualizer.add_arrow(start, end, color=(1.0, 0.4, 0.0, 0.9), width=0.02)
+
+@dataclass(kw_only=True)
+class ShotCommandCfg(CommandTermCfg):
+  entity_name: str = "robot"
+  ball_entity_name: str = "ball"
+  ball_radius: float = BALL_RADIUS
+
+  goal_x: float = -0.2
+  distance_range: tuple[float, float] = (2.0, 4.0)
+  lateral_range: tuple[float, float] = (-1.5, 1.5)
+  target_y_range: tuple[float, float] = (-1.1, 1.1)
+  speed_range: tuple[float, float] = (1.0, 3.0)
+
+  resampling_time_range: tuple[float, float] = (1.0e9, 1.0e9)
+
+  def build(self, env: ManagerBasedRlEnv) -> ShotCommand:
+    return ShotCommand(self, env)
+
+##
+# Observation.
+##
+def shot_ball_state(env: ManagerBasedRlEnv, command_name: str = "shot") -> torch.Tensor:
+  """Ball relativ zum Roboter ``[x, y, vx, vy]``, aus dem Shot-Command gelesen.
+
+  Die Verzögerung (Kamera) kommt über delay_min_lag / delay_max_lag in der
+  ObservationTermCfg.
+  """
+  term = env.command_manager.get_term(command_name)
+  return term.ball_state_b
