@@ -1,3 +1,9 @@
+"""A post with a height. 
+
+Parameters follow the RoboCup kid-size field model in bit-bots/bitbots_main
+(``bitbots_mujoco_sim/xml/kid_field.xml``): a 1.2 m high with a radius of 2.5 cm goal post that 
+blocks the ball when both collide.
+"""
 import mujoco 
 from mjlab.entity import EntityCfg
 

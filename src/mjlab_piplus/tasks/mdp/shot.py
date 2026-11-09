@@ -1,3 +1,13 @@
+"""Shot command: automatic shots on goal for training the goalie.
+
+The ball is placed 2-4 meters in front of the goal at a random position 
+and launched towards a random point on the goal line at a random speed.
+
+The goalie gets no command, so the policy learns nothing about target or
+speed in advance, so it only sees the ball through ``shot_ball_state`` like
+it would see it via a camera (Lags are currently not being used).
+"""
+
 from __future__ import annotations
 
 import math
@@ -28,6 +38,7 @@ class ShotCommand(CommandTerm):
     self.robot: Entity = env.scene[cfg.entity_name]
     self.ball: Entity = env.scene[cfg.ball_entity_name]
 
+    # Initializing by creating tensors 
     self.ball_pos_w = torch.zeros(self.num_envs, 2, device=self.device)
     self.ball_pos_b = torch.zeros(self.num_envs, 2, device=self.device)
     self.ball_vel_b = torch.zeros(self.num_envs, 2, device=self.device)
@@ -45,15 +56,18 @@ class ShotCommand(CommandTerm):
 
     self.metrics["shots"] = torch.zeros(self.num_envs, device=self.device)
 
+  # Command for the goalie (empty on purpose because he should just see the ball through
+  # shot_ball_state)
   @property
   def command(self) -> torch.Tensor:
     return torch.zeros(self.num_envs, 0, device=self.device)
 
+  # Combines position and velocity of the ball into a tensor (4 columns)
   @property
   def ball_state_b(self) -> torch.Tensor:
-    """Ball relativ zum Roboter: ``[x, y, vx, vy]``, Form ``(num_envs, 4)``."""
     return torch.cat([self.ball_pos_b, self.ball_vel_b], dim=1)
 
+  # Teleports ball to position with velocity
   def _write_ball(
     self, env_ids: torch.Tensor, pos_xy: torch.Tensor, vel_xy: torch.Tensor
   ) -> None:
@@ -61,23 +75,24 @@ class ShotCommand(CommandTerm):
       return
     r = self.cfg.ball_radius
     state = torch.zeros(len(env_ids), 13, device=self.device)
-    state[:, :2] = pos_xy
-    state[:, 2] = r
-    state[:, 3] = 1.0  # Quaternion ohne Drehung.
-    state[:, 7:9] = vel_xy
-    state[:, 10] = -vel_xy[:, 1] / r
-    state[:, 11] = vel_xy[:, 0] / r
+    state[:, :2] = pos_xy # every line, columns 0 and 1
+    state[:, 2] = r # every line, column 2
+    state[:, 3] = 1.0  # every line, column 3 (not turned)
+    state[:, 7:9] = vel_xy # ..., columns 7 and 8
+    state[:, 10] = -vel_xy[:, 1] / r # ..., column 10 (Turning speed of the Ball)
+    state[:, 11] = vel_xy[:, 0] / r # ..., column 11 (e.g. 10)
     self.ball.write_root_state_to_sim(state, env_ids)
     self._wrote[env_ids] = True
     self._wrote_pos[env_ids] = pos_xy
     self._wrote_vel[env_ids] = vel_xy
 
+  # Creates a new shot for envs
   def _apply_pending_placement(self) -> None:
-    env_ids = self._pending_place.nonzero().flatten()
+    env_ids = self._pending_place.nonzero().flatten() # List of envs that need a shot
     if len(env_ids) == 0:
       return
-    n = len(env_ids)
-    origin = self._env.scene.env_origins[env_ids, :2]
+    n = len(env_ids) # Number of shots
+    origin = self._env.scene.env_origins[env_ids, :2] # Center of each needed env
 
     dist = torch.empty(n, device=self.device).uniform_(*self.cfg.distance_range)
     side = torch.empty(n, device=self.device).uniform_(*self.cfg.lateral_range)
@@ -89,7 +104,7 @@ class ShotCommand(CommandTerm):
     )
 
     direction = target - start
-    direction = direction / torch.norm(direction, dim=1, keepdim=True)
+    direction = direction / torch.norm(direction, dim=1, keepdim=True) # Dividing through vectors lenght to keep direction but get length 1 
     speed = torch.empty(n, device=self.device).uniform_(*self.cfg.speed_range)
     vel = direction * speed.unsqueeze(1)
 
@@ -99,9 +114,11 @@ class ShotCommand(CommandTerm):
     self.metrics["shots"][env_ids] += 1.0
     self._pending_place[env_ids] = False
 
+  # Called if new command is needed in some envs
   def _resample_command(self, env_ids: torch.Tensor) -> None:
     self._pending_place[env_ids] = True
 
+  # Runs through every control step, reads ball state and converts into robot frame
   def _update_command(self) -> None:
     self._apply_pending_placement()
 
@@ -117,7 +134,8 @@ class ShotCommand(CommandTerm):
     base_xy = self.robot.data.root_link_pos_w[:, :2]
     heading = self.robot.data.heading_w
     cos_h, sin_h = torch.cos(heading), torch.sin(heading)
-    delta = pos_w - base_xy
+    delta = pos_w - base_xy # Vektor robot to ball
+    # x becomes direction of robot
     self.ball_pos_b = torch.stack(
       [
         cos_h * delta[:, 0] + sin_h * delta[:, 1],
@@ -125,6 +143,7 @@ class ShotCommand(CommandTerm):
       ],
       dim=1,
     )
+    # velocity from robots perspective
     self.ball_vel_b = torch.stack(
       [
         cos_h * vel_w[:, 0] + sin_h * vel_w[:, 1],
@@ -136,6 +155,7 @@ class ShotCommand(CommandTerm):
   def _update_metrics(self) -> None:
     pass
 
+  # Arrow for ball in simulation
   def _debug_vis_impl(self, visualizer: DebugVisualizer) -> None:
     env_indices = visualizer.get_env_indices(self.num_envs)
     if not env_indices:
@@ -170,10 +190,5 @@ class ShotCommandCfg(CommandTermCfg):
 # Observation.
 ##
 def shot_ball_state(env: ManagerBasedRlEnv, command_name: str = "shot") -> torch.Tensor:
-  """Ball relativ zum Roboter ``[x, y, vx, vy]``, aus dem Shot-Command gelesen.
-
-  Die Verzögerung (Kamera) kommt über delay_min_lag / delay_max_lag in der
-  ObservationTermCfg.
-  """
   term = env.command_manager.get_term(command_name)
   return term.ball_state_b

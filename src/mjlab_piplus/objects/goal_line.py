@@ -1,9 +1,8 @@
-"""A goal. With a width 
+"""A goal line with a width 
 
 Parameters follow the RoboCup kid-size field model in bit-bots/bitbots_main
-(``bitbots_mujoco_sim/xml/kid_field.xml``): a 7 cm sphere at 205 g with a full
-friction cone and a stiff contact. The texture there is a cube map loaded from
-PNGs; we skip it and use a flat colour, since nothing in training reads pixels.
+(``bitbots_mujoco_sim/xml/kid_field.xml``): a 1.8 m wide goal line that has no
+impact on the ball.
 """
 
 import mujoco
