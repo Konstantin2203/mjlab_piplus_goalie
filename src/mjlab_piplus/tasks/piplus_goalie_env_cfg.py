@@ -86,7 +86,8 @@ def piplus_goalie_env_cfg(
     "ball": ObservationTermCfg(
       func=pi_mdp.shot_ball_state,
       #Lag?
-    )
+    ),
+    "goal": ObservationTermCfg(func=pi_mdp.goal_pos_b),
   }
   critic_terms = {
     **actor_terms,
@@ -403,6 +404,9 @@ def piplus_goalie_env_cfg(
       func=mdp.bad_orientation,
       params={"limit_angle": math.radians(70.0)},
     ),
+    "goal_scored": TerminationTermCfg(func=pi_mdp.goal_scored),
+    "ball_saved": TerminationTermCfg(func=pi_mdp.ball_saved, time_out=True),
+    "ball_missed": TerminationTermCfg(func=pi_mdp.ball_missed, time_out=True),
     #"root_height_below_minimum": TerminationTermCfg(
     #func=mdp.root_height_below_minimum,
     #params={"minimum_height": 0.25},
