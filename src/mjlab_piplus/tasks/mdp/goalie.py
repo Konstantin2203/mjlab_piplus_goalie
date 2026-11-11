@@ -12,7 +12,8 @@ from mjlab_piplus.objects import BALL_RADIUS
 __all__ = [
   "ball_missed",
   "ball_saved",
-  "goal_scored",
+  "ball_proximity",
+  "goal_conceded",
   "goal_pos_b",
 ]
 
@@ -61,7 +62,7 @@ def _ball_xy_local(env):
   return ball.data.root_link_pos_w[:, :2] - env.scene.env_origins[:, :2]
 
 """Tor: der ganze Ball ist über die Torlinie, zwischen den Pfosten."""
-def goal_scored(env, goal_x=GOAL_X, half_width=GOAL_HALF_WIDTH):
+def goal_conceded(env, goal_x=GOAL_X, half_width=GOAL_HALF_WIDTH):
   xy = _ball_xy_local(env)
   behind_line = xy[:, 0] < goal_x - LINE_HALF_WIDTH - BALL_RADIUS
   between_posts = xy[:, 1].abs() < half_width
@@ -99,3 +100,19 @@ def ball_saved(
   stopped_near = (speed < stop_speed) & (dist_to_robot < near_dist)
  
   return in_front & (moving_away | stopped_near)
+
+def ball_proximity(
+    env, near_dist=1.0, std= 0.3):
+    ball = env.scene["ball"]
+    robot = env.scene["robot"]
+    d = torch.norm( ball.data.root_link_pos_w[:, :2] - robot.data.root_link_pos_w[:, :2], dim=1)
+    return torch.where(d< near_dist, torch.exp(-(d/std)** 2), torch.zeros-like(d))
+
+def goal_proximity(env, goal_x=GOAL_X, max_forward=1, max_side=0.9):
+    robot = env.scene["robot"]
+    xy = robot.data.root_link_pos_w[:, :2] - env.scene.env_origins[:, :2]
+    dist=xy[:,0] - goal_x
+    too_far = (dist - max_forward).clamp(min=0.0)
+    too_wide = (xy[:,1].abs() - max_side).clamp(min=0.0)
+    return too_far + too_wide
+    

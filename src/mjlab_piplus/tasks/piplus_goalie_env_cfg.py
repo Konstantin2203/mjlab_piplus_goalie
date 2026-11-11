@@ -338,7 +338,32 @@ def piplus_goalie_env_cfg(
       weight=-0.1,
       params={"sensor_name": "robot/root_angmom"},
     ),
-    "is_terminated": RewardTermCfg(func=mdp.is_terminated, weight=-200.0),
+   "goal_conceded": RewardTermCfg(
+     func=pi_mdp.goal_conceded,
+     weight=-200 # punish robot for being bad by spanking :)
+   ),
+   "ball_saved":  RewardTermCfg(
+     func=pi_mdp.ball_saved,
+     weight=200
+   ),
+   "fell_down": RewardTermCfg(
+     func=mdp.bad_orientation,
+     weight= -200, 
+     params= {"limit_angle": math.radians(70.0)}
+   ),
+   "ball_proximity": RewardTermCfg(
+     func=pi_mdp.ball_proximity,
+     weight= 1.0,
+   ),
+   "goal_proximity": RewardTermCfg(
+     func=pi_mdp.ball_proximity,
+     weight=-2,
+   ),
+
+
+
+
+
     # safety rewards
     "joint_acc_l2": RewardTermCfg(func=mdp.joint_acc_l2, weight=-2.5e-7),
     "joint_pos_limits": RewardTermCfg(func=mdp.joint_pos_limits, weight=-10.0),
@@ -405,7 +430,7 @@ def piplus_goalie_env_cfg(
       params={"limit_angle": math.radians(70.0)},
     ),
     "goal_scored": TerminationTermCfg(func=pi_mdp.goal_scored),
-    "ball_saved": TerminationTermCfg(func=pi_mdp.ball_saved, time_out=True),
+    "ball_saved": TerminationTermCfg(func=pi_mdp.ball_saved),#vllt timeout=True
     "ball_missed": TerminationTermCfg(func=pi_mdp.ball_missed, time_out=True),
     #"root_height_below_minimum": TerminationTermCfg(
     #func=mdp.root_height_below_minimum,
