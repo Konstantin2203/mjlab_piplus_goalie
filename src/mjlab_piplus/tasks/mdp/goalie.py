@@ -106,7 +106,7 @@ def ball_proximity(
     ball = env.scene["ball"]
     robot = env.scene["robot"]
     d = torch.norm( ball.data.root_link_pos_w[:, :2] - robot.data.root_link_pos_w[:, :2], dim=1)
-    return torch.where(d< near_dist, torch.exp(-(d/std)** 2), torch.zeros-like(d))
+    return torch.where(d< near_dist, torch.exp(-(d/std)** 2), torch.zeros_like(d))
 
 def goal_proximity(env, goal_x=GOAL_X, max_forward=1, max_side=0.9):
     robot = env.scene["robot"]
