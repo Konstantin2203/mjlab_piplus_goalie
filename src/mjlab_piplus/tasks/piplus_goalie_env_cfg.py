@@ -429,7 +429,7 @@ def piplus_goalie_env_cfg(
       func=mdp.bad_orientation,
       params={"limit_angle": math.radians(70.0)},
     ),
-    "goal_scored": TerminationTermCfg(func=pi_mdp.goal_scored),
+    "goal_conceded": TerminationTermCfg(func=pi_mdp.goal_conceded),
     "ball_saved": TerminationTermCfg(func=pi_mdp.ball_saved),#vllt timeout=True
     "ball_missed": TerminationTermCfg(func=pi_mdp.ball_missed, time_out=True),
     #"root_height_below_minimum": TerminationTermCfg(
