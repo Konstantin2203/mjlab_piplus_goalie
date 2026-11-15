@@ -15,7 +15,7 @@ __all__ = [
   "ball_proximity",
   "goal_conceded",
   "goal_pos_b",
-  "goal_proximity"
+  "goal_proximity",
   "end_after_event"
 ]
 
