@@ -340,11 +340,13 @@ def piplus_goalie_env_cfg(
     ),
    "goal_conceded": RewardTermCfg(
      func=pi_mdp.goal_conceded,
-     weight=-200 # punish robot for being bad by spanking :)
+     weight=-200, # punish robot for being bad by spanking :)
+     params={"condition": pi_mdp.goal_conceded},
    ),
    "ball_saved":  RewardTermCfg(
      func=pi_mdp.ball_saved,
-     weight=200
+     weight=200,
+     params={"condition": pi_mdp.ball_saved},
    ),
    "fell_down": RewardTermCfg(
      func=mdp.bad_orientation,

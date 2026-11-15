@@ -16,7 +16,8 @@ __all__ = [
   "goal_conceded",
   "goal_pos_b",
   "goal_proximity",
-  "end_after_event"
+  "end_after_event",
+  "event_once"
 ]
 
 """Torlinie. Muss zu pos von Torlinie/Pfosten und zu ShotCommandCfg.goal_x passen."""
@@ -44,6 +45,17 @@ class end_after_event:
     delay_steps = int(round(delay_s / env.step_dt))   
     return (self.event_step >= 0) & (step - self.event_step >= delay_steps)
 
+class event_once:
+  """Gibt 1 zurück, wenn die Bedingung in dieser Episode zum ersten Mal wahr wird, sonst 0."""
+
+  def __init__(self, cfg, env):
+    self.fired = torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
+
+  def __call__(self, env, condition):
+    self.fired[env.episode_length_buf <= 1] = False   # neue Episode: zurücksetzen
+    now = condition(env) & ~self.fired
+    self.fired |= now
+    return now.float()
 
 ##
 # Observation.
