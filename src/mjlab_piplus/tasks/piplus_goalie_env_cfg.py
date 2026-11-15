@@ -356,7 +356,7 @@ def piplus_goalie_env_cfg(
      weight= 1.0,
    ),
    "goal_proximity": RewardTermCfg(
-     func=pi_mdp.ball_proximity,
+     func=pi_mdp.goal_proximity,
      weight=-2,
    ),
 

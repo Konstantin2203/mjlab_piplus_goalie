@@ -15,6 +15,7 @@ __all__ = [
   "ball_proximity",
   "goal_conceded",
   "goal_pos_b",
+  "goal_proximity"
 ]
 
 """Torlinie. Muss zu pos von Torlinie/Pfosten und zu ShotCommandCfg.goal_x passen."""
