@@ -16,6 +16,7 @@ __all__ = [
   "goal_conceded",
   "goal_pos_b",
   "goal_proximity"
+  "end_after_event"
 ]
 
 """Torlinie. Muss zu pos von Torlinie/Pfosten und zu ShotCommandCfg.goal_x passen."""
@@ -26,6 +27,22 @@ GOAL_HALF_WIDTH = 0.9
 
 """Halbe Breite der Torlinie (5 cm Linie)."""
 LINE_HALF_WIDTH = 0.025
+
+class end_after_event:
+  """Beendet die Episode delay_s Sekunden, nachdem die Bedingung zum ersten Mal wahr war."""
+
+  def init(self, cfg, env):
+    self.event_step = torch.full(
+      (env.num_envs,), -1, dtype=torch.long, device=env.device
+    )
+
+  def call(self, env, condition, delay_s=1.0):
+    step = env.episode_length_buf      
+    self.event_step[step <= 1] = -1          
+    first = condition(env) & (self.event_step < 0)
+    self.event_step[first] = step[first]       
+    delay_steps = int(round(delay_s / env.step_dt))   
+    return (self.event_step >= 0) & (step - self.event_step >= delay_steps)
 
 
 ##

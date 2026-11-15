@@ -429,8 +429,14 @@ def piplus_goalie_env_cfg(
       func=mdp.bad_orientation,
       params={"limit_angle": math.radians(70.0)},
     ),
-    "goal_conceded": TerminationTermCfg(func=pi_mdp.goal_conceded),
-    "ball_saved": TerminationTermCfg(func=pi_mdp.ball_saved),#vllt timeout=True
+    "goal_conceded": TerminationTermCfg(
+      func=pi_mdp.end_after_event,
+      params={"condition": pi_mdp.goal_conceded, "delay_s": 1.0},
+      ),
+    "ball_saved": TerminationTermCfg(
+      func=pi_mdp.end_after_event,
+      params={"condition": pi_mdp.ball_saved, "delay_s": 1.0},
+    ),#vllt timeout=True
     "ball_missed": TerminationTermCfg(func=pi_mdp.ball_missed, time_out=True),
     #"root_height_below_minimum": TerminationTermCfg(
     #func=mdp.root_height_below_minimum,
