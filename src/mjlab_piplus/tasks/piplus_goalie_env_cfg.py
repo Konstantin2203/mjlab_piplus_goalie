@@ -339,12 +339,12 @@ def piplus_goalie_env_cfg(
       params={"sensor_name": "robot/root_angmom"},
     ),
    "goal_conceded": RewardTermCfg(
-     func=pi_mdp.goal_conceded,
+     func=pi_mdp.event_once,
      weight=-200, # punish robot for being bad by spanking :)
      params={"condition": pi_mdp.goal_conceded},
    ),
    "ball_saved":  RewardTermCfg(
-     func=pi_mdp.ball_saved,
+     func=pi_mdp.event_once,
      weight=200,
      params={"condition": pi_mdp.ball_saved},
    ),
