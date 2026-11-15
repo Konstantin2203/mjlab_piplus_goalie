@@ -31,12 +31,12 @@ LINE_HALF_WIDTH = 0.025
 class end_after_event:
   """Beendet die Episode delay_s Sekunden, nachdem die Bedingung zum ersten Mal wahr war."""
 
-  def init(self, cfg, env):
+  def __init__(self, cfg, env):
     self.event_step = torch.full(
       (env.num_envs,), -1, dtype=torch.long, device=env.device
     )
 
-  def call(self, env, condition, delay_s=1.0):
+  def __call__(self, env, condition, delay_s=1.0):
     step = env.episode_length_buf      
     self.event_step[step <= 1] = -1          
     first = condition(env) & (self.event_step < 0)
