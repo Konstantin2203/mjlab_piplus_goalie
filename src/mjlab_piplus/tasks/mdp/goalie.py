@@ -1,8 +1,8 @@
-"""Torwart-Funktionen: 
-Observation (Tor relativ zum Roboter) und Terminations.
+"""Goalkeeper functions: 
+Observations (goal in relation to the robot), terminations, rewards and helper classes.
  
-Koordinaten wie in shot.py: x zeigt vom Tor ins Feld, die Torlinie liegt bei
-GOAL_X (relativ zum Ursprung der jeweiligen Umgebung), y ist seitlich.
+Coordinates as in shot.py: x points from the goal into the field, the goal line
+lies at GOAL_X (relative to the origin of each environment), y is sideways.
 """
 
 import torch
@@ -20,39 +20,41 @@ __all__ = [
   "event_once"
 ]
 
-"""Torlinie. Muss zu pos von Torlinie/Pfosten und zu ShotCommandCfg.goal_x passen."""
+# x position of the goal line. Must match the pos of goal line / posts
+# and ShotCommandCfg.goal_x.
 GOAL_X = -0.2
 
-"""Halbe lichte Torbreite (1,8 m Tor)."""
+# Half of the inner goal width (1.8 m goal).
 GOAL_HALF_WIDTH = 0.9
 
-"""Halbe Breite der Torlinie (5 cm Linie)."""
+# Half of the goal line width (5 cm line).
 LINE_HALF_WIDTH = 0.025
 
 class end_after_event:
-  """Beendet die Episode delay_s Sekunden, nachdem die Bedingung zum ersten Mal wahr war."""
+  """Ends the episode delay_s seconds after the condition was true for the first time."""
 
   def __init__(self, cfg, env):
+    # Step at which the event happened, -1 = not happened yet.
     self.event_step = torch.full(
       (env.num_envs,), -1, dtype=torch.long, device=env.device
     )
 
   def __call__(self, env, condition, delay_s=1.0):
     step = env.episode_length_buf      
-    self.event_step[step <= 1] = -1          
+    self.event_step[step <= 1] = -1 # new episode: reset       
     first = condition(env) & (self.event_step < 0)
-    self.event_step[first] = step[first]       
+    self.event_step[first] = step[first] # remember when the event happened   
     delay_steps = int(round(delay_s / env.step_dt))   
     return (self.event_step >= 0) & (step - self.event_step >= delay_steps)
 
 class event_once:
-  """Gibt 1 zurück, wenn die Bedingung in dieser Episode zum ersten Mal wahr wird, sonst 0."""
+  """Returns 1 when the condition becomes true for the first time in this episode, else 0."""
 
   def __init__(self, cfg, env):
     self.fired = torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
 
   def __call__(self, env, condition):
-    self.fired[env.episode_length_buf <= 1] = False   # neue Episode: zurücksetzen
+    self.fired[env.episode_length_buf <= 1] = False # new episode: reset
     now = condition(env) & ~self.fired
     self.fired |= now
     return now.float()
@@ -61,14 +63,12 @@ class event_once:
 # Observation.
 ##
 
-"""Tormitte relativ zum Roboter: [vor mir, links von mir]."""
 def goal_pos_b(env, goal_pos=(GOAL_X, 0.0)):
-  
-  """den Roboter aus der Szene holen"""
-  robot = env.scene["robot"]
+  """Goal center relative to the robot: [in front of me, left of me]."""
+  robot = env.scene["robot"] 
   goal = torch.tensor(goal_pos, device=env.device) + env.scene.env_origins[:, :2]
  
-  # Into the base frame (wie kick.py).
+  # Rotate into the base frame (like kick.py)
   base_xy = robot.data.root_link_pos_w[:, :2]
   heading = robot.data.heading_w
   cos_h, sin_h = torch.cos(heading), torch.sin(heading)
@@ -85,35 +85,33 @@ def goal_pos_b(env, goal_pos=(GOAL_X, 0.0)):
 # Terminations.
 ##
 
-"""Ballposition relativ zum Ursprung der jeweiligen Umgebung."""
 def _ball_xy_local(env):
+  """Ball position relative to the origin of its own environment."""
   ball = env.scene["ball"]
-  """Ballposition relativ zur eigenen Umgebung"""
   return ball.data.root_link_pos_w[:, :2] - env.scene.env_origins[:, :2]
 
-"""Tor: der ganze Ball ist über die Torlinie, zwischen den Pfosten."""
 def goal_conceded(env, goal_x=GOAL_X, half_width=GOAL_HALF_WIDTH):
+  """Goal: the whole ball is behind the goal line, between the posts."""
   xy = _ball_xy_local(env)
   behind_line = xy[:, 0] < goal_x - LINE_HALF_WIDTH - BALL_RADIUS
   between_posts = xy[:, 1].abs() < half_width
   return behind_line & between_posts
 
-"""Daneben: Ball ist an der Torlinie vorbei, aber neben den Pfosten."""
 def ball_missed(env, goal_x=GOAL_X, half_width=GOAL_HALF_WIDTH):
+  """Miss: the ball is past the goal line, but outside the posts."""
   xy = _ball_xy_local(env)
   behind_line = xy[:, 0] < goal_x - LINE_HALF_WIDTH - BALL_RADIUS
   outside_posts = xy[:, 1].abs() >= half_width
   return behind_line & outside_posts
 
-"""Gehalten: Ball ist noch vor dem Tor und rollt vom Tor weg
-  oder liegt still in der Nähe des Roboters.
- 
-  Achtung: Ein Abpraller vom Pfosten zählt damit auch als gehalten. 
-  Wollen wir das so lassen? lol 
-  """
+
 def ball_saved(
   env, goal_x=GOAL_X, away_speed=0.1, stop_speed=0.1, near_dist=0.5
 ):
+  """Save: the ball is still in front of the goal and rolls away from it,
+  or lies still close to the robot.
+  """
+  # TODO: A rebound off the post also counts as a save. Discuss in the team.
   
   ball = env.scene["ball"]
   robot = env.scene["robot"]
@@ -131,18 +129,25 @@ def ball_saved(
  
   return in_front & (moving_away | stopped_near)
 
+##
+# Rewards.
+##
+
 def ball_proximity(
     env, near_dist=1.0, std= 0.3):
+    """Reward for being close to the ball (only within near_dist), between 0 and 1."""
     ball = env.scene["ball"]
     robot = env.scene["robot"]
     d = torch.norm( ball.data.root_link_pos_w[:, :2] - robot.data.root_link_pos_w[:, :2], dim=1)
     return torch.where(d< near_dist, torch.exp(-(d/std)** 2), torch.zeros_like(d))
 
 def goal_proximity(env, goal_x=GOAL_X, max_forward=1, max_side=0.9):
+    """Penalty (use a negative weight!) when the goalkeeper moves too far in front of or beside the goal.
+       Returns how far he is outside the allowed area.
+    """
     robot = env.scene["robot"]
     xy = robot.data.root_link_pos_w[:, :2] - env.scene.env_origins[:, :2]
     dist=xy[:,0] - goal_x
     too_far = (dist - max_forward).clamp(min=0.0)
     too_wide = (xy[:,1].abs() - max_side).clamp(min=0.0)
     return too_far + too_wide
-    
