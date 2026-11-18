@@ -361,6 +361,10 @@ def piplus_goalie_env_cfg(
      func=pi_mdp.goal_proximity,
      weight=-2,
    ),
+   "kick_away": RewardTermCfg(
+        func=pi_mdp.kick_away,
+        weight=2,
+      ),
 
 
 

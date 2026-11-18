@@ -18,6 +18,8 @@ import torch
 from mjlab.entity import Entity
 from mjlab.managers.command_manager import CommandTerm, CommandTermCfg
 
+from mjlab_piplus.tasks.mdp.goalie import ball_saved, goal_conceded
+
 from mjlab_piplus.objects import BALL_RADIUS
 
 if TYPE_CHECKING:
@@ -55,6 +57,8 @@ class ShotCommand(CommandTerm):
     self._wrote_vel = torch.zeros(self.num_envs, 2, device=self.device)
 
     self.metrics["shots"] = torch.zeros(self.num_envs, device=self.device)
+    for name in ("ball_saved", "goal_conceded"):
+      self.metrics[name] = torch.zeros(self.num_envs, device=self.device)
 
   # Command for the goalie (empty on purpose because he should just see the ball through
   # shot_ball_state)
@@ -153,7 +157,10 @@ class ShotCommand(CommandTerm):
     )
 
   def _update_metrics(self) -> None:
-    pass
+    env = self._env
+    self.metrics["ball_saved"][:] = torch.maximum(self.metrics["ball_saved"], ball_saved(env).float())
+    self.metrics["goal_conceded"][:] = torch.maximum(self.metrics["goal_conceded"], goal_conceded(env).float())
+    
 
   # Arrow for ball in simulation
   def _debug_vis_impl(self, visualizer: DebugVisualizer) -> None:

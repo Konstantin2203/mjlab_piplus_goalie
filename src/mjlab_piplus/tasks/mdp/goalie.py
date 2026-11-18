@@ -17,7 +17,8 @@ __all__ = [
   "goal_pos_b",
   "goal_proximity",
   "end_after_event",
-  "event_once"
+  "event_once",
+  "kick_away"
 ]
 
 # x position of the goal line. Must match the pos of goal line / posts
@@ -151,3 +152,14 @@ def goal_proximity(env, goal_x=GOAL_X, max_forward=1, max_side=0.9):
     too_far = (dist - max_forward).clamp(min=0.0)
     too_wide = (xy[:,1].abs() - max_side).clamp(min=0.0)
     return too_far + too_wide
+
+def kick_away(env, near_dist=3.0, target_x=8.8, target_y=0, std= 0.3):
+    """Reward when the ball rolls away from our goal to a specific point in the opponent's half"""
+
+    ball = env.scene["ball"]
+    robot = env.scene["robot"]
+
+    d = torch.norm(ball.data.root_link_pos_w[:, :2] - (target_x, target_y), dim=1)
+    return torch.where(d< near_dist, torch.exp(-(d/std)** 2), torch.zeros_like(d))
+    
+
