@@ -160,8 +160,8 @@ def kick_away(env, near_dist=3.0, target_x=8.8, target_y=0, std= 2.0):
     xy = _ball_xy_local
     target = torch.tensor(
         [target_x, target_y], 
-        device=ball.data.root_link_pos_w.device, 
-        dtype=ball.data.root_link_pos_w.dtype
+        device=env.device, 
+        dtype=xy.dtype
     )
     d = torch.norm(xy - target, dim=1)
     return torch.where(d< near_dist, torch.exp(-(d/std)** 2), torch.zeros_like(d))
