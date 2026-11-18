@@ -157,9 +157,8 @@ def kick_away(env, near_dist=3.0, target_x=8.8, target_y=0, std= 0.3):
     """Reward when the ball rolls away from our goal to a specific point in the opponent's half"""
 
     ball = env.scene["ball"]
-    robot = env.scene["robot"]
-
-    d = torch.norm(ball.data.root_link_pos_w[:, :2] - (target_x, target_y), dim=1)
+    target = torch.tensor([target_x, target_y])
+    d = torch.norm(ball.data.root_link_pos_w[:, :2] - target, dim=1)
     return torch.where(d< near_dist, torch.exp(-(d/std)** 2), torch.zeros_like(d))
     
 
