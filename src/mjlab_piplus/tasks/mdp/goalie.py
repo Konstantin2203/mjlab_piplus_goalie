@@ -154,22 +154,23 @@ def goal_proximity(env, goal_x=GOAL_X, max_forward=1, max_side=0.9):
     too_wide = (xy[:,1].abs() - max_side).clamp(min=0.0)
     return too_far + too_wide
 
-def kick_away(env, near_dist=3.0, target_x=8.8, target_y=0, std= 0.3):
+def kick_away(env, near_dist=3.0, target_x=8.8, target_y=0, std= 2.0):
     """Reward when the ball rolls away from our goal to a specific point in the opponent's half"""
 
-    ball = env.scene["ball"]
+    xy = _ball_xy_local
     target = torch.tensor(
         [target_x, target_y], 
         device=ball.data.root_link_pos_w.device, 
         dtype=ball.data.root_link_pos_w.dtype
     )
-    d = torch.norm(ball.data.root_link_pos_w[:, :2] - target, dim=1)
+    d = torch.norm(xy - target, dim=1)
     return torch.where(d< near_dist, torch.exp(-(d/std)** 2), torch.zeros_like(d))
 
-def ball_away(env):
+def ball_away(env, goal_x=GOAL_X, away_speed=0.1):
     ball = env.scene["ball"]
+    xy = _ball_xy_local
     vel = ball.data.root_link_lin_vel_w[:, :2]
-    moving_away = vel[:, 0] < 0.1
-    return moving_away
+    return ((xy[:,0] > goal_x)  & (vel[:, 0] > away_speed)).float()
+    
     
 
