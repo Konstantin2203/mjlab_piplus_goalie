@@ -363,7 +363,7 @@ def piplus_goalie_env_cfg(
    ),
    "kick_away": RewardTermCfg(
         func=pi_mdp.kick_away,
-        weight=2,
+        weight=4,
    ),
   "ball_away": RewardTermCfg(
           func=pi_mdp.ball_away,
@@ -445,7 +445,7 @@ def piplus_goalie_env_cfg(
       ),
     "ball_saved": TerminationTermCfg(
       func=pi_mdp.end_after_event,
-      params={"condition": pi_mdp.ball_saved, "delay_s": 3.0},
+      params={"condition": pi_mdp.ball_saved, "delay_s": 4.0},
     ),#vllt timeout=True
     "ball_missed": TerminationTermCfg(func=pi_mdp.ball_missed, time_out=True),
     #"root_height_below_minimum": TerminationTermCfg(
