@@ -71,9 +71,9 @@ class saved_stance:
    def __init__(self, cfg, env):
     self.saved = torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
     
-   def __call__(self, env, asset_cfg, target_height=0.34, height_std=0.04, target_feet_dist=0.163,
-               feet_std=0.05): 
-     self.saved[env.episode_length_buf >= 1] = False
+   def __call__(self, env, asset_cfg, target_height=0.33, height_std=0.1, target_feet_dist=0.163,
+               feet_std=0.1): 
+     self.saved[env.episode_length_buf <= 1] = False
      self.saved |= ball_saved(env)
 
      robot = env.scene[asset_cfg.name]
