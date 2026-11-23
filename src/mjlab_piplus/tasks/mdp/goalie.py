@@ -19,7 +19,9 @@ __all__ = [
   "end_after_event",
   "event_once",
   "kick_away",
-  "ball_away"
+  "ball_away",
+  "saved_stance",
+  "base_height"
 ]
 
 # x position of the goal line. Must match the pos of goal line / posts
@@ -61,6 +63,30 @@ class event_once:
     self.fired |= now
     return now.float()
 
+
+class saved_stance:
+   """Reward only after the ball has been saved (latched per episode): feet close together and base height
+   close to the upright target."""
+   
+   def __init__(self, cfg, env):
+    self.saved = torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
+    
+   def __call__(self, env, asset_cfg, target_height=0.34, height_std=0.04, target_feet_dist=0.163,
+               feet_std=0.05): 
+     self.saved[env.episode_length_buf >= 1] = False
+     self.saved |= ball_saved(env)
+
+     robot = env.scene[asset_cfg.name]
+     height = robot.data.root_link_pos_w[:, 2]
+     r_height = torch.exp(-((height - target_height) / height_std) ** 2)
+
+     feet = robot.data.site_pos_w[:, asset_cfg.site_ids, :2]
+     feet_dist = torch.norm(feet[:, 0] - feet[:, 1], dim=1)
+     r_feet = torch.exp(-((feet_dist - target_feet_dist) / feet_std) ** 2)
+     
+     return self.saved.float() * r_height * r_feet
+
+      
 ##
 # Observation.
 ##
@@ -173,4 +199,6 @@ def ball_away(env, goal_x=GOAL_X, away_speed=0.1):
     return ((xy[:,0] > goal_x)  & (vel[:, 0] > away_speed)).float()
     
     
-
+def base_height(env):
+  """Height of the base above the ground (for measuring only)."""
+  return env.scene["robot"].data.root_link_pos_w[:, 2]

@@ -374,6 +374,11 @@ def piplus_goalie_env_cfg(
           func=pi_mdp.ball_away,
           weight=2,
      ),
+  "saved_stance": RewardTermCfg(
+    func=pi_mdp.saved_stance,
+    weight=2.0,
+    params={"asset_cfg": SceneEntityCfg("robot", site_names=foot_sites)},
+    ),
 
 
 
@@ -583,6 +588,9 @@ def piplus_goalie_env_cfg(
         "axis": "pitch",
       },
     )
+    metrics["base_height"] = MetricsTermCfg(
+      func=pi_mdp.base_height
+    )
     # NOTE: SceneEntityCfg.resolve() sorts sites by model index, so the reward's
     # site order is (r_foot=idx0, l_foot=idx1) — i.e. offset[0]=0.0 drives the
     # RIGHT foot and offset[1]=0.5 the LEFT foot. The metric offsets below are
@@ -605,6 +613,7 @@ def piplus_goalie_env_cfg(
         "stance_threshold": 0.56,
       },
     )
+    
 
   ##
   # Assemble the config
