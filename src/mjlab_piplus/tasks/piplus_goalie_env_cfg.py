@@ -85,7 +85,7 @@ def piplus_goalie_env_cfg(
     ),
     "ball": ObservationTermCfg(
       func=pi_mdp.shot_ball_state,
-      #Lag?
+      # Lag?
     ),
     "goal": ObservationTermCfg(func=pi_mdp.goal_pos_b),
   }
@@ -151,10 +151,7 @@ def piplus_goalie_env_cfg(
   ##
 
   commands: dict[str, CommandTermCfg] = {
-    "shot": pi_mdp.ShotCommandCfg(
-       goal_x=-0.2,
-       speed_range=(2.0, 3.0)
-      ),
+    "shot": pi_mdp.ShotCommandCfg(goal_x=-0.2, speed_range=(2.0, 3.0)),
   }
 
   ##
@@ -170,7 +167,10 @@ def piplus_goalie_env_cfg(
           "x": (-0.0, 0.0),
           "y": (-0.0, 0.0),
           "z": (0.01, 0.01),
-          "yaw": (0.0, 0.0), #In welche Richtung der Roboter schaut (vlt später variieren)
+          "yaw": (
+            0.0,
+            0.0,
+          ),  # In welche Richtung der Roboter schaut (vlt später variieren)
         },
         "velocity_range": {},
       },
@@ -203,10 +203,13 @@ def piplus_goalie_env_cfg(
       mode="startup",
       func=dr.geom_friction,
       params={
-        "asset_cfg": SceneEntityCfg("robot", geom_names=("l_ankle_roll_link_collision.*", "r_ankle_roll_link_collision.*"),),
+        "asset_cfg": SceneEntityCfg(
+          "robot",
+          geom_names=("l_ankle_roll_link_collision.*", "r_ankle_roll_link_collision.*"),
+        ),
         "operation": "scale",
         "ranges": (0.4, 1.0),
-      }
+      },
     ),
     "joint_frictionloss": EventTermCfg(
       mode="startup",
@@ -318,15 +321,14 @@ def piplus_goalie_env_cfg(
   # Rewards
   ##
   rewards = {
-
     # stability rewards
     "upright": RewardTermCfg(
-        func=mdp.upright,
-        weight=1.0,
-        params={
-            "std": math.sqrt(0.2),
-            "asset_cfg": SceneEntityCfg("robot", body_names=("base_link",)),
-        },
+      func=mdp.upright,
+      weight=1.0,
+      params={
+        "std": math.sqrt(0.2),
+        "asset_cfg": SceneEntityCfg("robot", body_names=("base_link",)),
+      },
     ),
     "body_ang_vel": RewardTermCfg(
       func=mdp.body_angular_velocity_penalty,
@@ -338,52 +340,61 @@ def piplus_goalie_env_cfg(
       weight=-0.1,
       params={"sensor_name": "robot/root_angmom"},
     ),
-   "goal_conceded": RewardTermCfg(
-     func=pi_mdp.event_once,
-     weight=-200, # punish robot for being bad by spanking :)
-     params={"condition": pi_mdp.goal_conceded},
-   ),
-   "ball_saved":  RewardTermCfg(
-     func=pi_mdp.event_once,
-     weight=200,
-     params={"condition": pi_mdp.ball_saved},
-   ),
-   "fell_down": RewardTermCfg(
-     func=mdp.bad_orientation,
-     weight= -200, 
-     params= {"limit_angle": math.radians(70.0)}
-   ),
-   "ball_proximity": RewardTermCfg(
-     func=pi_mdp.ball_proximity,
-     weight= 1.0,
-   ),
-   "goal_proximity": RewardTermCfg(
-     func=pi_mdp.goal_proximity,
-     weight=-2,
-   ),
-   "kick_away": RewardTermCfg(
-        func=pi_mdp.kick_away,
-        weight=4,
-   ),
-   "kick_precise": RewardTermCfg(
-        func=pi_mdp.kick_away,
-        weight=8,
-        params={"std": 0.5},
-   ),
-  "ball_away": RewardTermCfg(
-          func=pi_mdp.ball_away,
-          weight=2,
-     ),
-  "saved_stance": RewardTermCfg(
-    func=pi_mdp.saved_stance,
-    weight=2.0,
-    params={"asset_cfg": SceneEntityCfg("robot", site_names=foot_sites)},
+    "goal_conceded": RewardTermCfg(
+      func=pi_mdp.event_once,
+      weight=-200,  # punish robot for being bad by spanking :)
+      params={"condition": pi_mdp.goal_conceded},
     ),
-
-
-
-
-
+    "ball_saved": RewardTermCfg(
+      func=pi_mdp.event_once,
+      weight=200,
+      params={"condition": pi_mdp.ball_saved},
+    ),
+    "fell_down": RewardTermCfg(
+      func=mdp.bad_orientation, weight=-200, params={"limit_angle": math.radians(70.0)}
+    ),
+    "ball_proximity": RewardTermCfg(
+      func=pi_mdp.ball_proximity,
+      weight=1,
+    ),
+    "goal_proximity": RewardTermCfg(
+      func=pi_mdp.goal_proximity,
+      weight=-2,
+    ),
+    "kick_away": RewardTermCfg(
+      func=pi_mdp.kick_away,
+      weight=4,
+      params={
+        "condition": pi_mdp.ball_saved,
+        "reward_fn": pi_mdp.kick_away,
+      },
+    ),
+    "kick_precise": RewardTermCfg(
+      func=pi_mdp.reward_after_event,
+      weight=8,
+      params={
+        "condition": pi_mdp.ball_saved,
+        "reward_fn": pi_mdp.kick_away,
+        "std": 0.5,
+      },
+    ),
+    "ball_away": RewardTermCfg(
+      func=pi_mdp.reward_after_event,
+      weight=2,
+      params={
+        "condition": pi_mdp.ball_saved,
+        "reward_fn": pi_mdp.ball_away,
+      },
+    ),
+    "saved_stance": RewardTermCfg(
+      func=pi_mdp.reward_after_event,
+      weight=2,
+      params={
+        "condition": pi_mdp.ball_saved,
+        "reward_fn": pi_mdp.saved_stance,
+        "asset_cfg": SceneEntityCfg("robot", site_names=foot_sites),
+      },
+    ),
     # safety rewards
     "joint_acc_l2": RewardTermCfg(func=mdp.joint_acc_l2, weight=-2.5e-7),
     "joint_pos_limits": RewardTermCfg(func=mdp.joint_pos_limits, weight=-10.0),
@@ -415,22 +426,21 @@ def piplus_goalie_env_cfg(
     # ),
   }
 
-
   ##
   # Metrics
   ##
   metrics = {
-    #"base_ang_vel_xy_l2": MetricsTermCfg(
+    # "base_ang_vel_xy_l2": MetricsTermCfg(
     #  func=pi_mdp.base_ang_vel_xy_l2,
-    #),
-    #"step_frequency": MetricsTermCfg(
+    # ),
+    # "step_frequency": MetricsTermCfg(
     #  func=pi_mdp.step_frequency,
     #  params={"sensor_name": "feet_ground_contact"},
-    #),
-    #"foot_contact_force": MetricsTermCfg(
+    # ),
+    # "foot_contact_force": MetricsTermCfg(
     #  func=pi_mdp.foot_contact_force,
     #  params={"sensor_name": "feet_ground_contact"},
-    #),
+    # ),
     "feet_swing_peak_height": MetricsTermCfg(
       func=pi_mdp.feet_swing_peak_height,
       params={
@@ -452,16 +462,16 @@ def piplus_goalie_env_cfg(
     "goal_conceded": TerminationTermCfg(
       func=pi_mdp.end_after_event,
       params={"condition": pi_mdp.goal_conceded, "delay_s": 1.0},
-      ),
+    ),
     "ball_saved": TerminationTermCfg(
       func=pi_mdp.end_after_event,
-      params={"condition": pi_mdp.ball_saved, "delay_s": 7.0},
-    ),#vllt timeout=True
+      params={"condition": pi_mdp.ball_saved, "delay_s": 5.0},
+    ),  # vllt timeout=True
     "ball_missed": TerminationTermCfg(func=pi_mdp.ball_missed, time_out=True),
-    #"root_height_below_minimum": TerminationTermCfg(
-    #func=mdp.root_height_below_minimum,
-    #params={"minimum_height": 0.25},
-    #),
+    # "root_height_below_minimum": TerminationTermCfg(
+    # func=mdp.root_height_below_minimum,
+    # params={"minimum_height": 0.25},
+    # ),
   }
 
   ##
@@ -502,12 +512,16 @@ def piplus_goalie_env_cfg(
     num_envs=4096,
     env_spacing=0.0,
     entities={
-        "robot": get_piplus_robot_cfg(),
-        "ball": ball_cfg,
-        "goal_line": get_goal_line_cfg(),
-        "left_post": get_left_post_cfg(),
-        "right_post": get_right_post_cfg(),},
-    sensors=(feet_contact_sensor_cfg, self_collision_cfg,), # foot_height_scan),
+      "robot": get_piplus_robot_cfg(),
+      "ball": ball_cfg,
+      "goal_line": get_goal_line_cfg(),
+      "left_post": get_left_post_cfg(),
+      "right_post": get_right_post_cfg(),
+    },
+    sensors=(
+      feet_contact_sensor_cfg,
+      self_collision_cfg,
+    ),  # foot_height_scan),
     terrain=TerrainEntityCfg(
       terrain_type="plane",
       terrain_generator=None,
@@ -588,9 +602,7 @@ def piplus_goalie_env_cfg(
         "axis": "pitch",
       },
     )
-    metrics["base_height"] = MetricsTermCfg(
-      func=pi_mdp.base_height
-    )
+    metrics["base_height"] = MetricsTermCfg(func=pi_mdp.base_height)
     # NOTE: SceneEntityCfg.resolve() sorts sites by model index, so the reward's
     # site order is (r_foot=idx0, l_foot=idx1) — i.e. offset[0]=0.0 drives the
     # RIGHT foot and offset[1]=0.5 the LEFT foot. The metric offsets below are
@@ -613,7 +625,6 @@ def piplus_goalie_env_cfg(
         "stance_threshold": 0.56,
       },
     )
-    
 
   ##
   # Assemble the config
