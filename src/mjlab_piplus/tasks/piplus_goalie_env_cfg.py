@@ -362,7 +362,7 @@ def piplus_goalie_env_cfg(
       weight=-2,
     ),
     "kick_away": RewardTermCfg(
-      func=pi_mdp.kick_away,
+      func=pi_mdp.reward_after_event,
       weight=4,
       params={
         "condition": pi_mdp.ball_saved,
