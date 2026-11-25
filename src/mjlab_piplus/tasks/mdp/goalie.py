@@ -23,6 +23,8 @@ __all__ = [
   "saved_stance",
   "base_height",
   "reward_after_event",
+  "return_to_start_position",
+  "facing_away",
 ]
 
 # x position of the goal line. Must match the pos of goal line / posts
@@ -226,6 +228,18 @@ def saved_stance(
 
   return r_height * r_feet
 
+def return_to_start_position(env, position_x=0.0, position_y=0.0, std=0.3):
+  """Reward when robot returns to start position"""
+  robot = env.scene["robot"]
+  xy = robot.data.root_link_pos_w[:, :2] - env.scene.env_origins[:, :2]
+  target = torch.tensor([position_x, position_y], device=env.device, dtype=xy.dtype)
+  d = torch.norm(xy - target, dim=1)
+  return torch.where(d < 0.5, torch.exp(-((d / std) ** 2)), torch.zeros_like(d))
+
+def facing_away(env):
+  """Punishing the robot when its not facing the opposition's goal"""
+  heading = env.scene["robot"].data.heading_w
+  return (-torch.cos(heading).clamp(min=0.0))
 
 ##
 # Metrics

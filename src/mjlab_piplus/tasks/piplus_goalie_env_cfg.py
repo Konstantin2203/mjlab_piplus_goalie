@@ -371,7 +371,7 @@ def piplus_goalie_env_cfg(
     ),
     "kick_precise": RewardTermCfg(
       func=pi_mdp.reward_after_event,
-      weight=8,
+      weight=50,
       params={
         "condition": pi_mdp.ball_saved,
         "reward_fn": pi_mdp.kick_away,
@@ -393,6 +393,24 @@ def piplus_goalie_env_cfg(
         "condition": pi_mdp.ball_saved,
         "reward_fn": pi_mdp.saved_stance,
         "asset_cfg": SceneEntityCfg("robot", site_names=foot_sites),
+      },
+    ),
+     "return_to_start_position": RewardTermCfg(
+      func=pi_mdp.reward_after_event,
+      weight=4,
+      params={
+        "condition": pi_mdp.ball_saved,
+        "reward_fn": pi_mdp.return_to_start_position,
+        "delay_s": 1,
+      },
+    ),
+    "facing away": RewardTermCfg(
+      func=pi_mdp.reward_after_event,
+      weight=-3,
+      params={
+        "condition": pi_mdp.ball_saved,
+        "reward_fn": pi_mdp.facing_away,
+        "delay_s": 0.5,
       },
     ),
     # safety rewards
